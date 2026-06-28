@@ -48,6 +48,7 @@ def _base_ydl_opts(extra=None):
         "retries": 3,
         "fragment_retries": 3,
         "skip_unavailable_fragments": False,
+        "noplaylist": True,
     }
 
     cookies_path = _find_cookies()
@@ -70,6 +71,47 @@ def _base_ydl_opts(extra=None):
 
     return opts
 
+
+
+def _normalize_media_url(url):
+    """Normalize social video URLs so playlist/share parameters do not break single-video downloads."""
+    if not url:
+        return url
+
+    value = url.strip()
+    if not value:
+        return value
+
+    if re.match(r"^[A-Za-z0-9_-]{11}$", value):
+        return f"https://www.youtube.com/watch?v={value}"
+
+    if not re.match(r"^https?://", value, re.I):
+        value = "https://" + value
+
+    parsed = urllib.parse.urlparse(value)
+    host = (parsed.netloc or "").lower()
+    host = host.split("@")[-1].split(":")[0]
+    query = urllib.parse.parse_qs(parsed.query, keep_blank_values=True)
+    video_id = ""
+
+    if host in {"youtu.be", "www.youtu.be"}:
+        video_id = parsed.path.strip("/").split("/")[0]
+    elif host.endswith("youtube.com") or host.endswith("youtube-nocookie.com"):
+        if parsed.path == "/watch" and query.get("v"):
+            video_id = query.get("v", [""])[0]
+        else:
+            match = re.match(r"^/(?:shorts|embed|live|v)/([A-Za-z0-9_-]{6,})", parsed.path)
+            if match:
+                video_id = match.group(1)
+
+    if video_id:
+        clean_query = {"v": video_id}
+        for keep_key in ("t", "start"):
+            if query.get(keep_key):
+                clean_query[keep_key] = query[keep_key][0]
+        return urllib.parse.urlunparse(("https", "www.youtube.com", "/watch", "", urllib.parse.urlencode(clean_query), ""))
+
+    return value
 
 def _sanitize_filename(name):
     """Remove or replace characters that are unsafe in filenames/headers."""
@@ -281,6 +323,7 @@ def _build_formats(info):
 
 def _extract_info_safe(url):
     """Try to extract info with multiple format fallbacks."""
+    url = _normalize_media_url(url)
     errors = []
 
     strategies = [
@@ -325,7 +368,7 @@ def download_page_slash():
 @download.route("/download/api")
 def api():
 
-    url = request.args.get("url")
+    url = _normalize_media_url(request.args.get("url"))
 
     if not url:
         return jsonify({"error": "No URL"})
@@ -480,6 +523,7 @@ def _download_progress_hook(job_id):
 
 
 def _run_server_download(url, requested_format, selected_type, selected_has_audio, force_compat, job_id=None):
+    url = _normalize_media_url(url)
     cookies_path = _find_cookies()
     temp_dir = tempfile.mkdtemp(prefix="favoriteweb-download-")
     safe_title = "video"
@@ -666,7 +710,7 @@ def _stream_ready_file(result):
 
 @download.route("/download/server-download")
 def server_download():
-    url = request.args.get("url")
+    url = _normalize_media_url(request.args.get("url"))
     requested_format = request.args.get("format")
     selected_type = (request.args.get("type") or "video").lower()
     selected_has_audio = request.args.get("hasAudio") == "1"
@@ -688,7 +732,7 @@ def server_download():
 def start_download_job():
     _cleanup_old_jobs()
     data = request.get_json(silent=True) or {}
-    url = data.get("url")
+    url = _normalize_media_url(data.get("url"))
     if not url:
         return jsonify({"error": "No URL provided"}), 400
 
@@ -790,7 +834,7 @@ def download_static_or_video(subpath):
         response.headers["Cache-Control"] = "no-cache"
         return response
     
-    # Not a static file — treat as video ID (must not have file extension)
+    # Not a static file - treat as video ID (must not have file extension)
     if '.' not in subpath and len(subpath) >= 6:
         try:
             html = open(os.path.join(static_dir, "index.html"), "r", encoding="utf-8").read()
