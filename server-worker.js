@@ -7,9 +7,10 @@
 
 const PRIMARY = "https://khan.favoriteweb.net";
 const BACKUP = "https://host.favoriteweb.net";
+const RENDER_BACKUP = "https://favoriteweb-backup.onrender.com";
 const TIMEOUT = 3000;
 const HEALTH_TIMEOUT = 2000;
-const BACKENDS = [PRIMARY, BACKUP];
+const BACKENDS = [PRIMARY, BACKUP, RENDER_BACKUP];
 const STREAM_BACKENDS = [PRIMARY, BACKUP];
 const OFFLINE_BACKENDS = [PRIMARY, BACKUP];
 const HLS_TIMEOUT = 2500;
@@ -60,6 +61,10 @@ function rewriteLocation(location, publicOrigin) {
 
   if (location.startsWith(BACKUP)) {
     return publicOrigin + location.slice(BACKUP.length);
+  }
+
+  if (location.startsWith(RENDER_BACKUP)) {
+    return publicOrigin + location.slice(RENDER_BACKUP.length);
   }
 
   return location;
@@ -239,7 +244,7 @@ function rewriteResponse(response, publicOrigin) {
   if (setCookie) {
     headers.set(
       "Set-Cookie",
-      setCookie.replace(/;\s*Domain=(khan|host)\.favoriteweb\.net/gi, "")
+      setCookie.replace(/;\s*Domain=((khan|host)\.favoriteweb\.net|favoriteweb-backup\.onrender\.com)/gi, "")
     );
   }
 
@@ -434,4 +439,6 @@ export default {
     return proxyWithFailover(request);
   }
 };
+
+
 

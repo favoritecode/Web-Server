@@ -51,3 +51,5 @@ ocr/uploads/
 # Windows metadata
 *.ini
 
+server-worker.before-*.js
+
