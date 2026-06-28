@@ -1,0 +1,12 @@
+name = "favorite-drive"
+main = "worker.js"
+compatibility_date = "2025-06-06"
+
+[[r2_buckets]]
+binding = "BUCKET"
+bucket_name = "favoriteweb"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "favorite-drive-db"
+database_id = "05b7b7e1-9762-493a-8874-fff97b3d57bc"

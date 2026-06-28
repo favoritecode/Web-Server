@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cloud Drive - FavoriteWeb</title>
+<link rel="stylesheet" href="/shared.css">
+<style>
+.upload-hero {
+  text-align: center;
+  padding: 40px 20px 20px;
+}
+
+.upload-hero h1 {
+  font-size: 32px;
+  font-weight: 700;
+  background: linear-gradient(135deg, #60a5fa, #818cf8);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  margin-bottom: 8px;
+}
+
+.upload-hero p {
+  color: #6b7280;
+  font-size: 15px;
+}
+
+/* Upload Panel */
+.upload-panel {
+  max-width: 960px;
+  margin: 20px auto;
+  padding: 0 20px;
+}
+
+.upload-zone {
+  background: rgba(255,255,255,0.04);
+  border: 2px dashed rgba(255,255,255,0.12);
+  border-radius: 16px;
+  padding: 50px 20px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.3s;
+  position: relative;
+}
+
+.upload-zone:hover, .upload-zone.drag-over {
+  border-color: #818cf8;
+  background: rgba(129,140,248,0.06);
+}
+
+.upload-zone .upload-icon {
+  font-size: 48px;
+  margin-bottom: 16px;
+}
+
+.upload-zone h3 {
+  font-size: 18px;
+  font-weight: 600;
+  color: #f0f0f0;
+  margin-bottom: 8px;
+}
+
+.upload-zone p {
+  color: #6b7280;
+  font-size: 14px;
+  margin-bottom: 20px;
+}
+
+.upload-zone .browse-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 24px;
+  background: linear-gradient(135deg, #7c3aed, #6366f1);
+  color: #fff;
+  border: none;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.upload-zone .browse-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(124,58,237,0.3);
+}
+
+/* Toolbar */
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 20px 0;
+  padding: 14px 16px;
+  background: rgba(255,255,255,0.05);
+  border-radius: 12px;
+  font-size: 14px;
+}
+
+.toolbar .left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.toolbar .path-display {
+  color: #9ca3af;
+  font-size: 13px;
+}
+
+.toolbar .path-display span {
+  color: #c084fc;
+  font-weight: 500;
+}
+
+.toolbar button {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.2s;
+}
+
+.toolbar .btn-upload {
+  background: linear-gradient(135deg, #7c3aed, #6366f1);
+  color: #fff;
+}
+
+.toolbar .btn-upload:hover {
+  background: linear-gradient(135deg, #8b5cf6, #818cf8);
+}
+
+/* File Grid */
+.file-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 16px;
+}
+
+.file-card {
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 12px;
+  padding: 20px 16px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.25s;
+  text-decoration: none;
+  color: inherit;
+}
+
+.file-card:hover {
+  border-color: rgba(129,140,248,0.3);
+  transform: translateY(-3px);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.2);
+}
+
+.file-card .file-icon {
+  font-size: 36px;
+  margin-bottom: 10px;
+  display: block;
+}
+
+.file-card .file-name {
+  font-size: 13px;
+  color: #e0e0e0;
+  word-break: break-word;
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.file-card .file-type-badge {
+  display: inline-block;
+  font-size: 10px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  margin-top: 8px;
+  font-weight: 500;
+  text-transform: uppercase;
+}
+
+.file-card .file-type-badge.folder {
+  background: rgba(124,58,237,0.12);
+  color: #c084fc;
+}
+
+.file-card .file-type-badge.file {
+  background: rgba(59,130,246,0.12);
+  color: #60a5fa;
+}
+
+/* Empty state */
+.empty-state {
+  text-align: center;
+  padding: 60px 20px;
+  color: #6b7280;
+}
+
+.empty-state .empty-icon {
+  font-size: 64px;
+  margin-bottom: 16px;
+  opacity: 0.5;
+}
+
+.empty-state h3 {
+  font-size: 18px;
+  color: #9ca3af;
+  margin-bottom: 8px;
+}
+
+/* Upload progress */
+.upload-progress {
+  margin-top: 16px;
+}
+
+.upload-progress .progress-bar {
+  height: 4px;
+  background: rgba(255,255,255,0.08);
+  border-radius: 99px;
+  overflow: hidden;
+}
+
+.upload-progress .progress-fill {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, #7c3aed, #818cf8);
+  border-radius: 99px;
+  transition: width 0.3s;
+}
+
+.upload-progress .progress-text {
+  font-size: 12px;
+  color: #6b7280;
+  margin-top: 6px;
+  text-align: center;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .upload-hero h1 { font-size: 24px; }
+  .file-grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
+  .toolbar { flex-direction: column; align-items: stretch; text-align: center; }
+  .toolbar .left { justify-content: center; }
+}
+</style>
+</head>
+<body>
+
+<div class="main-content">
+  <div class="upload-hero">
+    <h1>☁️ Cloud Drive</h1>
+    <p>Upload, store, and manage your files securely</p>
+  </div>
+
+  <div class="upload-panel">
+    <!-- Upload Zone -->
+    <div class="upload-zone" id="dropZone">
+      <div class="upload-icon">📤</div>
+      <h3>Drag & Drop Files Here</h3>
+      <p>Or click the button below to select files</p>
+      <div>
+        <button class="browse-btn" onclick="document.getElementById('fileInput').click()">📁 Browse Files</button>
+        <button class="browse-btn" style="background:rgba(255,255,255,0.08);margin-left:8px" onclick="document.getElementById('folderInput').click()">📂 Browse Folder</button>
+      </div>
+      <input type="file" id="fileInput" multiple hidden>
+      <input type="file" id="folderInput" webkitdirectory hidden>
+      <div class="upload-progress" id="uploadProgress" style="display:none">
+        <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+        <div class="progress-text" id="progressText">Uploading...</div>
+      </div>
+    </div>
+
+    <!-- Toolbar -->
+    <div class="toolbar">
+      <div class="left">
+        <button id="backBtn" style="display:none;background:rgba(255,255,255,0.06);color:#9ca3af" onclick="goBack()">⬅ Back</button>
+        <span class="path-display">📍 <span id="currentPath">/</span></span>
+      </div>
+      <button class="btn-upload" onclick="document.getElementById('fileInput').click()">📤 Upload</button>
+    </div>
+
+    <!-- File Grid -->
+    <div id="fileGrid" class="file-grid">
+      <div class="empty-state">
+        <div class="empty-icon">📂</div>
+        <h3>No files yet</h3>
+        <p>Drag & drop files or use the upload button above</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ============ FILE SYSTEM ============
+let currentPath = "";
+
+const dropZone = document.getElementById("dropZone");
+const fileInput = document.getElementById("fileInput");
+const folderInput = document.getElementById("folderInput");
+const fileGrid = document.getElementById("fileGrid");
+const currentPathEl = document.getElementById("currentPath");
+const backBtn = document.getElementById("backBtn");
+const uploadProgress = document.getElementById("uploadProgress");
+const progressFill = document.getElementById("progressFill");
+const progressText = document.getElementById("progressText");
+
+// ------ Drag & Drop ------
+dropZone.addEventListener("dragover", e => {
+  e.preventDefault();
+  dropZone.classList.add("drag-over");
+});
+
+dropZone.addEventListener("dragleave", () => {
+  dropZone.classList.remove("drag-over");
+});
+
+dropZone.addEventListener("drop", e => {
+  e.preventDefault();
+  dropZone.classList.remove("drag-over");
+  const files = e.dataTransfer.files;
+  if (files.length > 0) uploadFiles(files);
+});
+
+fileInput.onchange = () => { if (fileInput.files.length > 0) uploadFiles(fileInput.files); };
+folderInput.onchange = () => { if (folderInput.files.length > 0) uploadFiles(folderInput.files); };
+
+// ------ Upload ------
+async function uploadFiles(files) {
+  const form = new FormData();
+  for (let i = 0; i < files.length; i++) {
+    form.append("files", files[i], files[i].webkitRelativePath || files[i].name);
+  }
+
+  uploadProgress.style.display = "block";
+  progressFill.style.width = "0%";
+  progressText.textContent = `Uploading ${files.length} file(s)...`;
+
+  try {
+    const res = await fetch("/upload", { method: "POST", body: form });
+    if (!res.ok) {
+      const data = await res.json();
+      if (data.error === "login required") {
+        window.location.href = "/login";
+        return;
+      }
+    }
+    progressFill.style.width = "100%";
+    progressText.textContent = "✅ Upload complete!";
+    setTimeout(() => { uploadProgress.style.display = "none"; }, 1500);
+    loadFiles(currentPath);
+  } catch (err) {
+    progressText.textContent = "❌ Upload failed";
+    progressFill.style.width = "0%";
+  }
+}
+
+// ------ Load Files ------
+async function loadFiles(path) {
+  try {
+    const res = await fetch("/api/files?path=" + encodeURIComponent(path));
+    if (!res.ok) throw new Error("Failed");
+    const data = await res.json();
+
+    currentPath = data.current || "";
+    currentPathEl.textContent = currentPath || "/";
+    backBtn.style.display = currentPath ? "inline-flex" : "none";
+
+    if (!data.items || data.items.length === 0) {
+      fileGrid.innerHTML = `
+        <div class="empty-state" style="grid-column:1/-1">
+          <div class="empty-icon">📂</div>
+          <h3>This folder is empty</h3>
+          <p>Upload files to get started</p>
+        </div>`;
+      return;
+    }
+
+    let html = "";
+
+    // Back button card (as first card)
+    if (currentPath) {
+      const parent = currentPath.split("/").slice(0, -1).join("/");
+      html += `
+        <div class="file-card" onclick="loadFiles('${parent}')">
+          <span class="file-icon">📂</span>
+          <div class="file-name">.. (Parent)</div>
+          <span class="file-type-badge folder">Back</span>
+        </div>`;
+    }
+
+    data.items.forEach(item => {
+      if (item.type === "folder") {
+        html += `
+          <div class="file-card" onclick="loadFiles('${item.path}')">
+            <span class="file-icon">📁</span>
+            <div class="file-name">${escapeHtml(item.name)}</div>
+            <span class="file-type-badge folder">Folder</span>
+          </div>`;
+      } else {
+        const ext = item.name.split(".").pop().toLowerCase();
+        const icon = getFileIcon(ext);
+        html += `
+          <a class="file-card" href="/open/${item.path}" target="_blank">
+            <span class="file-icon">${icon}</span>
+            <div class="file-name">${escapeHtml(item.name)}</div>
+            <span class="file-type-badge file">${ext.toUpperCase()}</span>
+          </a>`;
+      }
+    });
+
+    fileGrid.innerHTML = html;
+  } catch (err) {
+    fileGrid.innerHTML = `<div class="empty-state" style="grid-column:1/-1;color:#f87171">❌ Failed to load files</div>`;
+  }
+}
+
+function goBack() {
+  const parent = currentPath.split("/").slice(0, -1).join("/");
+  loadFiles(parent);
+}
+
+function getFileIcon(ext) {
+  const map = {
+    mp4: "🎬", mkv: "🎬", avi: "🎬", mov: "🎬", webm: "🎬",
+    mp3: "🎵", wav: "🎵", flac: "🎵", m4a: "🎵", ogg: "🎵",
+    jpg: "🖼️", jpeg: "🖼️", png: "🖼️", gif: "🖼️", svg: "🖼️", webp: "🖼️",
+    pdf: "📄", doc: "📝", docx: "📝", xls: "📊", xlsx: "📊",
+    zip: "🗜️", rar: "🗜️", "7z": "🗜️", tar: "🗜️", gz: "🗜️",
+    txt: "📃",
+    html: "🌐", css: "🎨", js: "⚡", json: "📋", py: "🐍",
+  };
+  return map[ext] || "📄";
+}
+
+function escapeHtml(str) {
+  if (!str) return "";
+  return String(str)
+    .replace(/&/g, "&" + "amp;")
+    .replace(/</g, "&" + "lt;")
+    .replace(/>/g, "&" + "gt;")
+    .replace(/"/g, "&" + "quot;");
+}
+
+// Initial load - empty string = root directory
+loadFiles("");
+</script>
+
+<script src="/shared.js"></script>
+</body>
+</html>

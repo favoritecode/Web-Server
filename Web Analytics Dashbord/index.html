@@ -1,0 +1,125 @@
+﻿<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>FavoriteWeb Site Analyzer</title>
+  <link rel="stylesheet" href="/shared.css">
+  <link rel="stylesheet" href="/analytics/styles.css">
+</head>
+<body>
+  <div class="analytics-app">
+    <aside class="side-panel">
+      <a class="brand-link" href="/">
+        <span class="brand-mark">FW</span>
+        <span><strong>FavoriteWeb</strong><small>Site Analyzer</small></span>
+      </a>
+      <nav class="mode-nav" aria-label="Analyzer mode">
+        <button class="mode-tab active" type="button" data-mode="website">Web Analysis</button>
+        <button class="mode-tab" type="button" data-mode="article">Article Analysis</button>
+      </nav>
+      <div class="trust-box">
+        <strong>Professional audit engine</strong>
+        <p>Real URL fetch, sitemap discovery, SEO checks, technology hints, page quality scoring and article-level recommendations.</p>
+      </div>
+      <div class="scan-status" id="scanStatus">
+        <span class="pulse"></span>
+        <span>Ready to scan</span>
+      </div>
+    </aside>
+
+    <main class="main-panel">
+      <header class="page-head">
+        <div>
+          <p class="eyebrow">SEO, technology, speed and content intelligence</p>
+          <h1>Website Analysis Dashboard</h1>
+          <p>Enter a public domain to audit the site automatically, or analyze a single article URL/content directly.</p>
+        </div>
+      </header>
+
+      <section class="tool-panel active" id="websitePanel">
+        <form class="scan-form" id="siteForm">
+          <label>
+            Domain or website URL
+            <input id="domainInput" type="text" autocomplete="url" placeholder="example.com or https://example.com" required>
+          </label>
+          <label>
+            Scan depth
+            <select id="scanLimit">
+              <option value="8">Fast scan: 8 pages</option>
+              <option value="15" selected>Standard scan: 15 pages</option>
+              <option value="30">Deep scan: 30 pages</option>
+            </select>
+          </label>
+          <button type="submit">Run Website Analysis</button>
+        </form>
+      </section>
+
+      <section class="tool-panel" id="articlePanel">
+        <form class="scan-form article-form" id="articleForm">
+          <label>
+            Article URL
+            <input id="articleUrl" type="url" placeholder="https://example.com/article">
+          </label>
+          <label>
+            Focus keyword
+            <input id="focusKeyword" type="text" placeholder="main keyword">
+          </label>
+          <label class="span-2">
+            Article content
+            <textarea id="articleContent" rows="6" placeholder="Paste article text if URL is not available"></textarea>
+          </label>
+          <button type="submit">Analyze Article</button>
+        </form>
+      </section>
+
+      <section class="score-row" aria-label="Audit scores">
+        <article><span>SEO Score</span><strong id="seoScore">--</strong><i id="seoBar"></i></article>
+        <article><span>Speed Health</span><strong id="speedScore">--</strong><i id="speedBar"></i></article>
+        <article><span>Technical</span><strong id="techScore">--</strong><i id="techBar"></i></article>
+        <article><span>Content Value</span><strong id="contentScore">--</strong><i id="contentBar"></i></article>
+      </section>
+
+      <section class="insight-grid">
+        <article class="card span-2">
+          <div class="card-head"><h2>Website Overview</h2><span id="scanTime">No scan yet</span></div>
+          <dl class="overview" id="overviewList"></dl>
+        </article>
+        <article class="card">
+          <div class="card-head"><h2>Detected Technology</h2><span id="techCount">0</span></div>
+          <div class="tag-cloud" id="techList"></div>
+        </article>
+        <article class="card">
+          <div class="card-head"><h2>Good Things</h2><span id="goodCount">0</span></div>
+          <ul class="check-list" id="goodList"></ul>
+        </article>
+        <article class="card">
+          <div class="card-head"><h2>Missing / Bugs</h2><span id="issueCount">0</span></div>
+          <ul class="issue-list" id="issueList"></ul>
+        </article>
+        <article class="card">
+          <div class="card-head"><h2>SEO Action Plan</h2><span>Priority</span></div>
+          <ul class="action-list" id="actionList"></ul>
+        </article>
+      </section>
+
+      <section class="article-layout">
+        <article class="card article-list-card">
+          <div class="card-head"><h2>Pages / Articles</h2><span id="pageCount">0 found</span></div>
+          <div class="article-list" id="articleList"></div>
+        </article>
+        <article class="card detail-card">
+          <div class="card-head"><h2 id="detailTitle">Page Details</h2><span id="detailScore">Select page</span></div>
+          <div id="detailBody" class="detail-body">
+            <p>Run a website scan or article analysis to see detailed SEO findings.</p>
+          </div>
+        </article>
+      </section>
+    </main>
+  </div>
+
+  <script src="/shared.js"></script>
+  <script src="/analytics/app.js"></script>
+</body>
+</html>
+

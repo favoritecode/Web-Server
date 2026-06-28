@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Media Downloader - FavoriteWeb</title>
+<link rel="stylesheet" href="/shared.css">
+<link rel="stylesheet" href="/download/style.css">
+</head>
+<body>
+
+<main class="app-shell main-content">
+<section class="hero">
+<p class="eyebrow">Fast media saver</p>
+<h1>Favorite Media Downloader</h1>
+<p class="hero-desc">Download your favorite videos and audio from YouTube, Facebook, TikTok, Instagram, Twitter/X, and many more platforms. Fast, free, and easy to use.</p>
+</section>
+
+<section class="download-panel">
+<textarea id="url" rows="4" placeholder="Paste one video link, or multiple links on separate lines.&#10;Works with: YouTube, Facebook, TikTok, Instagram, Twitter/X, and many more"></textarea>
+<div class="action-row">
+<button id="downloadBtn" onclick="getVideo()">Get formats</button>
+<button class="secondary" onclick="downloadAllSelected('fast')">Fast download all</button>
+<button class="secondary" onclick="downloadAllSelected('convert')">Convert and download all</button>
+</div>
+</section>
+
+<div id="result"></div>
+</main>
+
+<script src="/download/script.js"></script>
+<script src="/shared.js"></script>
+
+</body>
+</html>

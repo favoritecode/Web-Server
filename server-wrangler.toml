@@ -1,0 +1,8 @@
+name = "server-failover"
+main = "server-worker.js"
+compatibility_date = "2025-06-06"
+
+routes = [
+  { pattern = "server.favoriteweb.net", zone_id = "45697116b8d209b6f255ed8d2d35e815" },
+  { pattern = "server.favoriteweb.net/*", zone_id = "45697116b8d209b6f255ed8d2d35e815" }
+]

@@ -1,0 +1,92 @@
+FavoriteWeb PC2 Setup Notes
+===========================
+
+The web folder syncs between PC1 and PC2, so code/config files will arrive automatically.
+On PC1 it can be E:\web. On PC2 it can be C:\web. The updated scripts auto-detect their own folder.
+
+But Windows Startup shortcuts, Cloudflared credentials, and installed programs do not sync.
+
+Do this on PC2 one time:
+
+1. Check PC2 hostname:
+
+   hostname
+
+2. Open this synced file inside PC2 web folder:
+
+   C:\web\favoriteweb_pc_config.ps1
+
+   PC2 can now auto-select by Cloudflare credential file if the hostname key does not match.
+   Still, the HOST entry should have the correct PC2 tunnel ID:
+
+   "HOST" = @{
+       BackendHostname = "host.favoriteweb.net"
+       TunnelId = "34a93d44-9283-4bf7-9102-c7069a40704a"
+   }
+
+3. Make sure ffmpeg exists:
+
+   C:\ffmpeg\bin\ffmpeg.exe
+
+4. Make sure cloudflared credential file exists:
+
+   C:\Users\<USER>\.cloudflared\34a93d44-9283-4bf7-9102-c7069a40704a.json
+
+5. Create/update PC2 cloudflared config manually if needed.
+   The autostart script now also writes this automatically before starting the tunnel.
+
+   cd /d C:\web
+   powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\setup_cloudflared_ingress.ps1
+
+6. Install PC2 Windows Startup shortcut and delete old E:\web/launch_watchdog startup:
+
+   cd /d C:\web
+   powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\install_favoriteweb_startup.ps1
+
+7. Start services now:
+
+   C:\web\start_all_streaming.bat
+
+8. Test PC2 backend routes:
+
+   https://host.favoriteweb.net/offline/index.m3u8
+   https://host.favoriteweb.net/live/live/index.m3u8
+
+   Offline should be 200 when PC2 offline slate is running.
+   Live should be 200 only while OBS is streaming on PC2.
+
+9. Test public stream:
+
+   https://server.favoriteweb.net/live.m3u8
+
+OBS settings on both PCs:
+
+   Service: Custom
+   Server: rtmp://127.0.0.1/live
+   Stream Key: live
+
+Multiple stream settings:
+
+   Keep Stream Key: live
+
+   Main stream:
+      Server: rtmp://127.0.0.1/live
+      Public URL: https://server.favoriteweb.net/live.m3u8
+
+   Extra stream 1:
+      Server: rtmp://127.0.0.1/live1
+      Public URL: https://server.favoriteweb.net/live1.m3u8
+
+   Extra stream 2:
+      Server: rtmp://127.0.0.1/live2
+      Public URL: https://server.favoriteweb.net/live2.m3u8
+
+   Extra stream 3:
+      Server: rtmp://127.0.0.1/live3
+      Public URL: https://server.favoriteweb.net/live3.m3u8
+
+   The startup scripts expose live through live50 by default.
+   Example: rtmp://127.0.0.1/live20 with key live plays at
+   https://server.favoriteweb.net/live20.m3u8
+
+After this, when PC2 turns on and Windows logs in, FavoriteWeb services should start automatically.

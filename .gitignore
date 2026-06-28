@@ -1,0 +1,53 @@
+﻿# Local storage: never push or backup user/server files
+file/
+
+# Python/runtime caches
+__pycache__/
+*.py[cod]
+.venv/
+.venv-*/
+.env
+.env.*
+
+# Node/Cloudflare local state
+node_modules/
+.wrangler/
+.dev.vars
+
+# Local server secrets and auth material
+*.key
+*.crt
+cookies.txt
+cookies*.txt
+favoriteweb_pc_config.ps1
+
+# Logs, sync conflicts, temporary backups
+*.log
+*.sync-conflict-*
+*.analytics-backup.*
+*.before-*
+.stfolder/
+.stfolder.*
+
+# Large local binaries/archives
+*.zip
+*.7z
+*.rar
+cloudflared.exe
+syncthing-windows-amd64.zip
+mediamtx_v*_windows_amd64.zip
+
+# Local media/server runtime folders
+mediamtx/
+
+# Local-only secret module
+favoriteweb_local_secrets.py
+
+
+# Runtime upload folders
+ocr/uploads/
+
+
+# Windows metadata
+*.ini
+

@@ -1,0 +1,8 @@
+﻿Flask>=3.0,<4
+Werkzeug>=3.0,<4
+requests>=2.31,<3
+yt-dlp>=2025.1.15
+authlib>=1.3,<2
+waitress>=3.0,<4
+Pillow>=10,<12
+pytesseract>=0.3.10,<0.4
