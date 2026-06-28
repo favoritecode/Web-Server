@@ -7,6 +7,7 @@ const NAV_ITEMS = [
   { href: "/upload", label: "Cloud Drive" },
   { href: "/ytplayer/", label: "YT Stream" },
   { href: "/ocr", label: "OCR" },
+  { href: "/analytics", label: "Web Analyzer" },
 ];
 
 function getCurrentPage() {
@@ -41,7 +42,7 @@ function buildNavbar(user) {
 
   return `
 <nav class="navbar">
-  <a href="/" class="logo"><span>⚡</span> FavoriteWeb</a>
+  <a href="/" class="logo"><span>&#9889;</span> FavoriteWeb</a>
   <div class="nav-links">${linksHtml}</div>
 </nav>`;
 }
@@ -49,7 +50,7 @@ function buildNavbar(user) {
 function buildFooter() {
   return `
 <footer class="site-footer">
-  <p>⚡ <a href="/">FavoriteWeb</a> &mdash; Professional Dashboard &bull; All services are free to use</p>
+  <p>&#9889; <a href="/">FavoriteWeb</a> &mdash; Professional Dashboard &bull; All services are free to use</p>
 </footer>`;
 }
 
