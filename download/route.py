@@ -71,7 +71,38 @@ def _base_ydl_opts(extra=None):
 
     return opts
 
+def _request_headers():
+    return {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/120.0.0.0 Safari/537.36"
+        ),
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.5",
+    }
 
+
+def _resolve_share_url(url, host, path):
+    known_short = host in {"pin.it", "www.pin.it", "fb.watch"}
+    facebook_share = host.endswith("facebook.com") and path.startswith("/share/")
+    if facebook_share:
+        return urllib.parse.urlunparse(("https", "m.facebook.com", path, "", "", ""))
+    if not known_short and not facebook_share:
+        return url
+
+    try:
+        response = http_requests.get(
+            url,
+            allow_redirects=True,
+            timeout=25,
+            headers=_request_headers(),
+        )
+        if response.url and response.url != url:
+            return response.url
+    except Exception:
+        return url
+    return url
 
 def _normalize_media_url(url):
     """Normalize social video URLs so playlist/share parameters do not break single-video downloads."""
@@ -91,6 +122,10 @@ def _normalize_media_url(url):
     parsed = urllib.parse.urlparse(value)
     host = (parsed.netloc or "").lower()
     host = host.split("@")[-1].split(":")[0]
+    value = _resolve_share_url(value, host, parsed.path)
+    parsed = urllib.parse.urlparse(value)
+    host = (parsed.netloc or "").lower()
+    host = host.split("@")[-1].split(":")[0]
     query = urllib.parse.parse_qs(parsed.query, keep_blank_values=True)
     video_id = ""
 
@@ -103,6 +138,11 @@ def _normalize_media_url(url):
             match = re.match(r"^/(?:shorts|embed|live|v)/([A-Za-z0-9_-]{6,})", parsed.path)
             if match:
                 video_id = match.group(1)
+
+    if host.endswith("pinterest.com"):
+        pin_match = re.match(r"^/pin/(\d+)", parsed.path)
+        if pin_match:
+            return f"https://www.pinterest.com/pin/{pin_match.group(1)}/"
 
     if video_id:
         clean_query = {"v": video_id}
@@ -377,7 +417,7 @@ def api():
         info = _extract_info_safe(url)
     except Exception as exc:
         error_msg = str(exc)
-        social_media_domains = ["facebook.com", "fb.com", "fb.watch", "instagram.com", "tiktok.com", "vm.tiktok.com", "youtube.com", "youtu.be"]
+        social_media_domains = ["facebook.com", "fb.com", "fb.watch", "instagram.com", "tiktok.com", "vm.tiktok.com", "youtube.com", "youtu.be", "pinterest.com", "pin.it"]
         is_social = any(d in url.lower() for d in social_media_domains)
         
         if is_social:
