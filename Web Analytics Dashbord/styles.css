@@ -45,7 +45,7 @@ input, select, textarea { width: 100%; border: 1px solid var(--line); border-rad
 textarea { resize: vertical; }
 input:focus, select:focus, textarea:focus { border-color: var(--blue); box-shadow: 0 0 0 4px rgba(56,189,248,0.13); }
 button[type="submit"] { min-height: 48px; border: 0; border-radius: 12px; padding: 0 18px; background: linear-gradient(135deg, var(--cyan), var(--blue)); color: #041018; font-weight: 900; cursor: pointer; white-space: nowrap; }
-.score-row { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin-bottom: 16px; }
+.score-row { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 14px; margin-bottom: 16px; }
 .score-row article { border: 1px solid var(--line); border-radius: 16px; background: var(--panel); padding: 18px; overflow: hidden; }
 .score-row span { color: var(--muted); font-size: 13px; font-weight: 800; }
 .score-row strong { display: block; margin: 8px 0 12px; font-size: 34px; }
@@ -119,4 +119,8 @@ ul { list-style: none; margin: 0; padding: 0; }
   min-width: 0;
   overflow-wrap: anywhere;
   word-break: break-word;
+}
+
+#spamBar {
+  background: linear-gradient(90deg, var(--amber), var(--red));
 }

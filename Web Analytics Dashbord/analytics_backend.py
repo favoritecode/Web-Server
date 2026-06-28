@@ -57,9 +57,19 @@ def init_routes(app, base_dir):
 def scan_website(raw_domain, limit):
     url = normalize_url(raw_domain)
     host = urlparse(url).hostname or ""
-    ensure_public_host(host)
+    availability = check_domain_availability(host)
 
-    home = fetch_url_with_fallback(url)
+    if availability["dns"] == "no_dns":
+        return unavailable_domain_result(host, url, availability, "Domain has no DNS records, so no active website was found.")
+
+    if availability["dns"] == "resolves":
+        ensure_public_host(host)
+
+    try:
+        home = fetch_url_with_fallback(url)
+    except ValueError as exc:
+        return unavailable_domain_result(host, url, availability, str(exc))
+
     final_url = home["url"]
     base_host = urlparse(final_url).hostname or host
 
@@ -82,7 +92,7 @@ def scan_website(raw_domain, limit):
 
     technology = detect_technology(home["text"], home["headers"])
     hosting = detect_hosting(base_host, home["headers"])
-    scores = aggregate_scores(pages, home["elapsed_ms"])
+    scores = aggregate_scores(pages, home["elapsed_ms"], home["text"], home["headers"], robots, sitemap_url, hosting)
     good, issues, actions = summarize_site(pages, technology, robots, sitemap_url, scores)
 
     return {
@@ -95,6 +105,7 @@ def scan_website(raw_domain, limit):
             "robots": "Found" if robots else "Not found",
             "sitemap": sitemap_url or "Not found",
         },
+        "availability": availability,
         "scores": scores,
         "good": good,
         "issues": issues,
@@ -126,6 +137,7 @@ def analyze_article_input(url, keyword, content):
         "speed": max(35, min(100, 95 - int(elapsed / 90))),
         "technical": 76 if url else 58,
         "content": page["content_score"],
+        "spam": estimate_spam_score([page], html_text, headers, "", "", {"ssl": "Checked" if url else "Not checked"}),
     }
     return {
         "domain": host,
@@ -135,6 +147,7 @@ def analyze_article_input(url, keyword, content):
         "hosting": {"server": headers.get("server", "Not checked"), "ip": "Not checked", "ssl": "Checked" if url.startswith("https") else "Not checked"},
         "technology": {"cms": "Article only", "items": detect_technology(html_text, headers)["items"]},
         "discovery": {"robots": "Not checked", "sitemap": "Not checked"},
+        "availability": {"status": "Not checked", "message": "Article-only mode does not check domain availability.", "dns": "Not checked", "rdap": "Not checked"},
         "scores": scores,
         "good": page["good"],
         "issues": page["issues"],
@@ -177,6 +190,70 @@ def request_headers():
     }
 
 
+def check_domain_availability(host):
+    result = {
+        "status": "Unknown",
+        "message": "Domain availability could not be confirmed.",
+        "dns": "Not checked",
+        "rdap": "Not checked",
+    }
+    try:
+        socket.getaddrinfo(host, None)
+        result["dns"] = "resolves"
+    except socket.gaierror:
+        result["dns"] = "no_dns"
+    except Exception:
+        result["dns"] = "unknown"
+
+    try:
+        response = requests.get(
+            f"https://rdap.org/domain/{host}",
+            timeout=8,
+            headers={"User-Agent": USER_AGENT, "Accept": "application/rdap+json, application/json;q=0.9, */*;q=0.8"},
+        )
+        if response.status_code == 404:
+            result["rdap"] = "not_found"
+        elif response.ok:
+            result["rdap"] = "registered"
+        else:
+            result["rdap"] = f"status_{response.status_code}"
+    except Exception:
+        result["rdap"] = "unknown"
+
+    if result["rdap"] == "not_found" and result["dns"] == "no_dns":
+        result["status"] = "Possibly available"
+        result["message"] = "No DNS and no RDAP registration were found. Check a registrar before purchase."
+    elif result["rdap"] == "registered":
+        result["status"] = "Registered"
+        result["message"] = "Domain appears registered. If no website loads, it may be parked, offline, or not configured."
+    elif result["dns"] == "no_dns":
+        result["status"] = "Maybe available"
+        result["message"] = "No DNS was found, but RDAP did not confirm availability. Check a registrar."
+    elif result["dns"] == "resolves":
+        result["status"] = "Registered / DNS active"
+        result["message"] = "Domain has DNS records. Website may still be offline or blocking scanners."
+    return result
+
+
+def unavailable_domain_result(host, url, availability, error_message):
+    is_available = availability.get("status") in {"Possibly available", "Maybe available"}
+    spam = 0 if is_available else 35
+    return {
+        "domain": host,
+        "normalized_url": url,
+        "scanned_at": datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),
+        "hosting": {"server": "No website detected", "ip": "No DNS" if availability.get("dns") == "no_dns" else "Unknown", "ssl": "Not checked"},
+        "technology": {"cms": "No website detected", "items": []},
+        "discovery": {"robots": "Not found", "sitemap": "Not found"},
+        "availability": availability,
+        "scores": {"seo": 0, "speed": 0, "technical": 0, "content": 0, "spam": spam},
+        "good": [availability.get("message", "Domain availability checked")],
+        "issues": ["No active website could be fetched", error_message],
+        "actions": ["If you own this domain, configure DNS/hosting and add an SSL certificate.", "If you want to buy it, confirm availability at a domain registrar before purchase."],
+        "pages": [],
+    }
+
+
 def fetch_url_with_fallback(url):
     try:
         return fetch_url(url)
@@ -188,7 +265,7 @@ def fetch_url_with_fallback(url):
                 return fetch_url(fallback)
             except requests.RequestException:
                 pass
-        raise ValueError(f"Could not fetch website. The site may block scanners, be offline, or require a browser session. Detail: {exc}")
+        raise ValueError("Could not fetch website. The site may block scanners, be offline, or require a browser session.")
 
 
 def fetch_url(url):
@@ -356,7 +433,9 @@ def analyze_page(url, text, load_ms, keyword=""):
     }
 
 
-def aggregate_scores(pages, home_ms):
+def aggregate_scores(pages, home_ms, html_text="", headers=None, robots="", sitemap_url="", hosting=None):
+    headers = headers or {}
+    hosting = hosting or {}
     seo = int(sum(p["score"] for p in pages) / len(pages))
     content = int(sum(p["content_score"] for p in pages) / len(pages))
     speed = max(25, min(100, 98 - int(home_ms / 75)))
@@ -365,7 +444,43 @@ def aggregate_scores(pages, home_ms):
         technical -= 8
     if any("H1 count" in issue for p in pages for issue in p["issues"]):
         technical -= 7
-    return {"seo": seo, "speed": speed, "technical": max(1, min(100, technical)), "content": content}
+    return {
+        "seo": seo,
+        "speed": speed,
+        "technical": max(1, min(100, technical)),
+        "content": content,
+        "spam": estimate_spam_score(pages, html_text, headers, robots, sitemap_url, hosting),
+    }
+
+
+def estimate_spam_score(pages, html_text="", headers=None, robots="", sitemap_url="", hosting=None):
+    headers = headers or {}
+    hosting = hosting or {}
+    lower = (html_text or "").lower()
+    score = 5
+    if not robots:
+        score += 8
+    if not sitemap_url:
+        score += 6
+    if not any("Meta description is present" in p.get("good", []) for p in pages):
+        score += 8
+    if any(p.get("words", 0) < 120 for p in pages):
+        score += 10
+    if any(p.get("score", 0) < 45 for p in pages):
+        score += 10
+    if lower.count("adsbygoogle") > 3:
+        score += 8
+    if re.search(r"\b(casino|betting|loan|payday|viagra|adult|crypto bonus|free money)\b", lower, re.I):
+        score += 14
+    if hosting.get("ssl") == "HTTPS not confirmed":
+        score += 4
+    if any("Slow initial HTML response" in p.get("issues", []) for p in pages):
+        score += 6
+    outbound_links = len(re.findall(r"<a[^>]+href=[\"']https?://", html_text or "", re.I))
+    words = sum(p.get("words", 0) for p in pages) or 1
+    if outbound_links > 25 and words < 800:
+        score += 12
+    return max(0, min(100, int(score)))
 
 
 def summarize_site(pages, technology, robots, sitemap_url, scores):
@@ -386,6 +501,10 @@ def summarize_site(pages, technology, robots, sitemap_url, scores):
         good.append("Fast initial response")
     else:
         issues.append("Speed score needs improvement"); actions.append("Enable caching, compress assets and reduce render-blocking scripts")
+    if scores.get("spam", 0) <= 20:
+        good.append("Low spam-risk signals")
+    elif scores.get("spam", 0) >= 60:
+        issues.append("High spam-risk signals detected"); actions.append("Reduce thin content, risky keywords, excessive outbound links and ad clutter")
     for page in pages:
         issues.extend(page["issues"][:2])
         actions.extend(page["actions"][:2])
@@ -470,4 +589,5 @@ def unique_text(values):
             seen.add(value)
             out.append(value)
     return out
+
 

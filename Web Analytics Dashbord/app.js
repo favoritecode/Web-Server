@@ -19,6 +19,7 @@ function setScores(scores = {}) {
     ["speedScore", "speedBar", scores.speed],
     ["techScore", "techBar", scores.technical],
     ["contentScore", "contentBar", scores.content],
+    ["spamScore", "spamBar", scores.spam],
   ];
   items.forEach(([scoreId, barId, value]) => {
     const score = Number.isFinite(value) ? Math.round(value) : 0;
@@ -49,6 +50,8 @@ function renderOverview(data) {
     ["SSL", data.hosting?.ssl || "Not checked"],
     ["Sitemap", data.discovery?.sitemap || "Not found"],
     ["Robots", data.discovery?.robots || "Not found"],
+    ["Domain availability", data.availability?.status || "Not checked"],
+    ["Availability note", data.availability?.message || "No availability check yet"],
   ];
   $("overviewList").innerHTML = overview.map(([k, v]) => `<div><dt>${escapeHtml(k)}</dt><dd>${escapeHtml(v)}</dd></div>`).join("");
   $("scanTime").textContent = data.scanned_at || "Just now";
@@ -175,3 +178,4 @@ $("articleForm").addEventListener("submit", async (event) => {
 });
 
 setScores();
+
