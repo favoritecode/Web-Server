@@ -35,6 +35,10 @@ button, input, select, textarea { font: inherit; }
 h1 { font-size: clamp(32px, 4vw, 58px); margin: 0; line-height: 1.03; letter-spacing: 0; }
 .page-head p:last-child { color: var(--muted); max-width: 760px; line-height: 1.65; }
 .home-btn { color: var(--text); border: 1px solid var(--line); border-radius: 12px; padding: 11px 16px; text-decoration: none; background: var(--panel); }
+.report-actions { display: flex; align-items: flex-start; justify-content: flex-end; min-width: 170px; }
+.report-btn { min-height: 44px; border: 1px solid rgba(56,189,248,0.45); border-radius: 12px; padding: 0 16px; background: rgba(56,189,248,0.12); color: var(--text); font-weight: 900; cursor: pointer; white-space: nowrap; }
+.report-btn:hover:not(:disabled) { background: rgba(56,189,248,0.2); }
+.report-btn:disabled { cursor: not-allowed; opacity: 0.45; }
 .tool-panel { display: none; border: 1px solid var(--line); border-radius: 16px; background: var(--panel); padding: 18px; margin-bottom: 16px; }
 .tool-panel.active { display: block; }
 .scan-form { display: grid; grid-template-columns: minmax(260px, 1fr) 220px auto; gap: 14px; align-items: end; }
@@ -124,3 +128,4 @@ ul { list-style: none; margin: 0; padding: 0; }
 #spamBar {
   background: linear-gradient(90deg, var(--amber), var(--red));
 }
+
