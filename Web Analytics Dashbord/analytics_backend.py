@@ -59,8 +59,6 @@ def scan_website(raw_domain, limit):
     host = urlparse(url).hostname or ""
     availability = check_domain_availability(host)
 
-    if availability["dns"] == "no_dns":
-        return unavailable_domain_result(host, url, availability, "Domain has no DNS records, so no active website was found.")
 
     if availability["dns"] == "resolves":
         ensure_public_host(host)
@@ -72,6 +70,8 @@ def scan_website(raw_domain, limit):
 
     final_url = home["url"]
     base_host = urlparse(final_url).hostname or host
+    if base_host != host:
+        availability = check_domain_availability(base_host)
 
     robots = probe_text(urljoin(final_url, "/robots.txt"))
     sitemap_url = discover_sitemap(final_url, robots)
@@ -145,7 +145,7 @@ def analyze_article_input(url, keyword, content):
         "normalized_url": page_url,
         "scanned_at": datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),
         "hosting": {"server": headers.get("server", "Not checked"), "ip": "Not checked", "ssl": "Checked" if url.startswith("https") else "Not checked"},
-        "technology": {"cms": "Article only", "items": detect_technology(html_text, headers)["items"]},
+        "technology": {"cms": "Article only", "stack": tech["stack"], "theme": tech["theme"], "items": tech["items"]},
         "discovery": {"robots": "Not checked", "sitemap": "Not checked"},
         "availability": {"status": "Not checked", "message": "Article-only mode does not check domain availability.", "dns": "Not checked", "rdap": "Not checked"},
         "scores": scores,
@@ -243,7 +243,7 @@ def unavailable_domain_result(host, url, availability, error_message):
         "normalized_url": url,
         "scanned_at": datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),
         "hosting": {"server": "No website detected", "ip": "No DNS" if availability.get("dns") == "no_dns" else "Unknown", "ssl": "Not checked"},
-        "technology": {"cms": "No website detected", "items": []},
+        "technology": {"cms": "No website detected", "stack": "Unknown", "theme": "Unknown", "items": []},
         "discovery": {"robots": "Not found", "sitemap": "Not found"},
         "availability": availability,
         "scores": {"seo": 0, "speed": 0, "technical": 0, "content": 0, "spam": spam},
@@ -254,18 +254,46 @@ def unavailable_domain_result(host, url, availability, error_message):
     }
 
 
+def candidate_urls(url):
+    parsed = urlparse(url)
+    host = parsed.hostname or ""
+    if not host:
+        return [url]
+
+    host_variants = [host]
+    if host.startswith("www."):
+        host_variants.append(host[4:])
+    else:
+        host_variants.append(f"www.{host}")
+
+    urls = []
+    for candidate_host in host_variants:
+        netloc = candidate_host
+        if parsed.port:
+            netloc = f"{candidate_host}:{parsed.port}"
+        for scheme in [parsed.scheme or "https", "http"]:
+            candidate = parsed._replace(scheme=scheme, netloc=netloc).geturl()
+            if candidate not in urls:
+                urls.append(candidate)
+    return urls
+
+
 def fetch_url_with_fallback(url):
-    try:
-        return fetch_url(url)
-    except requests.RequestException as exc:
-        parsed = urlparse(url)
-        if parsed.scheme == "https":
-            fallback = parsed._replace(scheme="http").geturl()
-            try:
-                return fetch_url(fallback)
-            except requests.RequestException:
-                pass
-        raise ValueError("Could not fetch website. The site may block scanners, be offline, or require a browser session.")
+    last_error = None
+    for candidate in candidate_urls(url):
+        candidate_host = urlparse(candidate).hostname or ""
+        try:
+            ensure_public_host(candidate_host)
+            return fetch_url(candidate)
+        except ValueError as exc:
+            last_error = exc
+            if "Private or reserved" in str(exc) or "Local/private" in str(exc):
+                raise
+        except requests.RequestException as exc:
+            last_error = exc
+            continue
+    detail = f" Last error: {last_error}" if last_error else ""
+    raise ValueError(f"Could not fetch website after trying non-www/www and HTTP/HTTPS variants.{detail}")
 
 
 def fetch_url(url):
@@ -515,25 +543,64 @@ def detect_technology(text, headers):
     lower = text.lower()
     items = []
     cms = "Unknown"
-    if "wp-content" in lower or "wordpress" in lower:
+    stack = "Unknown"
+    theme = "Unknown"
+
+    has_wordpress = bool(re.search(r"wp-content/(themes|plugins|uploads)|wp-includes|wp-json|<meta[^>]+content=[\"']WordPress", text, re.I))
+    if has_wordpress:
         cms = "WordPress"; items.append("WordPress")
+        theme_match = re.search(r"wp-content/themes/([^/'\"?]+)", text, re.I)
+        if theme_match:
+            theme = theme_match.group(1)
+            items.append(f"WordPress theme: {theme}")
     if "blogger.com" in lower or "blogspot" in lower:
         cms = "Blogger"; items.append("Blogger")
+        template = first_match(r"<meta[^>]+name=[\"']template[\"'][^>]+content=[\"']([^\"']+)", text)
+        if template:
+            theme = template
+            items.append(f"Blogger template: {theme}")
     if "shopify" in lower:
         cms = "Shopify"; items.append("Shopify")
+        shopify_theme = first_match(r"Shopify\.theme\s*=\s*\{[^}]*name[\"']?\s*:\s*[\"']([^\"']+)", text)
+        if shopify_theme:
+            theme = shopify_theme
+            items.append(f"Shopify theme: {theme}")
     if "wixstatic" in lower:
         cms = "Wix"; items.append("Wix")
     if "cdn.shopify" in lower: items.append("Shopify CDN")
     if "googletagmanager" in lower: items.append("Google Tag Manager")
     if "google-analytics" in lower or "gtag/js" in lower: items.append("Google Analytics")
     if "adsbygoogle" in lower: items.append("Google AdSense")
-    if "__next" in lower: items.append("Next.js")
-    if "react" in lower: items.append("React")
-    server = headers.get("server")
+
+    powered_by = headers.get("x-powered-by", "")
+    server = headers.get("server", "")
+    header_blob = f"{powered_by} {server}".lower()
+    if "next.js" in lower or "__next" in lower:
+        stack = "Next.js / React"; items.append("Next.js")
+    elif re.search(r"data-reactroot|__react|_reactRootContainer|react(?:\.production)?\.min\.js|react-dom", text, re.I):
+        stack = "React JS"; items.append("React JS")
+    if "express" in header_blob or "node" in header_blob or "node.js" in lower or "nodejs" in lower:
+        stack = "Node.js" if stack == "Unknown" else f"{stack} + Node.js"
+        items.append("Node.js")
+    if "x-powered-by" in headers and "php" in powered_by.lower():
+        stack = "PHP" if stack == "Unknown" else f"{stack} + PHP"
+        items.append("PHP")
+    if "laravel" in lower or "laravel_session" in lower or "x-powered-by" in headers and "laravel" in powered_by.lower():
+        stack = "Laravel / PHP"
+        items.append("Laravel")
+    if "php" in lower and stack == "Unknown":
+        stack = "PHP"
+        items.append("PHP hints")
+
     if server: items.append(f"Server: {server}")
+    if powered_by: items.append(f"Powered by: {powered_by}")
     generator = meta_content(text, "generator")
-    if generator: items.append(f"Generator: {generator}")
-    return {"cms": cms, "items": unique_text(items)}
+    if generator:
+        items.append(f"Generator: {generator}")
+        if theme == "Unknown" and cms == "Blogger":
+            theme = generator
+
+    return {"cms": cms, "stack": stack, "theme": theme, "items": unique_text(items)}
 
 
 def detect_hosting(host, headers):
@@ -589,5 +656,4 @@ def unique_text(values):
             seen.add(value)
             out.append(value)
     return out
-
 

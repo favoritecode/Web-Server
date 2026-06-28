@@ -47,6 +47,8 @@ function renderOverview(data) {
     ["Host / Server", data.hosting?.server || "Unknown"],
     ["IP", data.hosting?.ip || "Unknown"],
     ["CMS / Platform", data.technology?.cms || "Unknown"],
+    ["Theme / Template", data.technology?.theme || "Unknown"],
+    ["Stack / Framework", data.technology?.stack || "Unknown"],
     ["SSL", data.hosting?.ssl || "Not checked"],
     ["Sitemap", data.discovery?.sitemap || "Not found"],
     ["Robots", data.discovery?.robots || "Not found"],
