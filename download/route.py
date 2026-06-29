@@ -84,11 +84,12 @@ def _request_headers():
 
 
 def _resolve_share_url(url, host, path):
-    known_short = host in {"pin.it", "www.pin.it", "fb.watch"}
+    known_short = host in {"pin.it", "www.pin.it", "fb.watch", "l.instagram.com"}
     facebook_share = host.endswith("facebook.com") and path.startswith("/share/")
+    instagram_share = host.endswith("instagram.com") and path.startswith("/share/")
     if facebook_share:
         return urllib.parse.urlunparse(("https", "m.facebook.com", path, "", "", ""))
-    if not known_short and not facebook_share:
+    if not known_short and not facebook_share and not instagram_share:
         return url
 
     try:
@@ -122,6 +123,13 @@ def _normalize_media_url(url):
     parsed = urllib.parse.urlparse(value)
     host = (parsed.netloc or "").lower()
     host = host.split("@")[-1].split(":")[0]
+    if host == "l.instagram.com":
+        redirect_target = urllib.parse.parse_qs(parsed.query).get("u", [""])[0]
+        if redirect_target:
+            value = urllib.parse.unquote(redirect_target)
+            parsed = urllib.parse.urlparse(value)
+            host = (parsed.netloc or "").lower()
+            host = host.split("@")[-1].split(":")[0]
     value = _resolve_share_url(value, host, parsed.path)
     parsed = urllib.parse.urlparse(value)
     host = (parsed.netloc or "").lower()
@@ -143,6 +151,13 @@ def _normalize_media_url(url):
         pin_match = re.match(r"^/pin/(\d+)", parsed.path)
         if pin_match:
             return f"https://www.pinterest.com/pin/{pin_match.group(1)}/"
+
+    if host.endswith("instagram.com"):
+        clean_path = parsed.path
+        media_match = re.match(r"^/(?:reel|p|tv)/([A-Za-z0-9_-]+)", clean_path)
+        if media_match:
+            media_type = clean_path.strip("/").split("/")[0]
+            return f"https://www.instagram.com/{media_type}/{media_match.group(1)}/"
 
     if video_id:
         clean_query = {"v": video_id}

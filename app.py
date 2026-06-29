@@ -61,6 +61,10 @@ google = oauth.register(
 # HOME
 # =====================
 
+
+@app.route("/assets/<path:filename>")
+def assets(filename):
+    return send_from_directory(os.path.join(BASE_DIR, "assets"), filename)
 @app.route("/shared.css")
 def shared_css():
     return send_from_directory(BASE_DIR, "shared.css")
