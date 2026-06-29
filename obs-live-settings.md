@@ -55,11 +55,11 @@ Encoder: `x264` or your hardware encoder
 
 Rate Control: `CBR`
 
-Bitrate: `2500 Kbps` to `4500 Kbps`
+Bitrate: `1200 Kbps` to `1800 Kbps` for smooth public streaming through Cloudflare Tunnel. Use `2500 Kbps` only if upload is very stable.
 
 Keyframe Interval: `2 s`
 
-Preset: `veryfast` for x264, or `Quality` for hardware encoder
+Preset: `veryfast` or `superfast` for x264, or `Performance` / `Quality` for hardware encoder
 
 Profile: `main`
 
@@ -69,9 +69,9 @@ Tune: `zerolatency` if available
 
 Base Canvas: `1920x1080`
 
-Output Scaled: `1280x720` or `1920x1080`
+Output Scaled: `1280x720` recommended. Use `1920x1080` only for local/LAN viewing or very strong upload.
 
-FPS: `30`
+FPS: `30` recommended
 
 ## Audio
 
@@ -88,3 +88,27 @@ start_live_offline_slate.bat
 ```
 
 This publishes a custom offline video message. Keep it running; it uses the separate `offline` path, and the public URL automatically falls back to it when OBS is not publishing.
+
+## Smooth Public Streaming Preset
+
+Use this preset when viewers watch from `server.favoriteweb.net` through Cloudflare Tunnel:
+
+```text
+Resolution: 1280x720
+FPS: 30
+Rate Control: CBR
+Video Bitrate: 1500 Kbps
+Keyframe Interval: 2 s
+Encoder: hardware encoder if available, otherwise x264
+x264 Preset: superfast or veryfast
+Profile: main
+Audio Bitrate: 128 Kbps
+```
+
+If buffering continues, lower only the video bitrate first:
+
+```text
+1500 Kbps -> 1200 Kbps -> 900 Kbps
+```
+
+Do not use 1080p or 2500+ Kbps unless upload speed is stable above 8 Mbps while streaming.

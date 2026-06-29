@@ -1,8 +1,8 @@
 logLevel: info
 logDestinations: [stdout]
-readTimeout: 10s
-writeTimeout: 10s
-writeQueueSize: 512
+readTimeout: 30s
+writeTimeout: 30s
+writeQueueSize: 1024
 udpMaxPayloadSize: 1472
 
 authMethod: internal
@@ -16,12 +16,12 @@ hlsAddress: :8888
 hlsEncryption: false
 hlsAllowOrigins: ["*"]
 hlsAlwaysRemux: true
-hlsVariant: mpegts
-hlsSegmentCount: 6
-hlsSegmentDuration: 2s
-hlsPartDuration: 200ms
+hlsVariant: fmp4
+hlsSegmentCount: 10
+hlsSegmentDuration: 4s
+hlsPartDuration: 1s
 hlsSegmentMaxSize: 50M
-hlsMuxerCloseAfter: 15s
+hlsMuxerCloseAfter: 30s
 
 api: false
 metrics: false

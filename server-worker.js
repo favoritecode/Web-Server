@@ -13,7 +13,7 @@ const HEALTH_TIMEOUT = 2000;
 const BACKENDS = [PRIMARY, BACKUP, RENDER_BACKUP];
 const STREAM_BACKENDS = [PRIMARY, BACKUP];
 const OFFLINE_BACKENDS = [PRIMARY, BACKUP];
-const HLS_TIMEOUT = 2500;
+const HLS_TIMEOUT = 6500;
 const WORKER_OFFLINE_SEGMENT_PATH = "/__offline/offline.ts";
 const OFFLINE_BACKEND_PLAYLIST = "/offline/index.m3u8";
 const AUTH_PATHS = ["/login", "/logout", "/login/callback"];
@@ -277,7 +277,14 @@ async function proxyTo(request, target) {
   }
 
   const response = await fetch(targetUrl.toString(), init);
-  return rewriteResponse(response, incomingUrl.origin);
+  const rewritten = rewriteResponse(response, incomingUrl.origin);
+
+  if (isHlsMediaPath(incomingUrl.pathname)) {
+    rewritten.headers.set("Cache-Control", "no-store");
+    rewritten.headers.set("Access-Control-Allow-Origin", "*");
+  }
+
+  return rewritten;
 }
 
 function rewriteHlsPlaylist(text, publicPrefix) {
