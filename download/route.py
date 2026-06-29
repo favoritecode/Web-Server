@@ -83,6 +83,16 @@ def _request_headers():
     }
 
 
+
+def _instagram_headers():
+    headers = _request_headers()
+    headers.update({
+        "Referer": "https://www.instagram.com/",
+        "Origin": "https://www.instagram.com",
+        "Sec-Fetch-Site": "same-origin",
+    })
+    return headers
+
 def _resolve_share_url(url, host, path):
     known_short = host in {"pin.it", "www.pin.it", "fb.watch", "l.instagram.com"}
     facebook_share = host.endswith("facebook.com") and path.startswith("/share/")
@@ -620,6 +630,7 @@ def _download_progress_hook(job_id):
 
 def _run_server_download(url, requested_format, selected_type, selected_has_audio, force_compat, job_id=None):
     url = _normalize_media_url(url)
+    is_instagram = _is_instagram_url(url)
     cookies_path = _find_cookies()
     temp_dir = tempfile.mkdtemp(prefix="favoriteweb-download-")
     safe_title = "video"
@@ -627,7 +638,10 @@ def _run_server_download(url, requested_format, selected_type, selected_has_audi
     try:
         _set_job(job_id, phase="Extracting video details...", pct=2, temp_dir=temp_dir)
         try:
-            info_opts = _base_ydl_opts({"skip_download": True})
+            info_extra = {"skip_download": True}
+            if is_instagram:
+                info_extra.update({"format": "best", "socket_timeout": 20, "http_headers": _instagram_headers()})
+            info_opts = _base_ydl_opts(info_extra)
             with YoutubeDL(info_opts) as ydl:
                 info = ydl.extract_info(url, download=False)
             raw_title = info.get("title", "video")
@@ -644,7 +658,7 @@ def _run_server_download(url, requested_format, selected_type, selected_has_audi
             else:
                 selected_format = f"{requested_format}+bestaudio/best"
         else:
-            selected_format = "bestvideo+bestaudio/best"
+            selected_format = "best[ext=mp4]/best" if is_instagram else "bestvideo+bestaudio/best"
 
         dl_opts = _base_ydl_opts({
             "format": selected_format,
@@ -660,15 +674,32 @@ def _run_server_download(url, requested_format, selected_type, selected_has_audi
             "concurrent_fragment_downloads": 4,
             "progress_hooks": [_download_progress_hook(job_id)],
         })
+        if is_instagram:
+            dl_opts.update({
+                "http_headers": _instagram_headers(),
+                "socket_timeout": 90,
+                "extractor_retries": 10,
+                "sleep_interval": 1,
+                "max_sleep_interval": 3,
+            })
         if force_compat:
             dl_opts["merge_output_format"] = "mp4"
 
-        format_strategies = [{}] if requested_format else [
-            {},
-            {"format": "best[ext=mp4]/best"},
-            {"format": "best"},
-            {"format": "mp4"},
-        ]
+        if requested_format:
+            format_strategies = [{}]
+        elif is_instagram:
+            format_strategies = [
+                {},
+                {"format": "best"},
+                {"format": "best[protocol=https]/best"},
+            ]
+        else:
+            format_strategies = [
+                {},
+                {"format": "best[ext=mp4]/best"},
+                {"format": "best"},
+                {"format": "mp4"},
+            ]
 
         last_error = None
         downloaded = False
@@ -706,13 +737,49 @@ def _run_server_download(url, requested_format, selected_type, selected_has_audi
                     "--socket-timeout", "120",
                     "--concurrent-fragments", "4",
                 ]
+                if is_instagram:
+                    ytdlp_cmd.extend([
+                        "--referer", "https://www.instagram.com/",
+                        "--user-agent", _request_headers()["User-Agent"],
+                        "--add-header", "Origin:https://www.instagram.com",
+                        "--sleep-interval", "1",
+                        "--max-sleep-interval", "3",
+                    ])
                 if force_compat:
                     ytdlp_cmd.extend(["--merge-output-format", "mp4"])
                 if cookies_path:
                     ytdlp_cmd.extend(["--cookies", cookies_path])
                 ytdlp_cmd.append(url)
-                subprocess.run(ytdlp_cmd, check=True, timeout=7200, capture_output=True)
+                subprocess.run(ytdlp_cmd, check=True, timeout=7200, capture_output=True, text=True)
                 downloaded = bool(os.listdir(temp_dir))
+            except subprocess.CalledProcessError as cmd_exc:
+                cmd_error = (cmd_exc.stderr or cmd_exc.stdout or str(cmd_exc))[-700:]
+                if is_instagram:
+                    for browser in ("chrome", "edge", "firefox"):
+                        try:
+                            browser_cmd = []
+                            skip_next = False
+                            for part in ytdlp_cmd[:-1]:
+                                if skip_next:
+                                    skip_next = False
+                                    continue
+                                if part == "--cookies":
+                                    skip_next = True
+                                    continue
+                                browser_cmd.append(part)
+                            browser_cmd.extend(["--cookies-from-browser", browser, url])
+                            subprocess.run(browser_cmd, check=True, timeout=7200, capture_output=True, text=True)
+                            downloaded = bool(os.listdir(temp_dir))
+                            if downloaded:
+                                break
+                        except subprocess.CalledProcessError as browser_exc:
+                            cmd_error = (browser_exc.stderr or browser_exc.stdout or str(browser_exc))[-700:]
+                        except Exception:
+                            continue
+                    if not downloaded:
+                        raise Exception(cmd_error or error_msg)
+                else:
+                    raise Exception(cmd_error or error_msg)
             except Exception:
                 raise Exception(error_msg)
 
