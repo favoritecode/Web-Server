@@ -186,6 +186,22 @@ def _is_instagram_url(url):
     return host.endswith("instagram.com") or host == "l.instagram.com"
 
 
+def _friendly_download_error(error_msg, url=None):
+    message = str(error_msg or "Download failed")
+    lower = message.lower()
+    if _is_instagram_url(url) and (
+        "empty media response" in lower
+        or "failed to decrypt with dpapi" in lower
+        or "login" in lower
+        or "cookies" in lower
+    ):
+        return (
+            "Instagram download needs fresh logged-in cookies. "
+            "Export only instagram.com cookies as cookies.txt and save it to E:\\web\\cookies.txt, then try again."
+        )
+    return message[-700:]
+
+
 def _preview_from_page(url):
     preview = {"title": None, "thumbnail": None}
     try:
@@ -890,7 +906,7 @@ def server_download():
     except subprocess.TimeoutExpired:
         return jsonify({"error": "Download timed out"}), 500
     except Exception as exc:
-        return jsonify({"error": "Download failed", "details": str(exc)[-700:]}), 500
+        return jsonify({"error": "Download failed", "details": _friendly_download_error(exc, url)}), 500
 
 
 @download.route("/download/start-download", methods=["POST"])
@@ -937,7 +953,7 @@ def start_download_job():
                 size=os.path.getsize(result["file_path"]),
             )
         except Exception as exc:
-            _set_job(job_id, status="error", phase="Failed", pct=0, error=str(exc)[-700:])
+            _set_job(job_id, status="error", phase="Failed", pct=0, error=_friendly_download_error(exc, url))
 
     threading.Thread(target=worker, daemon=True).start()
     return jsonify({"jobId": job_id})
