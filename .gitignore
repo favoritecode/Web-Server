@@ -1,4 +1,4 @@
-﻿# Local storage: never push or backup user/server files
+# Local storage: never push or backup user/server files
 file/
 
 # Python/runtime caches
@@ -19,6 +19,7 @@ node_modules/
 *.crt
 cookies.txt
 cookies*.txt
+instagram-cookies.txt
 favoriteweb_pc_config.ps1
 
 # Logs, sync conflicts, temporary backups

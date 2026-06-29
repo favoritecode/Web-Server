@@ -18,26 +18,33 @@ download = Blueprint("download", __name__)
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 COOKIES_FILE = os.path.join(BASE_DIR, "cookies.txt")
+INSTAGRAM_COOKIES_FILE = os.path.join(BASE_DIR, "instagram-cookies.txt")
 DOWNLOAD_JOBS = {}
 DOWNLOAD_JOBS_LOCK = threading.Lock()
 JOB_TTL_SECONDS = 6 * 60 * 60
 
 
-def _find_cookies():
-    """Find cookies.txt from multiple possible locations."""
-    candidates = [
+def _find_cookies(url=None):
+    """Find the best cookies file for the current media URL."""
+    candidates = []
+    if _is_instagram_url(url):
+        candidates.extend([
+            INSTAGRAM_COOKIES_FILE,
+            os.path.join(BASE_DIR, "instagram.cookies.txt"),
+        ])
+    candidates.extend([
         COOKIES_FILE,
         os.path.join(BASE_DIR, "ytplayer", "cookies.txt"),
         os.path.join(os.path.dirname(BASE_DIR), "cookies.txt"),
         "cookies.txt",
-    ]
+    ])
     for path in candidates:
         if os.path.exists(path):
             return path
     return None
 
 
-def _base_ydl_opts(extra=None):
+def _base_ydl_opts(extra=None, url=None):
     """Base yt-dlp options with cookies, headers, and error handling."""
     opts = {
         "quiet": True,
@@ -51,7 +58,7 @@ def _base_ydl_opts(extra=None):
         "noplaylist": True,
     }
 
-    cookies_path = _find_cookies()
+    cookies_path = _find_cookies(url)
     if cookies_path:
         opts["cookiefile"] = cookies_path
 
@@ -197,7 +204,7 @@ def _friendly_download_error(error_msg, url=None):
     ):
         return (
             "Instagram download needs fresh logged-in cookies. "
-            "Export only instagram.com cookies as cookies.txt and save it to E:\\web\\cookies.txt, then try again."
+            "Export only instagram.com cookies and save it to E:\\web\\instagram-cookies.txt, then try again."
         )
     return message[-700:]
 
@@ -468,7 +475,7 @@ def _extract_info_safe(url):
 
     for strategy in strategies:
         try:
-            opts = _base_ydl_opts({**strategy, "skip_download": True})
+            opts = _base_ydl_opts({**strategy, "skip_download": True}, url)
             with YoutubeDL(opts) as ydl:
                 return ydl.extract_info(url, download=False)
         except Exception as e:
@@ -649,7 +656,7 @@ def _download_progress_hook(job_id):
 def _run_server_download(url, requested_format, selected_type, selected_has_audio, force_compat, job_id=None):
     url = _normalize_media_url(url)
     is_instagram = _is_instagram_url(url)
-    cookies_path = _find_cookies()
+    cookies_path = _find_cookies(url)
     temp_dir = tempfile.mkdtemp(prefix="favoriteweb-download-")
     safe_title = "video"
 
@@ -659,7 +666,7 @@ def _run_server_download(url, requested_format, selected_type, selected_has_audi
             info_extra = {"skip_download": True}
             if is_instagram:
                 info_extra.update({"format": "best", "socket_timeout": 20, "http_headers": _instagram_headers()})
-            info_opts = _base_ydl_opts(info_extra)
+            info_opts = _base_ydl_opts(info_extra, url)
             with YoutubeDL(info_opts) as ydl:
                 info = ydl.extract_info(url, download=False)
             raw_title = info.get("title", "video")
@@ -691,7 +698,7 @@ def _run_server_download(url, requested_format, selected_type, selected_has_audi
             "nooverwrites": False,
             "concurrent_fragment_downloads": 4,
             "progress_hooks": [_download_progress_hook(job_id)],
-        })
+        }, url)
         if is_instagram:
             dl_opts.update({
                 "http_headers": _instagram_headers(),
