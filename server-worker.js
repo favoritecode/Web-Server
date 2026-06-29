@@ -1,4 +1,4 @@
-﻿import { OFFLINE_SEGMENT_BASE64 } from "./offline-segment.js";
+import { OFFLINE_SEGMENT_BASE64 } from "./offline-segment.js";
 
 // ============================================
 // server.favoriteweb.net - Auto Failover Worker
@@ -19,6 +19,7 @@ const OFFLINE_BACKEND_PLAYLIST = "/offline/index.m3u8";
 const AUTH_PATHS = ["/login", "/logout", "/login/callback"];
 const LONG_RUNNING_PATHS = [
   "/api/analytics/",
+  "/download/api",
   "/download/proxy",
   "/download/server-download",
   "/ytplayer/stream/",
@@ -439,6 +440,3 @@ export default {
     return proxyWithFailover(request);
   }
 };
-
-
-

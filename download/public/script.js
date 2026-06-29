@@ -34,7 +34,7 @@ let downloadStates = {};
 })();
 
 // ===================================================================
-// URL Parsing – spaces between links = separate URLs
+// URL Parsing - spaces between links = separate URLs
 // ===================================================================
 function getUrls() {
   const raw = document.getElementById("url").value;
@@ -75,22 +75,56 @@ async function loadInfo(url, index) {
     const res = await fetch("/download/api?url=" + encodeURIComponent(url));
     const data = await res.json();
     if (!res.ok || data.error) {
+      if (isSocialUrl(url)) return normalizeItem(socialFallbackData(url), url, index);
       return { inputUrl: url, index, error: data.error || "Video not available" };
     }
     return normalizeItem(data, url, index);
   } catch {
+    if (isSocialUrl(url)) return normalizeItem(socialFallbackData(url), url, index);
     return { inputUrl: url, index, error: "Could not load info" };
+  }
+}
+
+function isSocialUrl(url) {
+  return /(instagram\.com|facebook\.com|fb\.watch|pin\.it|pinterest\.com|tiktok\.com|youtu\.be|youtube\.com)/i.test(url || "");
+}
+
+function socialFallbackData(url) {
+  return {
+    title: /instagram\.com/i.test(url || "") ? "Instagram Video" : "Social Media Video",
+    thumbnail: "/assets/favorite-web-logo.png",
+    videos: [{ url: null, label: "Best Video + Audio (Server Download)", hasAudio: true, ext: "mp4", vcodec: "H.264" }],
+    audios: [],
+    _server_download: true,
+    normalized_url: normalizeClientUrl(url),
+  };
+}
+
+function normalizeClientUrl(url) {
+  try {
+    var u = new URL(url.indexOf("http") === 0 ? url : "https://" + url);
+    if (u.hostname === "l.instagram.com" && u.searchParams.get("u")) {
+      u = new URL(u.searchParams.get("u"));
+    }
+    if (/instagram\.com$/i.test(u.hostname)) {
+      var m = u.pathname.match(/^\/(reel|p|tv)\/([A-Za-z0-9_-]+)/);
+      if (m) return "https://www.instagram.com/" + m[1] + "/" + m[2] + "/";
+    }
+    return u.href;
+  } catch {
+    return url;
   }
 }
 
 function normalizeItem(data, inputUrl, index) {
   const videos = data.videos || (data.video ? [{ url: data.video, label: "Best video", hasAudio: true }] : data._server_download ? [{ url: null, label: "Best Video + Audio (Server Download)", hasAudio: true, ext: "mp4", vcodec: "H.264" }] : []);
   const audios = data.audios || (data.audio ? [{ url: data.audio, label: "Best audio" }] : []);
+  const downloadUrl = data.normalized_url || inputUrl;
   const options = [
     ...videos.map(function(item) { return { ...item, type: "Video" }; }),
     ...audios.map(function(item) { return { ...item, type: "Audio" }; }),
   ];
-  return { ...data, inputUrl, index, options, serverDownload: data._server_download === true };
+  return { ...data, inputUrl, downloadUrl, index, options, serverDownload: data._server_download === true };
 }
 
 // ===================================================================
@@ -143,7 +177,7 @@ function formatDuration(item) {
 
 function parseFilenameFromDisposition(disposition) {
   if (!disposition) return null;
-  // Try filename*=UTF-8''encoded_name (RFC 5987) first — highest priority
+  // Try filename*=UTF-8''encoded_name (RFC 5987) first - highest priority
   var starMatch = disposition.match(/filename\*\s*=\s*UTF-8''(.+)/i);
   if (starMatch) {
     try { return decodeURIComponent(starMatch[1].replace(/["';].*/,'').trim()); }
@@ -355,7 +389,7 @@ function startDownload(itemIndex, mode) {
   }
 
   if (mode === "convert" || item.serverDownload || !option.url || option.type === "Video") {
-    serverSideDownload(itemIndex, id, item.inputUrl, fullTitle, option, mode);
+    serverSideDownload(itemIndex, id, item.downloadUrl || item.inputUrl, fullTitle, option, mode);
   } else if (option.url) {
     // Determine extension from option
     var ext = (option.ext || "mp4");
@@ -363,13 +397,13 @@ function startDownload(itemIndex, mode) {
     var filenameWithTitle = fullTitle + "." + ext;
     if (option.hasAudio === false && item.audios && item.audios.length > 0) {
       // Video-only formats need server-side merge, but keep the selected quality.
-      serverSideDownload(itemIndex, id, item.inputUrl, fullTitle, option, mode);
+      serverSideDownload(itemIndex, id, item.downloadUrl || item.inputUrl, fullTitle, option, mode);
     } else {
       // Has audio already or audio only: proxy download directly
       fetchDownload(itemIndex, id, "/download/proxy?url=" + encodeURIComponent(option.url), filenameWithTitle, getKnownTotal(option));
     }
   } else {
-    serverSideDownload(itemIndex, id, item.inputUrl, fullTitle, option, mode);
+    serverSideDownload(itemIndex, id, item.downloadUrl || item.inputUrl, fullTitle, option, mode);
   }
 }
 
@@ -435,6 +469,7 @@ async function waitForServerJob(itemIndex, id, jobId) {
     var data = await response.json().catch(function() { return {}; });
 
     if (!response.ok || data.status === "error") {
+      updateProgressCustom(itemIndex, id, 0, data.error || "Download failed", "error");
       return null;
     }
 

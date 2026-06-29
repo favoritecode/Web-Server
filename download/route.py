@@ -168,6 +168,51 @@ def _normalize_media_url(url):
 
     return value
 
+
+def _is_instagram_url(url):
+    host = (urllib.parse.urlparse(url or "").netloc or "").lower()
+    return host.endswith("instagram.com") or host == "l.instagram.com"
+
+
+def _preview_from_page(url):
+    preview = {"title": None, "thumbnail": None}
+    try:
+        response = http_requests.get(url, timeout=10, headers=_request_headers(), allow_redirects=True)
+        if not response.ok:
+            return preview
+        text = response.text[:500_000]
+        title_match = re.search(r'<meta[^>]+property=["\']og:title["\'][^>]+content=["\']([^"\']+)', text, re.I)
+        image_match = re.search(r'<meta[^>]+property=["\']og:image["\'][^>]+content=["\']([^"\']+)', text, re.I)
+        if title_match:
+            preview["title"] = html_unescape(title_match.group(1))
+        if image_match:
+            preview["thumbnail"] = html_unescape(image_match.group(1))
+    except Exception:
+        pass
+    return preview
+
+
+def html_unescape(value):
+    return (value or "").replace("&amp;", "&").replace("&quot;", '"').replace("&#039;", "'").replace("&lt;", "<").replace("&gt;", ">")
+
+
+def _social_fallback_result(url, label="Best Video + Audio (Server Download)"):
+    normalized = _normalize_media_url(url)
+    preview = _preview_from_page(normalized)
+    is_instagram = _is_instagram_url(normalized)
+    return {
+        "title": preview.get("title") or ("Instagram Video" if is_instagram else "Social Media Video"),
+        "thumbnail": preview.get("thumbnail") or ("/assets/favorite-web-logo.png" if is_instagram else None),
+        "duration": None,
+        "duration_string": None,
+        "video": None,
+        "audio": None,
+        "videos": [{"url": None, "label": label, "hasAudio": True, "filesize": None, "quality": 0, "ext": "mp4", "vcodec": "H.264"}],
+        "audios": [],
+        "_server_download": True,
+        "normalized_url": normalized,
+    }
+
 def _sanitize_filename(name):
     """Remove or replace characters that are unsafe in filenames/headers."""
     name = unicodedata.normalize("NFKD", name)
@@ -381,12 +426,17 @@ def _extract_info_safe(url):
     url = _normalize_media_url(url)
     errors = []
 
-    strategies = [
-        {"format": "bestvideo+bestaudio/best", "merge_output_format": "mp4"},
-        {"format": "best"},
-        {"format": "mp4"},
-        {"format": "bestaudio/best"},
-    ]
+    if _is_instagram_url(url):
+        strategies = [
+            {"format": "best", "socket_timeout": 12, "retries": 1, "fragment_retries": 1, "extractor_retries": 1},
+        ]
+    else:
+        strategies = [
+            {"format": "bestvideo+bestaudio/best", "merge_output_format": "mp4"},
+            {"format": "best"},
+            {"format": "mp4"},
+            {"format": "bestaudio/best"},
+        ]
 
     for strategy in strategies:
         try:
@@ -436,17 +486,7 @@ def api():
         is_social = any(d in url.lower() for d in social_media_domains)
         
         if is_social:
-            return jsonify({
-                "title": "Social Media Video",
-                "thumbnail": None,
-                "duration": None,
-                "duration_string": None,
-                "video": None,
-                "audio": None,
-                "videos": [{"url": None, "label": "Best Video + Audio (Server Download)", "hasAudio": True, "filesize": None, "quality": 0, "ext": "mp4"}],
-                "audios": [],
-                "_server_download": True,
-            })
+            return jsonify(_social_fallback_result(url))
         
         if "Unsupported URL" in error_msg:
             return jsonify({"error": "Unsupported website or URL"}), 400
@@ -472,6 +512,7 @@ def api():
         "audio": best_audio["url"] if best_audio else None,
         "videos": videos,
         "audios": audios,
+        "normalized_url": url,
     })
 
 
