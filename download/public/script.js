@@ -107,8 +107,11 @@ function normalizeClientUrl(url) {
       u = new URL(u.searchParams.get("u"));
     }
     if (/instagram\.com$/i.test(u.hostname)) {
-      var m = u.pathname.match(/^\/(reel|p|tv)\/([A-Za-z0-9_-]+)/);
-      if (m) return "https://www.instagram.com/" + m[1] + "/" + m[2] + "/";
+      var m = u.pathname.match(/^\/(reels?|p|tv)\/([A-Za-z0-9_-]+)/);
+      if (m) {
+        var mediaType = m[1] === "reels" ? "reel" : m[1];
+        return "https://www.instagram.com/" + mediaType + "/" + m[2] + "/";
+      }
     }
     return u.href;
   } catch {

@@ -164,10 +164,12 @@ def _normalize_media_url(url):
 
     if host.endswith("instagram.com"):
         clean_path = parsed.path
-        media_match = re.match(r"^/(?:reel|p|tv)/([A-Za-z0-9_-]+)", clean_path)
+        media_match = re.match(r"^/(reels?|p|tv)/([A-Za-z0-9_-]+)", clean_path)
         if media_match:
-            media_type = clean_path.strip("/").split("/")[0]
-            return f"https://www.instagram.com/{media_type}/{media_match.group(1)}/"
+            media_type = media_match.group(1)
+            if media_type == "reels":
+                media_type = "reel"
+            return f"https://www.instagram.com/{media_type}/{media_match.group(2)}/"
 
     if video_id:
         clean_query = {"v": video_id}
