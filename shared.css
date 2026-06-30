@@ -53,7 +53,7 @@ body {
   grid-template-columns: auto minmax(420px, 1fr) minmax(220px, 320px) auto;
   align-items: center;
   gap: 18px;
-  padding: 10px 14px 10px 16px;
+  padding: 10px 34px;
   background: linear-gradient(180deg, rgba(13, 18, 34, 0.82), rgba(9, 13, 26, 0.7));
   border: 0;
   border-bottom: 1px solid var(--fw-border);
@@ -415,7 +415,7 @@ body {
     min-height: 64px;
     grid-template-columns: 48px minmax(0, 1fr) auto;
     gap: 8px;
-    padding: 9px 10px;
+    padding: 9px 12px;
   }
 
   .fw-menu-toggle {

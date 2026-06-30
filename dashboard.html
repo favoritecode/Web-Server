@@ -167,6 +167,29 @@
   color: #8ea1bd;
   margin-top: 5px;
 }
+.card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 12px;
+}
+.card-actions button,
+.card-actions a {
+  border: 1px solid rgba(96,165,250,0.22);
+  background: rgba(59,130,246,0.1);
+  color: #bfdbfe;
+  border-radius: 999px;
+  padding: 7px 10px;
+  text-decoration: none;
+  font-size: 12px;
+  font-weight: 750;
+  cursor: pointer;
+}
+.card-actions button.danger {
+  color: #fecdd3;
+  border-color: rgba(244,63,94,0.24);
+  background: rgba(244,63,94,0.1);
+}
 .stream-links {
   display: flex;
   flex-wrap: wrap;
@@ -281,14 +304,20 @@ async function loadFiles(path) {
       return;
     }
     box.innerHTML = items.slice(0, 12).map(function(item) {
-      var href = item.type === "folder" ? "#" : "/open/" + encodeURIComponent(item.path).replace(/%2F/g, "/");
-      var target = item.type === "folder" ? "" : ' target="_blank"';
+      var openHref = "/open/" + encodeURIComponent(item.path).replace(/%2F/g, "/");
       var folderAttr = item.type === "folder" ? ' data-folder="' + escapeHtml(item.path) + '"' : "";
-      return '<a class="preview-card" href="' + href + '"' + target + folderAttr + '>' +
+      var openAction = item.type === "folder"
+        ? '<button type="button" data-folder="' + escapeHtml(item.path) + '">Open</button>'
+        : '<a href="' + openHref + '" target="_blank">Open</a>';
+      return '<article class="preview-card"' + folderAttr + '>' +
         '<div class="icon">' + fileIcon(item) + '</div>' +
         '<strong>' + escapeHtml(item.name) + '</strong>' +
         '<span>' + escapeHtml(item.type) + '</span>' +
-      '</a>';
+        '<div class="card-actions">' + openAction +
+          '<button type="button" data-rename-file="' + escapeHtml(item.path) + '" data-current-name="' + escapeHtml(item.name) + '">Rename</button>' +
+          '<button type="button" class="danger" data-delete-file="' + escapeHtml(item.path) + '">Delete</button>' +
+        '</div>' +
+      '</article>';
     }).join("");
   } catch (e) {
     box.innerHTML = '<div class="empty-note" style="grid-column:1/-1">Could not load Cloud Drive.</div>';
@@ -310,10 +339,12 @@ async function loadStreams() {
       return '<article class="stream-row">' +
         '<strong>' + escapeHtml(item.source) + '</strong>' +
         '<small>ID: ' + escapeHtml(item.id) + '</small>' +
-        '<div class="stream-links">' +
+        '<div class="stream-links card-actions">' +
           '<a href="' + item.video + '" target="_blank">Video Stream</a>' +
           '<a href="' + item.audio + '" target="_blank">Audio Stream</a>' +
           '<a href="' + escapeHtml(item.source) + '" target="_blank">Source</a>' +
+          '<button type="button" data-edit-stream="' + escapeHtml(item.id) + '" data-source="' + escapeHtml(item.source) + '">Edit</button>' +
+          '<button type="button" class="danger" data-delete-stream="' + escapeHtml(item.id) + '">Delete</button>' +
         '</div>' +
       '</article>';
     }).join("");
@@ -322,11 +353,60 @@ async function loadStreams() {
     box.innerHTML = '<div class="empty-note">Could not load stream history.</div>';
   }
 }
-document.getElementById("filePreview").addEventListener("click", function(event) {
+document.getElementById("filePreview").addEventListener("click", async function(event) {
+  var renameBtn = event.target.closest("[data-rename-file]");
+  if (renameBtn) {
+    event.preventDefault();
+    var nextName = prompt("New name", renameBtn.getAttribute("data-current-name") || "");
+    if (!nextName) return;
+    await fetch("/api/files/rename", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: renameBtn.getAttribute("data-rename-file"), newName: nextName })
+    });
+    loadFiles(currentDrivePath);
+    return;
+  }
+  var deleteBtn = event.target.closest("[data-delete-file]");
+  if (deleteBtn) {
+    event.preventDefault();
+    if (!confirm("Delete this file or folder?")) return;
+    await fetch("/api/files/delete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: deleteBtn.getAttribute("data-delete-file") })
+    });
+    loadFiles(currentDrivePath);
+    return;
+  }
   var folderCard = event.target.closest("[data-folder]");
   if (!folderCard) return;
   event.preventDefault();
   loadFiles(folderCard.getAttribute("data-folder") || "");
+});
+document.getElementById("streamList").addEventListener("click", async function(event) {
+  var editBtn = event.target.closest("[data-edit-stream]");
+  if (editBtn) {
+    var nextSource = prompt("Update source URL", editBtn.getAttribute("data-source") || "");
+    if (!nextSource) return;
+    await fetch("/api/ytplayer/update", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: editBtn.getAttribute("data-edit-stream"), source: nextSource })
+    });
+    loadStreams();
+    return;
+  }
+  var deleteBtn = event.target.closest("[data-delete-stream]");
+  if (deleteBtn) {
+    if (!confirm("Delete this generated stream?")) return;
+    await fetch("/api/ytplayer/delete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: deleteBtn.getAttribute("data-delete-stream") })
+    });
+    loadStreams();
+  }
 });
 document.getElementById("driveBack").addEventListener("click", function() {
   var parent = currentDrivePath.split("/").slice(0, -1).join("/");

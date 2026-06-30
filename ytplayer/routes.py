@@ -4,7 +4,7 @@ import yt_dlp
 import requests
 import time
 import uuid
-from flask import request, jsonify, send_from_directory, Response
+from flask import request, jsonify, send_from_directory, Response, session
 
 BASE_DIR = os.path.dirname(__file__)
 PROJECT_DIR = os.path.dirname(BASE_DIR)
@@ -34,6 +34,18 @@ def save_videos(videos):
     with open(DATA_FILE, "w") as f:
         json.dump(videos, f, indent=2)
 
+
+
+def current_owner_key():
+    user = session.get("user") or {}
+    raw = user.get("email") or user.get("sub") or user.get("name") or "anonymous"
+    return "".join(ch if ch.isalnum() or ch in "_.-" else "_" for ch in raw).strip("._")[:120] or "anonymous"
+
+
+def record_url(record):
+    if isinstance(record, dict):
+        return record.get("url") or record.get("source")
+    return record
 
 def get_cookie_file():
     for path in (COOKIES_FILE, LOCAL_COOKIES_FILE):
@@ -101,7 +113,12 @@ def init_routes(app):
         videos = load_videos()
 
         video_id = str(int(time.time())) + "-" + uuid.uuid4().hex[:8]
-        videos[video_id] = url
+        videos[video_id] = {
+            "url": url,
+            "owner": current_owner_key(),
+            "title": url,
+            "created_at": int(time.time()),
+        }
 
         save_videos(videos)
 
@@ -118,7 +135,8 @@ def init_routes(app):
     def stream(id):
 
         videos = load_videos()
-        url = videos.get(id)
+        record = videos.get(id)
+        url = record_url(record)
 
         if not url:
             return "Video not found", 404
@@ -162,7 +180,8 @@ def init_routes(app):
     def play_audio(id):
 
         videos = load_videos()
-        url = videos.get(id)
+        record = videos.get(id)
+        url = record_url(record)
 
         if not url:
             return "Audio not found", 404

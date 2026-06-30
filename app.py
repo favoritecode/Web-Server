@@ -1,5 +1,5 @@
 from flask import Flask, send_from_directory, redirect, session, request, jsonify, Response
-import os, json, yt_dlp, requests
+import os, json, re, shutil, yt_dlp, requests
 
 try:
     import favoriteweb_local_secrets as local_secrets
@@ -40,6 +40,41 @@ FILE_ROOT = os.path.join(BASE_DIR, "file")
 
 if not os.path.exists(FILE_ROOT):
     os.makedirs(FILE_ROOT)
+
+
+def current_user_key():
+    user = session.get("user") or {}
+    raw = user.get("email") or user.get("sub") or user.get("name") or "user"
+    safe = re.sub(r"[^A-Za-z0-9_.-]+", "_", raw).strip("._")
+    return safe[:120] or "user"
+
+
+def current_user_file_root():
+    root = os.path.join(FILE_ROOT, "_users", current_user_key())
+    os.makedirs(root, exist_ok=True)
+    return root
+
+
+def safe_user_path(rel_path=""):
+    root = current_user_file_root()
+    rel_path = (rel_path or "").replace("\\", "/").lstrip("/")
+    full_path = os.path.abspath(os.path.join(root, rel_path))
+    try:
+        if os.path.commonpath([os.path.abspath(root), full_path]) != os.path.abspath(root):
+            return root, None
+    except ValueError:
+        return root, None
+    return root, full_path
+
+
+def public_origin():
+    public_host = (
+        request.headers.get("X-Public-Host")
+        or request.headers.get("X-Forwarded-Host")
+        or request.host
+    )
+    public_proto = request.headers.get("X-Public-Proto") or request.headers.get("X-Forwarded-Proto") or "https"
+    return f"{public_proto}://{public_host}"
 
 # =====================
 # GOOGLE LOGIN
@@ -155,7 +190,9 @@ def upload():
         if file.filename == "":
             continue
 
-        save_path = os.path.join(FILE_ROOT, file.filename)
+        root, save_path = safe_user_path(file.filename)
+        if not save_path:
+            continue
         os.makedirs(os.path.dirname(save_path), exist_ok=True)
         file.save(save_path)
 
@@ -173,10 +210,10 @@ def list_files():
         return jsonify({"error": "login required"}), 401
 
     path = request.args.get("path", "")
-    full_path = os.path.join(FILE_ROOT, path)
+    root, full_path = safe_user_path(path)
 
     # security
-    if not os.path.abspath(full_path).startswith(FILE_ROOT):
+    if not full_path:
         return jsonify({"error": "invalid path"})
 
     items = []
@@ -199,12 +236,56 @@ def list_files():
     })
 
 
+
+@app.route("/api/files/rename", methods=["POST"])
+def rename_file_item():
+    if "user" not in session:
+        return jsonify({"error": "login required"}), 401
+    data = request.get_json(silent=True) or {}
+    old_path = (data.get("path") or "").strip().replace("\\", "/").strip("/")
+    new_name = (data.get("newName") or "").strip()
+    if not old_path or not new_name or "/" in new_name or "\\" in new_name:
+        return jsonify({"error": "Invalid name"}), 400
+    root, old_full = safe_user_path(old_path)
+    parent_rel = "/".join(old_path.split("/")[:-1])
+    _, parent_full = safe_user_path(parent_rel)
+    new_full = os.path.abspath(os.path.join(parent_full, new_name))
+    if not old_full or not old_full.startswith(root) or not new_full.startswith(root):
+        return jsonify({"error": "Invalid path"}), 400
+    if not os.path.exists(old_full):
+        return jsonify({"error": "Not found"}), 404
+    if os.path.exists(new_full):
+        return jsonify({"error": "Name already exists"}), 409
+    os.rename(old_full, new_full)
+    return jsonify({"status": "ok"})
+
+
+@app.route("/api/files/delete", methods=["POST"])
+def delete_file_item():
+    if "user" not in session:
+        return jsonify({"error": "login required"}), 401
+    data = request.get_json(silent=True) or {}
+    rel_path = (data.get("path") or "").strip().replace("\\", "/").strip("/")
+    if not rel_path:
+        return jsonify({"error": "Invalid path"}), 400
+    root, full_path = safe_user_path(rel_path)
+    if not full_path or full_path == root or not full_path.startswith(root):
+        return jsonify({"error": "Invalid path"}), 400
+    if not os.path.exists(full_path):
+        return jsonify({"error": "Not found"}), 404
+    if os.path.isdir(full_path):
+        shutil.rmtree(full_path)
+    else:
+        os.remove(full_path)
+    return jsonify({"status": "ok"})
+
 @app.route("/open/<path:filename>")
 def open_file(filename):
+    if "user" not in session:
+        return redirect("/login")
 
-    file_path = os.path.join(FILE_ROOT, filename)
-
-    if not os.path.exists(file_path):
+    root, file_path = safe_user_path(filename)
+    if not file_path or not os.path.exists(file_path):
         return "Not Found", 404
 
     mime, _ = mimetypes.guess_type(file_path)
@@ -212,24 +293,31 @@ def open_file(filename):
     if mime and mime.startswith("video"):
         return redirect(f"/stream/{filename}")
 
-    elif mime and (mime.startswith("image") or mime == "application/pdf"):
-        return send_from_directory(FILE_ROOT, filename)
+    if mime and (mime.startswith("image") or mime == "application/pdf"):
+        return send_from_directory(root, filename)
 
-    return send_from_directory(FILE_ROOT, filename, as_attachment=True)
-
+    return send_from_directory(root, filename, as_attachment=True)
 
 @app.route("/stream/<path:filename>")
 def stream_video(filename):
-    return send_from_directory(FILE_ROOT, filename)
-
+    if "user" not in session:
+        return redirect("/login")
+    root, file_path = safe_user_path(filename)
+    if not file_path or not os.path.exists(file_path):
+        return "Not Found", 404
+    return send_from_directory(root, filename)
 # =====================
 # DOWNLOAD
 # =====================
 
 @app.route("/file/<path:filename>")
 def download(filename):
-    return send_from_directory(FILE_ROOT, filename)
-
+    if "user" not in session:
+        return redirect("/login")
+    root, file_path = safe_user_path(filename)
+    if not file_path or not os.path.exists(file_path):
+        return "Not Found", 404
+    return send_from_directory(root, filename)
 # =====================
 # API: USER INFO
 # =====================
@@ -263,25 +351,82 @@ def ytplayer_history():
     except Exception:
         videos = {}
 
-    public_host = (
-        request.headers.get("X-Public-Host")
-        or request.headers.get("X-Forwarded-Host")
-        or request.host
-    )
-    public_proto = request.headers.get("X-Public-Proto") or request.headers.get("X-Forwarded-Proto") or "https"
-    base = f"{public_proto}://{public_host}"
-
+    base = public_origin()
+    owner = current_user_key()
     streams = []
-    for stream_id, source in reversed(list(videos.items())):
+    for stream_id, record in reversed(list(videos.items())):
+        if isinstance(record, dict):
+            source = record.get("url") or record.get("source") or ""
+            record_owner = record.get("owner")
+            title = record.get("title") or source
+        else:
+            source = str(record or "")
+            record_owner = None
+            title = source
+        if record_owner != owner:
+            continue
         streams.append({
             "id": stream_id,
             "source": source,
+            "title": title,
             "video": f"{base}/ytplayer/stream/{stream_id}",
             "audio": f"{base}/ytplayer/play/{stream_id}",
         })
 
     return jsonify({"streams": streams})
 
+
+@app.route("/api/ytplayer/update", methods=["POST"])
+def ytplayer_update():
+    if "user" not in session:
+        return jsonify({"error": "login required"}), 401
+    data = request.get_json(silent=True) or {}
+    stream_id = str(data.get("id") or "")
+    source = (data.get("source") or "").strip()
+    if not stream_id or not source:
+        return jsonify({"error": "Invalid stream"}), 400
+
+    data_path = os.path.join(BASE_DIR, "ytplayer", "videos.json")
+    try:
+        with open(data_path, "r", encoding="utf-8") as f:
+            videos = json.load(f)
+    except Exception:
+        videos = {}
+
+    record = videos.get(stream_id)
+    if not isinstance(record, dict) or record.get("owner") != current_user_key():
+        return jsonify({"error": "Not found"}), 404
+    record["url"] = source
+    record["title"] = source
+    videos[stream_id] = record
+    with open(data_path, "w", encoding="utf-8") as f:
+        json.dump(videos, f, indent=2)
+    return jsonify({"status": "ok"})
+
+
+@app.route("/api/ytplayer/delete", methods=["POST"])
+def ytplayer_delete():
+    if "user" not in session:
+        return jsonify({"error": "login required"}), 401
+    data = request.get_json(silent=True) or {}
+    stream_id = str(data.get("id") or "")
+    if not stream_id:
+        return jsonify({"error": "Invalid stream"}), 400
+
+    data_path = os.path.join(BASE_DIR, "ytplayer", "videos.json")
+    try:
+        with open(data_path, "r", encoding="utf-8") as f:
+            videos = json.load(f)
+    except Exception:
+        videos = {}
+
+    record = videos.get(stream_id)
+    if not isinstance(record, dict) or record.get("owner") != current_user_key():
+        return jsonify({"error": "Not found"}), 404
+    videos.pop(stream_id, None)
+    with open(data_path, "w", encoding="utf-8") as f:
+        json.dump(videos, f, indent=2)
+    return jsonify({"status": "ok"})
 @app.route("/logout")
 def logout():
     session.pop("user", None)
