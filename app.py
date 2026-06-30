@@ -121,6 +121,24 @@ def upload_page():
         return redirect("/login")
     return send_from_directory(BASE_DIR, "upload.html")
 
+@app.route("/dashboard")
+def dashboard_page():
+    if "user" not in session:
+        return redirect("/login")
+    return redirect("/upload")
+
+@app.route("/profile")
+def profile_page():
+    if "user" not in session:
+        return redirect("/login")
+    return send_from_directory(BASE_DIR, "account.html")
+
+@app.route("/settings")
+def settings_page():
+    if "user" not in session:
+        return redirect("/login")
+    return send_from_directory(BASE_DIR, "account.html")
+
 # =====================
 # UPLOAD API
 # =====================

@@ -7,7 +7,6 @@ const NAV_ITEMS = [
   { href: "/ytplayer/", label: "YT Stream" },
   { href: "/ocr", label: "OCR" },
   { href: "/analytics", label: "Web Analyzer" },
-  { href: "https://favoriteweb.net/", label: "Favorite Multimedia", external: true },
 ];
 
 function getCurrentPage() {
@@ -54,9 +53,9 @@ function buildAuthArea(user) {
             ${avatarMarkup(user)}
             <div><strong>${name}</strong><span>${email}</span></div>
           </div>
-          <a href="/upload#profile" role="menuitem">View Profile</a>
-          <a href="/upload" role="menuitem">Open Dashboard</a>
-          <a href="/upload#settings" role="menuitem">Settings</a>
+          <a href="/profile" role="menuitem">View Profile</a>
+          <a href="/dashboard" role="menuitem">Open Dashboard</a>
+          <a href="/settings" role="menuitem">Settings</a>
           <a href="/logout" role="menuitem" class="danger">Logout</a>
         </div>
       </div>`;
