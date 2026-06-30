@@ -113,6 +113,34 @@
   color: #8ea1bd;
   font-size: 13px;
 }
+.dashboard-upload-zone {
+  border: 1px dashed rgba(148, 163, 184, 0.22);
+  border-radius: 14px;
+  background: rgba(255,255,255,0.035);
+  padding: 18px;
+  margin-bottom: 16px;
+}
+.dashboard-upload-zone.drag-over {
+  border-color: rgba(56,189,248,0.5);
+  background: rgba(56,189,248,0.08);
+}
+.upload-inline-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+}
+.upload-inline-actions p {
+  color: #9aa7bd;
+  font-size: 13px;
+}
+.upload-status {
+  margin-top: 10px;
+  min-height: 18px;
+  color: #7dd3fc;
+  font-size: 13px;
+}
 .file-preview-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
@@ -236,7 +264,7 @@
         <p>Manage your uploaded files and review generated YouTube stream links from one place.</p>
       </div>
       <div class="dash-actions">
-        <a class="dash-btn primary" href="/upload">Manage Cloud Drive</a>
+        <a class="dash-btn primary" href="/drive">Open Drive</a>
         <a class="dash-btn" href="/ytplayer/">Generate Stream</a>
       </div>
     </section>
@@ -252,9 +280,21 @@
       <div class="dash-panel">
         <div class="panel-head">
           <div><h2>Cloud Drive</h2><p>Browse uploaded files and folders here. Open File Manager for upload and full management.</p><p id="drivePath" style="margin-top:8px;color:#7dd3fc">Path: /</p></div>
-          <div class="panel-actions"><button class="dash-btn" id="driveBack" type="button" style="display:none">Back</button><a class="dash-btn primary" href="/upload">Open File Manager</a></div>
+          <div class="panel-actions"><button class="dash-btn" id="driveBack" type="button" style="display:none">Back</button><a class="dash-btn primary" href="/drive">Open Drive</a></div>
         </div>
-        <div id="filePreview" class="file-preview-grid"><div class="empty-note">Loading files...</div></div>
+                  <div class="dashboard-upload-zone" id="dashboardUploadZone">
+            <div class="upload-inline-actions">
+              <p>Drop files here or choose files/folder. These uploads stay in your dashboard.</p>
+              <div class="panel-actions">
+                <button class="dash-btn primary" type="button" id="dashboardFileBtn">Upload Files</button>
+                <button class="dash-btn" type="button" id="dashboardFolderBtn">Upload Folder</button>
+              </div>
+            </div>
+            <input type="file" id="dashboardFileInput" multiple hidden>
+            <input type="file" id="dashboardFolderInput" webkitdirectory hidden>
+            <div class="upload-status" id="dashboardUploadStatus"></div>
+          </div>
+          <div id="filePreview" class="file-preview-grid"><div class="empty-note">Loading files...</div></div>
       </div>
 
       <div class="dash-panel">
@@ -283,6 +323,24 @@ function fileIcon(item) {
   return "&#128196;";
 }
 var currentDrivePath = "";
+async function uploadDashboardFiles(files) {
+  if (!files || !files.length) return;
+  var form = new FormData();
+  for (var i = 0; i < files.length; i += 1) {
+    form.append("files", files[i], files[i].webkitRelativePath || files[i].name);
+  }
+  var status = document.getElementById("dashboardUploadStatus");
+  status.textContent = "Uploading " + files.length + " file(s)...";
+  try {
+    var res = await fetch("/upload", { method: "POST", body: form });
+    if (res.status === 401) { location.href = "/login"; return; }
+    status.textContent = res.ok ? "Upload complete." : "Upload failed.";
+    loadFiles(currentDrivePath);
+  } catch (e) {
+    status.textContent = "Upload failed.";
+  }
+}
+
 async function loadFiles(path) {
   path = path || "";
   var box = document.getElementById("filePreview");
@@ -353,6 +411,34 @@ async function loadStreams() {
     box.innerHTML = '<div class="empty-note">Could not load stream history.</div>';
   }
 }
+document.getElementById("dashboardFileBtn").addEventListener("click", function() {
+  document.getElementById("dashboardFileInput").click();
+});
+document.getElementById("dashboardFolderBtn").addEventListener("click", function() {
+  document.getElementById("dashboardFolderInput").click();
+});
+document.getElementById("dashboardFileInput").addEventListener("change", function() {
+  uploadDashboardFiles(this.files);
+  this.value = "";
+});
+document.getElementById("dashboardFolderInput").addEventListener("change", function() {
+  uploadDashboardFiles(this.files);
+  this.value = "";
+});
+var dashboardUploadZone = document.getElementById("dashboardUploadZone");
+dashboardUploadZone.addEventListener("dragover", function(event) {
+  event.preventDefault();
+  dashboardUploadZone.classList.add("drag-over");
+});
+dashboardUploadZone.addEventListener("dragleave", function() {
+  dashboardUploadZone.classList.remove("drag-over");
+});
+dashboardUploadZone.addEventListener("drop", function(event) {
+  event.preventDefault();
+  dashboardUploadZone.classList.remove("drag-over");
+  uploadDashboardFiles(event.dataTransfer.files);
+});
+
 document.getElementById("filePreview").addEventListener("click", async function(event) {
   var renameBtn = event.target.closest("[data-rename-file]");
   if (renameBtn) {

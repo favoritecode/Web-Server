@@ -34,7 +34,7 @@ def inject_user():
 
 app.config["MAX_CONTENT_LENGTH"] = 2 * 1024 * 1024 * 1024
 
-# âœ… FIXED PATH (MAIN FIX)
+# Fixed path configuration
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 FILE_ROOT = os.path.join(BASE_DIR, "file")
 
@@ -67,6 +67,25 @@ def safe_user_path(rel_path=""):
     return root, full_path
 
 
+
+def safe_drive_path(rel_path=""):
+    rel_path = (rel_path or "").replace("\\", "/").strip("/")
+    if rel_path == "Users" or rel_path.startswith("Users/"):
+        rel_path = "_users" + rel_path[5:]
+    full_path = os.path.abspath(os.path.join(FILE_ROOT, rel_path))
+    try:
+        if os.path.commonpath([os.path.abspath(FILE_ROOT), full_path]) != os.path.abspath(FILE_ROOT):
+            return None
+    except ValueError:
+        return None
+    return full_path
+
+
+def drive_display_path(rel_path=""):
+    rel_path = (rel_path or "").replace("\\", "/").strip("/")
+    if rel_path == "_users" or rel_path.startswith("_users/"):
+        return "Users" + rel_path[6:]
+    return rel_path
 def public_origin():
     public_host = (
         request.headers.get("X-Public-Host")
@@ -144,7 +163,7 @@ def callback():
     resp = google.get("https://www.googleapis.com/oauth2/v3/userinfo")
     session["user"] = resp.json()
     session.permanent = True
-    return redirect("/upload")
+    return redirect("/drive")
 
 # =====================
 # UPLOAD PAGE
@@ -152,6 +171,12 @@ def callback():
 
 @app.route("/upload")
 def upload_page():
+    if "user" not in session:
+        return redirect("/login")
+    return redirect("/drive")
+
+@app.route("/drive")
+def drive_page():
     if "user" not in session:
         return redirect("/login")
     return send_from_directory(BASE_DIR, "upload.html")
@@ -182,7 +207,7 @@ def settings_page():
 def upload():
 
     if "user" not in session:
-        return jsonify({"error": "login required"})
+        return jsonify({"error": "login required"}), 401
 
     files = request.files.getlist("files")
 
@@ -199,7 +224,7 @@ def upload():
     return jsonify({"status": "ok"})
 
 # =====================
-# ðŸ”¥ FILE LIST FIX (ONLY THIS CHANGED)
+# File list APIs
 # =====================
 
 import mimetypes
@@ -278,6 +303,49 @@ def delete_file_item():
     else:
         os.remove(full_path)
     return jsonify({"status": "ok"})
+
+
+@app.route("/api/drive/files")
+def list_drive_files():
+    if "user" not in session:
+        return jsonify({"error": "login required"}), 401
+
+    raw_path = (request.args.get("path", "") or "").replace("\\", "/").strip("/")
+    full_path = safe_drive_path(raw_path)
+    if not full_path:
+        return jsonify({"error": "invalid path"}), 400
+
+    items = []
+    if os.path.exists(full_path):
+        for name in os.listdir(full_path):
+            if not raw_path and name == "_users":
+                item_name = "Users"
+                rel_path = "Users"
+                item_path = os.path.join(full_path, name)
+            else:
+                item_name = name
+                rel_path = "/".join(part for part in [raw_path, name] if part)
+                item_path = os.path.join(full_path, name)
+            items.append({
+                "name": item_name,
+                "path": drive_display_path(rel_path),
+                "type": "folder" if os.path.isdir(item_path) else "file"
+            })
+
+    return jsonify({"current": drive_display_path(raw_path), "items": items})
+
+
+@app.route("/drive/open/<path:filename>")
+def drive_open_file(filename):
+    if "user" not in session:
+        return redirect("/login")
+    file_path = safe_drive_path(filename)
+    if not file_path or not os.path.exists(file_path) or os.path.isdir(file_path):
+        return "Not Found", 404
+    real_root = os.path.dirname(file_path)
+    real_name = os.path.basename(file_path)
+    mime, _ = mimetypes.guess_type(file_path)
+    return send_from_directory(real_root, real_name, as_attachment=not (mime and (mime.startswith("image") or mime == "application/pdf")))
 
 @app.route("/open/<path:filename>")
 def open_file(filename):
@@ -447,7 +515,7 @@ if analytics_backend_path.exists():
     analytics_spec.loader.exec_module(analytics_module)
     analytics_module.init_routes(app, Path(BASE_DIR))
 # =========================
-# ðŸ”¥ ALL OLD ROUTES BACK (IMPORTANT)
+# All old routes
 # =========================
 
 from ocr.routes import init_routes
@@ -467,7 +535,7 @@ yt_routes(app)
 # =====================
 
 if __name__ == "__main__":
-    # ðŸ”¥ FIX: Disable Werkzeug's Host header validation (for Cloudflare tunnel)
+    # Disable Werkzeug host validation for Cloudflare tunnel
     # When running behind cloudflared, the Host header is the external domain
     # (e.g. khan.favoriteweb.net) which Werkzeug rejects as "not localhost".
     # Waitress does NOT have this validation, so it works perfectly.
@@ -510,6 +578,7 @@ if __name__ == "__main__":
         
         print("[WARN] Waitress not found, using Werkzeug dev server")
         app.run(host="0.0.0.0", port=8000, debug=False, use_reloader=False)
+
 
 
 

@@ -259,19 +259,19 @@
 
 <div class="main-content">
   <div class="upload-hero">
-    <h1>☁️ Cloud Drive</h1>
-    <p>Upload, store, and manage your files securely</p>
+    <h1>&#9729;&#65039; Cloud Drive</h1>
+    <p>Browse files uploaded by all users. New uploads are saved to your own account folder.</p>
   </div>
 
   <div class="upload-panel">
     <!-- Upload Zone -->
     <div class="upload-zone" id="dropZone">
-      <div class="upload-icon">📤</div>
+      <div class="upload-icon">&#128228;</div>
       <h3>Drag & Drop Files Here</h3>
       <p>Or click the button below to select files</p>
       <div>
-        <button class="browse-btn" onclick="document.getElementById('fileInput').click()">📁 Browse Files</button>
-        <button class="browse-btn" style="background:rgba(255,255,255,0.08);margin-left:8px" onclick="document.getElementById('folderInput').click()">📂 Browse Folder</button>
+        <button class="browse-btn" onclick="document.getElementById('fileInput').click()">&#128193; Browse Files</button>
+        <button class="browse-btn" style="background:rgba(255,255,255,0.08);margin-left:8px" onclick="document.getElementById('folderInput').click()">&#128194; Browse Folder</button>
       </div>
       <input type="file" id="fileInput" multiple hidden>
       <input type="file" id="folderInput" webkitdirectory hidden>
@@ -284,16 +284,16 @@
     <!-- Toolbar -->
     <div class="toolbar">
       <div class="left">
-        <button id="backBtn" style="display:none;background:rgba(255,255,255,0.06);color:#9ca3af" onclick="goBack()">⬅ Back</button>
-        <span class="path-display">📍 <span id="currentPath">/</span></span>
+        <button id="backBtn" style="display:none;background:rgba(255,255,255,0.06);color:#9ca3af" onclick="goBack()">&#11013; Back</button>
+        <span class="path-display">&#128205; <span id="currentPath">/</span></span>
       </div>
-      <button class="btn-upload" onclick="document.getElementById('fileInput').click()">📤 Upload</button>
+      <button class="btn-upload" onclick="document.getElementById('fileInput').click()">&#128228; Upload</button>
     </div>
 
     <!-- File Grid -->
     <div id="fileGrid" class="file-grid">
       <div class="empty-state">
-        <div class="empty-icon">📂</div>
+        <div class="empty-icon">&#128194;</div>
         <h3>No files yet</h3>
         <p>Drag & drop files or use the upload button above</p>
       </div>
@@ -356,11 +356,11 @@ async function uploadFiles(files) {
       }
     }
     progressFill.style.width = "100%";
-    progressText.textContent = "✅ Upload complete!";
+    progressText.textContent = "Upload complete!";
     setTimeout(() => { uploadProgress.style.display = "none"; }, 1500);
     loadFiles(currentPath);
   } catch (err) {
-    progressText.textContent = "❌ Upload failed";
+    progressText.textContent = "Upload failed";
     progressFill.style.width = "0%";
   }
 }
@@ -368,7 +368,7 @@ async function uploadFiles(files) {
 // ------ Load Files ------
 async function loadFiles(path) {
   try {
-    const res = await fetch("/api/files?path=" + encodeURIComponent(path));
+    const res = await fetch("/api/drive/files?path=" + encodeURIComponent(path));
     if (!res.ok) throw new Error("Failed");
     const data = await res.json();
 
@@ -379,7 +379,7 @@ async function loadFiles(path) {
     if (!data.items || data.items.length === 0) {
       fileGrid.innerHTML = `
         <div class="empty-state" style="grid-column:1/-1">
-          <div class="empty-icon">📂</div>
+        <div class="empty-icon">&#128194;</div>
           <h3>This folder is empty</h3>
           <p>Upload files to get started</p>
         </div>`;
@@ -392,8 +392,8 @@ async function loadFiles(path) {
     if (currentPath) {
       const parent = currentPath.split("/").slice(0, -1).join("/");
       html += `
-        <div class="file-card" onclick="loadFiles('${parent}')">
-          <span class="file-icon">📂</span>
+        <div class="file-card" data-folder="${escapeHtml(parent)}">
+          <span class="file-icon">&#128194;</span>
           <div class="file-name">.. (Parent)</div>
           <span class="file-type-badge folder">Back</span>
         </div>`;
@@ -402,8 +402,8 @@ async function loadFiles(path) {
     data.items.forEach(item => {
       if (item.type === "folder") {
         html += `
-          <div class="file-card" onclick="loadFiles('${item.path}')">
-            <span class="file-icon">📁</span>
+          <div class="file-card" data-folder="${escapeHtml(item.path)}">
+            <span class="file-icon">&#128193;</span>
             <div class="file-name">${escapeHtml(item.name)}</div>
             <span class="file-type-badge folder">Folder</span>
           </div>`;
@@ -411,7 +411,7 @@ async function loadFiles(path) {
         const ext = item.name.split(".").pop().toLowerCase();
         const icon = getFileIcon(ext);
         html += `
-          <a class="file-card" href="/open/${item.path}" target="_blank">
+          <a class="file-card" href="/drive/open/${encodePath(item.path)}" target="_blank">
             <span class="file-icon">${icon}</span>
             <div class="file-name">${escapeHtml(item.name)}</div>
             <span class="file-type-badge file">${ext.toUpperCase()}</span>
@@ -421,7 +421,7 @@ async function loadFiles(path) {
 
     fileGrid.innerHTML = html;
   } catch (err) {
-    fileGrid.innerHTML = `<div class="empty-state" style="grid-column:1/-1;color:#f87171">❌ Failed to load files</div>`;
+    fileGrid.innerHTML = `<div class="empty-state" style="grid-column:1/-1;color:#f87171">Failed to load files</div>`;
   }
 }
 
@@ -432,15 +432,19 @@ function goBack() {
 
 function getFileIcon(ext) {
   const map = {
-    mp4: "🎬", mkv: "🎬", avi: "🎬", mov: "🎬", webm: "🎬",
-    mp3: "🎵", wav: "🎵", flac: "🎵", m4a: "🎵", ogg: "🎵",
-    jpg: "🖼️", jpeg: "🖼️", png: "🖼️", gif: "🖼️", svg: "🖼️", webp: "🖼️",
-    pdf: "📄", doc: "📝", docx: "📝", xls: "📊", xlsx: "📊",
-    zip: "🗜️", rar: "🗜️", "7z": "🗜️", tar: "🗜️", gz: "🗜️",
-    txt: "📃",
-    html: "🌐", css: "🎨", js: "⚡", json: "📋", py: "🐍",
+    mp4: "&#127909;", mkv: "&#127909;", avi: "&#127909;", mov: "&#127909;", webm: "&#127909;",
+    mp3: "&#127925;", wav: "&#127925;", flac: "&#127925;", m4a: "&#127925;", ogg: "&#127925;",
+    jpg: "&#128444;", jpeg: "&#128444;", png: "&#128444;", gif: "&#128444;", svg: "&#128444;", webp: "&#128444;",
+    pdf: "&#128196;", doc: "&#128221;", docx: "&#128221;", xls: "&#128202;", xlsx: "&#128202;",
+    zip: "&#128451;", rar: "&#128451;", "7z": "&#128451;", tar: "&#128451;", gz: "&#128451;",
+    txt: "&#128195;",
+    html: "&#127760;", css: "&#127912;", js: "&#9889;", json: "&#128203;", py: "&#128013;",
   };
-  return map[ext] || "📄";
+  return map[ext] || "&#128196;";
+}
+
+function encodePath(path) {
+  return encodeURIComponent(path || '').replace(/%2F/g, '/');
 }
 
 function escapeHtml(str) {
@@ -451,6 +455,12 @@ function escapeHtml(str) {
     .replace(/>/g, "&" + "gt;")
     .replace(/"/g, "&" + "quot;");
 }
+
+fileGrid.addEventListener('click', (event) => {
+  const folderCard = event.target.closest('[data-folder]');
+  if (!folderCard) return;
+  loadFiles(folderCard.getAttribute('data-folder') || '');
+});
 
 // Initial load - empty string = root directory
 loadFiles("");
