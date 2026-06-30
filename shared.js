@@ -1,56 +1,103 @@
 // ============ SHARED NAVBAR & FOOTER ============
 
-// Current page active state
 const NAV_ITEMS = [
   { href: "/", label: "Home" },
   { href: "/download", label: "Download" },
-  { href: "/upload", label: "Cloud Drive" },
+  { href: "/upload", label: "Cloud Drive", requiresAuth: true },
   { href: "/ytplayer/", label: "YT Stream" },
   { href: "/ocr", label: "OCR" },
   { href: "/analytics", label: "Web Analyzer" },
+  { href: "https://favoriteweb.net/", label: "Favorite Multimedia", external: true },
 ];
 
 function getCurrentPage() {
   const path = window.location.pathname;
   if (path === "/" || path === "") return "/";
   for (const item of NAV_ITEMS) {
-    if (path.startsWith(item.href) && item.href !== "/") return item.href;
+    if (!item.external && item.href !== "/" && path.startsWith(item.href)) return item.href;
   }
   return "/";
 }
 
-function buildNavbar(user) {
+function resolveNavHref(item, user) {
+  if (item.requiresAuth && !(user && user.logged_in)) return "/login";
+  return item.href;
+}
+
+function buildNavLinks(user, className) {
   const current = getCurrentPage();
-  let linksHtml = "";
+  return NAV_ITEMS.map((item) => {
+    const active = !item.external && current === item.href ? " active" : "";
+    const target = item.external ? ' target="_blank" rel="noopener"' : "";
+    return `<a class="${className}${active}" href="${resolveNavHref(item, user)}"${target}>${escapeHtml(item.label)}</a>`;
+  }).join("");
+}
 
-  for (const item of NAV_ITEMS) {
-    const active = current === item.href ? ' class="active"' : "";
-    const href = item.href === "/upload" && !(user && user.logged_in) ? "/login" : item.href;
-    linksHtml += `<a href="${href}"${active}>${item.label}</a>`;
+function avatarMarkup(user) {
+  if (user && user.picture) {
+    return `<img src="${escapeHtml(user.picture)}" class="fw-user-avatar" alt="">`;
   }
+  return `<img src="/assets/favorite-web-logo.png" class="fw-user-avatar" alt="">`;
+}
 
+function buildAuthArea(user) {
   if (user && user.logged_in) {
-    const avatar = user.picture
-      ? `<img src="${escapeHtml(user.picture)}" class="user-avatar" alt="">`
-      : "";
-    linksHtml +=
-      `<a href="/upload" class="login-btn" style="display:inline-flex;align-items:center;gap:4px">${avatar}${escapeHtml(user.name || "Account")}</a>` +
-      `<a href="/logout" class="logout-btn">Logout</a>`;
-  } else {
-    linksHtml += `<a href="/login" class="login-btn">Login</a>`;
+    const name = escapeHtml(user.name || "FavoriteWeb User");
+    const email = escapeHtml(user.email || "Signed in");
+    return `
+      <div class="fw-user-menu">
+        <button class="fw-avatar-button" type="button" aria-label="Open account menu" aria-expanded="false">
+          ${avatarMarkup(user)}
+        </button>
+        <div class="fw-user-dropdown" role="menu">
+          <div class="fw-user-summary">
+            ${avatarMarkup(user)}
+            <div><strong>${name}</strong><span>${email}</span></div>
+          </div>
+          <a href="/upload#profile" role="menuitem">View Profile</a>
+          <a href="/upload" role="menuitem">Open Dashboard</a>
+          <a href="/upload#settings" role="menuitem">Settings</a>
+          <a href="/logout" role="menuitem" class="danger">Logout</a>
+        </div>
+      </div>`;
   }
+  return `<a href="/login" class="fw-login-button">Login</a>`;
+}
 
+function buildSearch(className) {
   return `
-<nav class="navbar">
-  <a href="https://favoriteweb.net/" class="logo"><img src="/assets/favorite-web-logo.png" alt="Favorite Web"><span>FavoriteWeb</span></a>
-  <div class="nav-links">${linksHtml}</div>
-</nav>`;
+    <label class="${className}">
+      <span aria-hidden="true"></span>
+      <input class="fw-tool-search-input" type="search" placeholder="Search tools..." autocomplete="off" aria-label="Search tools">
+    </label>`;
+}
+
+function buildNavbar(user) {
+  return `
+<header class="fw-nav-shell">
+  <nav class="fw-navbar" aria-label="FavoriteWeb navigation">
+    <button class="fw-menu-toggle" type="button" aria-label="Open menu" aria-expanded="false">
+      <span></span><span></span><span></span>
+    </button>
+    <a href="https://favoriteweb.net/" class="fw-logo" aria-label="FavoriteWeb">
+      <img src="/assets/favorite-web-logo.png" alt="Favorite Web">
+      <span>FavoriteWeb</span>
+    </a>
+    <div class="fw-desktop-links">${buildNavLinks(user, "fw-nav-link")}</div>
+    ${buildSearch("fw-search fw-desktop-search")}
+    <div class="fw-auth-area">${buildAuthArea(user)}</div>
+  </nav>
+  <div class="fw-mobile-panel" id="fwMobilePanel">
+    ${buildSearch("fw-search fw-mobile-search")}
+    <div class="fw-mobile-links">${buildNavLinks(user, "fw-mobile-link")}</div>
+  </div>
+</header>`;
 }
 
 function buildFooter() {
   return `
 <footer class="site-footer">
-  <p>Copyright © <a href="https://favoriteweb.net/">Favorite Web</a> All Right Reserved</p>
+  <p>Copyright &copy; <a href="https://favoriteweb.net/">Favorite Web</a> All Right Reserved</p>
 </footer>`;
 }
 
@@ -64,31 +111,102 @@ function escapeHtml(str) {
     .replace(/'/g, "&" + "#039;");
 }
 
-// Inject navbar/footer into page
+function initToolSearch() {
+  const inputs = Array.from(document.querySelectorAll(".fw-tool-search-input"));
+  if (!inputs.length) return;
+
+  const cards = Array.from(document.querySelectorAll(".service-card"));
+  if (!cards.length) {
+    inputs.forEach((input) => { input.disabled = true; });
+    return;
+  }
+
+  const grid = document.querySelector(".services-grid");
+  let empty = document.querySelector(".fw-no-tools");
+  if (grid && !empty) {
+    empty = document.createElement("div");
+    empty.className = "fw-no-tools";
+    empty.textContent = "No matching tools found.";
+    grid.insertAdjacentElement("afterend", empty);
+  }
+
+  function applySearch(value) {
+    const query = value.trim().toLowerCase();
+    let visible = 0;
+
+    cards.forEach((card) => {
+      const text = [card.textContent, card.getAttribute("href"), card.dataset.keywords].join(" ").toLowerCase();
+      const match = !query || text.includes(query);
+      card.classList.toggle("fw-card-hidden", !match);
+      if (match) visible += 1;
+    });
+
+    if (empty) empty.classList.toggle("show", visible === 0);
+    inputs.forEach((input) => {
+      if (input.value !== value) input.value = value;
+    });
+  }
+
+  inputs.forEach((input) => {
+    input.addEventListener("input", () => applySearch(input.value));
+  });
+}
+
+function initNavbarInteractions() {
+  const shell = document.querySelector(".fw-nav-shell");
+  const toggle = document.querySelector(".fw-menu-toggle");
+  const avatar = document.querySelector(".fw-avatar-button");
+  const dropdown = document.querySelector(".fw-user-dropdown");
+
+  if (toggle && shell) {
+    toggle.addEventListener("click", () => {
+      const open = shell.classList.toggle("mobile-open");
+      toggle.setAttribute("aria-expanded", String(open));
+    });
+  }
+
+  if (avatar && dropdown) {
+    avatar.addEventListener("click", (event) => {
+      event.stopPropagation();
+      const open = dropdown.classList.toggle("open");
+      avatar.setAttribute("aria-expanded", String(open));
+    });
+  }
+
+  document.addEventListener("click", (event) => {
+    if (dropdown && !event.target.closest(".fw-user-menu")) {
+      dropdown.classList.remove("open");
+      if (avatar) avatar.setAttribute("aria-expanded", "false");
+    }
+    if (shell && toggle && !event.target.closest(".fw-nav-shell")) {
+      shell.classList.remove("mobile-open");
+      toggle.setAttribute("aria-expanded", "false");
+    }
+  });
+
+  document.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape") return;
+    if (dropdown) dropdown.classList.remove("open");
+    if (avatar) avatar.setAttribute("aria-expanded", "false");
+    if (shell) shell.classList.remove("mobile-open");
+    if (toggle) toggle.setAttribute("aria-expanded", "false");
+  });
+}
+
 async function initSharedLayout() {
-  // Fetch user state
   let user = { logged_in: false };
   try {
-    const res = await fetch("/api/user");
+    const res = await fetch("/api/user", { cache: "no-store" });
     if (res.ok) user = await res.json();
   } catch (e) {}
 
-  // Build and inject navbar
-  const navbarHtml = buildNavbar(user);
-  const footerHtml = buildFooter();
+  document.body.insertAdjacentHTML("afterbegin", buildNavbar(user));
+  document.body.insertAdjacentHTML("beforeend", buildFooter());
 
-  // Insert at top of body
-  document.body.insertAdjacentHTML("afterbegin", navbarHtml);
-
-  // Insert at bottom of body
-  document.body.insertAdjacentHTML("beforeend", footerHtml);
-
-  // Wrap existing body content in main-content div (if not already)
   const existingContent = document.querySelector(".app-shell, .main-content");
   if (!existingContent) {
     const children = Array.from(document.body.children);
-    // Find all elements between nav and footer
-    const nav = document.querySelector(".navbar");
+    const nav = document.querySelector(".fw-nav-shell");
     const footer = document.querySelector(".site-footer");
     const toWrap = [];
     let foundNav = false;
@@ -101,13 +219,14 @@ async function initSharedLayout() {
       const wrapper = document.createElement("div");
       wrapper.className = "main-content";
       for (const el of toWrap) wrapper.appendChild(el);
-      // Re-insert after nav
       nav.insertAdjacentElement("afterend", wrapper);
     }
   }
+
+  initNavbarInteractions();
+  initToolSearch();
 }
 
-// Run on DOM ready
 if (document.readyState === "loading") {
   document.addEventListener("DOMContentLoaded", initSharedLayout);
 } else {
