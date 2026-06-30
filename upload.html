@@ -260,26 +260,10 @@
 <div class="main-content">
   <div class="upload-hero">
     <h1>&#9729;&#65039; Cloud Drive</h1>
-    <p>Browse files uploaded by all users. New uploads are saved to your own account folder.</p>
+    <p>Browse files uploaded by all users. Upload new files from your dashboard.</p>
   </div>
 
   <div class="upload-panel">
-    <!-- Upload Zone -->
-    <div class="upload-zone" id="dropZone">
-      <div class="upload-icon">&#128228;</div>
-      <h3>Drag & Drop Files Here</h3>
-      <p>Or click the button below to select files</p>
-      <div>
-        <button class="browse-btn" onclick="document.getElementById('fileInput').click()">&#128193; Browse Files</button>
-        <button class="browse-btn" style="background:rgba(255,255,255,0.08);margin-left:8px" onclick="document.getElementById('folderInput').click()">&#128194; Browse Folder</button>
-      </div>
-      <input type="file" id="fileInput" multiple hidden>
-      <input type="file" id="folderInput" webkitdirectory hidden>
-      <div class="upload-progress" id="uploadProgress" style="display:none">
-        <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
-        <div class="progress-text" id="progressText">Uploading...</div>
-      </div>
-    </div>
 
     <!-- Toolbar -->
     <div class="toolbar">
@@ -287,7 +271,6 @@
         <button id="backBtn" style="display:none;background:rgba(255,255,255,0.06);color:#9ca3af" onclick="goBack()">&#11013; Back</button>
         <span class="path-display">&#128205; <span id="currentPath">/</span></span>
       </div>
-      <button class="btn-upload" onclick="document.getElementById('fileInput').click()">&#128228; Upload</button>
     </div>
 
     <!-- File Grid -->
@@ -295,7 +278,7 @@
       <div class="empty-state">
         <div class="empty-icon">&#128194;</div>
         <h3>No files yet</h3>
-        <p>Drag & drop files or use the upload button above</p>
+        <p>Open your dashboard to upload files</p>
       </div>
     </div>
   </div>
@@ -305,66 +288,9 @@
 // ============ FILE SYSTEM ============
 let currentPath = "";
 
-const dropZone = document.getElementById("dropZone");
-const fileInput = document.getElementById("fileInput");
-const folderInput = document.getElementById("folderInput");
 const fileGrid = document.getElementById("fileGrid");
 const currentPathEl = document.getElementById("currentPath");
 const backBtn = document.getElementById("backBtn");
-const uploadProgress = document.getElementById("uploadProgress");
-const progressFill = document.getElementById("progressFill");
-const progressText = document.getElementById("progressText");
-
-// ------ Drag & Drop ------
-dropZone.addEventListener("dragover", e => {
-  e.preventDefault();
-  dropZone.classList.add("drag-over");
-});
-
-dropZone.addEventListener("dragleave", () => {
-  dropZone.classList.remove("drag-over");
-});
-
-dropZone.addEventListener("drop", e => {
-  e.preventDefault();
-  dropZone.classList.remove("drag-over");
-  const files = e.dataTransfer.files;
-  if (files.length > 0) uploadFiles(files);
-});
-
-fileInput.onchange = () => { if (fileInput.files.length > 0) uploadFiles(fileInput.files); };
-folderInput.onchange = () => { if (folderInput.files.length > 0) uploadFiles(folderInput.files); };
-
-// ------ Upload ------
-async function uploadFiles(files) {
-  const form = new FormData();
-  for (let i = 0; i < files.length; i++) {
-    form.append("files", files[i], files[i].webkitRelativePath || files[i].name);
-  }
-
-  uploadProgress.style.display = "block";
-  progressFill.style.width = "0%";
-  progressText.textContent = `Uploading ${files.length} file(s)...`;
-
-  try {
-    const res = await fetch("/upload", { method: "POST", body: form });
-    if (!res.ok) {
-      const data = await res.json();
-      if (data.error === "login required") {
-        window.location.href = "/login";
-        return;
-      }
-    }
-    progressFill.style.width = "100%";
-    progressText.textContent = "Upload complete!";
-    setTimeout(() => { uploadProgress.style.display = "none"; }, 1500);
-    loadFiles(currentPath);
-  } catch (err) {
-    progressText.textContent = "Upload failed";
-    progressFill.style.width = "0%";
-  }
-}
-
 // ------ Load Files ------
 async function loadFiles(path) {
   try {
@@ -381,7 +307,7 @@ async function loadFiles(path) {
         <div class="empty-state" style="grid-column:1/-1">
         <div class="empty-icon">&#128194;</div>
           <h3>This folder is empty</h3>
-          <p>Upload files to get started</p>
+          <p>This folder is empty</p>
         </div>`;
       return;
     }

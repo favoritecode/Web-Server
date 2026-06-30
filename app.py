@@ -285,6 +285,32 @@ def rename_file_item():
     return jsonify({"status": "ok"})
 
 
+
+@app.route("/api/files/move", methods=["POST"])
+def move_file_item():
+    if "user" not in session:
+        return jsonify({"error": "login required"}), 401
+    data = request.get_json(silent=True) or {}
+    rel_path = (data.get("path") or "").strip().replace("\\", "/").strip("/")
+    dest_path = (data.get("destination") or "").strip().replace("\\", "/").strip("/")
+    if not rel_path:
+        return jsonify({"error": "Invalid path"}), 400
+    root, source_full = safe_user_path(rel_path)
+    _, dest_full = safe_user_path(dest_path)
+    if not source_full or not dest_full or not source_full.startswith(root) or not dest_full.startswith(root):
+        return jsonify({"error": "Invalid path"}), 400
+    if source_full == root or not os.path.exists(source_full):
+        return jsonify({"error": "Not found"}), 404
+    if not os.path.isdir(dest_full):
+        return jsonify({"error": "Destination folder not found"}), 404
+    target_full = os.path.abspath(os.path.join(dest_full, os.path.basename(source_full)))
+    if not target_full.startswith(root) or target_full == source_full or target_full.startswith(source_full + os.sep):
+        return jsonify({"error": "Invalid destination"}), 400
+    if os.path.exists(target_full):
+        return jsonify({"error": "Destination already has this name"}), 409
+    shutil.move(source_full, target_full)
+    return jsonify({"status": "ok"})
+
 @app.route("/api/files/delete", methods=["POST"])
 def delete_file_item():
     if "user" not in session:

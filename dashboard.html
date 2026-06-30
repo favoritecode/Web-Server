@@ -176,6 +176,84 @@
   text-transform: uppercase;
   font-weight: 800;
 }
+.upload-picker { position: relative; }
+.upload-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  min-width: 170px;
+  padding: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 12px;
+  background: rgba(15, 23, 42, 0.96);
+  box-shadow: 0 18px 50px rgba(0,0,0,0.34);
+  display: none;
+  z-index: 20;
+}
+.upload-menu.open { display: grid; gap: 6px; }
+.upload-menu button {
+  width: 100%;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: #dbeafe;
+  cursor: pointer;
+  font-weight: 750;
+  padding: 10px 12px;
+  text-align: left;
+}
+.upload-menu button:hover { background: rgba(59,130,246,0.14); }
+.preview-card {
+  position: relative;
+  cursor: pointer;
+  transition: border-color 0.2s ease, background 0.2s ease, transform 0.2s ease;
+}
+.preview-card:hover {
+  border-color: rgba(56,189,248,0.34);
+  background: rgba(255,255,255,0.065);
+  transform: translateY(-1px);
+}
+.file-menu-button {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 32px;
+  height: 32px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 999px;
+  background: rgba(15,23,42,0.74);
+  color: #dbeafe;
+  cursor: pointer;
+  font-size: 20px;
+  line-height: 1;
+}
+.file-menu {
+  position: absolute;
+  top: 46px;
+  right: 10px;
+  min-width: 138px;
+  padding: 7px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 12px;
+  background: rgba(15,23,42,0.97);
+  box-shadow: 0 16px 46px rgba(0,0,0,0.36);
+  display: none;
+  z-index: 15;
+}
+.file-menu.open { display: grid; gap: 5px; }
+.file-menu button {
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #dbeafe;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 750;
+  padding: 8px 10px;
+  text-align: left;
+}
+.file-menu button:hover { background: rgba(59,130,246,0.14); }
+.file-menu button.danger { color: #fecdd3; }
 .stream-list {
   display: grid;
   gap: 12px;
@@ -282,18 +360,21 @@
           <div><h2>Cloud Drive</h2><p>Browse uploaded files and folders here. Open File Manager for upload and full management.</p><p id="drivePath" style="margin-top:8px;color:#7dd3fc">Path: /</p></div>
           <div class="panel-actions"><button class="dash-btn" id="driveBack" type="button" style="display:none">Back</button><a class="dash-btn primary" href="/drive">Open Drive</a></div>
         </div>
-                  <div class="dashboard-upload-zone" id="dashboardUploadZone">
-            <div class="upload-inline-actions">
-              <p>Drop files here or choose files/folder. These uploads stay in your dashboard.</p>
-              <div class="panel-actions">
-                <button class="dash-btn primary" type="button" id="dashboardFileBtn">Upload Files</button>
-                <button class="dash-btn" type="button" id="dashboardFolderBtn">Upload Folder</button>
+        <div class="dashboard-upload-zone" id="dashboardUploadZone">
+          <div class="upload-inline-actions">
+            <p>Drop files or folders here. Use Upload for manual file/folder selection.</p>
+            <div class="upload-picker">
+              <button class="dash-btn primary" type="button" id="dashboardUploadBtn">Upload</button>
+              <div class="upload-menu" id="dashboardUploadMenu">
+                <button type="button" id="dashboardFileBtn">File Upload</button>
+                <button type="button" id="dashboardFolderBtn">Folder Upload</button>
               </div>
             </div>
-            <input type="file" id="dashboardFileInput" multiple hidden>
-            <input type="file" id="dashboardFolderInput" webkitdirectory hidden>
-            <div class="upload-status" id="dashboardUploadStatus"></div>
           </div>
+          <input type="file" id="dashboardFileInput" multiple hidden>
+          <input type="file" id="dashboardFolderInput" webkitdirectory multiple hidden>
+          <div class="upload-status" id="dashboardUploadStatus"></div>
+        </div>
           <div id="filePreview" class="file-preview-grid"><div class="empty-note">Loading files...</div></div>
       </div>
 
@@ -323,14 +404,65 @@ function fileIcon(item) {
   return "&#128196;";
 }
 var currentDrivePath = "";
+
+function encodePath(path) {
+  return encodeURIComponent(path || "").replace(/%2F/g, "/");
+}
+
+async function entryToUploads(entry, prefix) {
+  prefix = prefix || "";
+  if (!entry) return [];
+  if (entry.isFile) {
+    return new Promise(function(resolve) {
+      entry.file(function(file) {
+        resolve([{ file: file, path: prefix + file.name }]);
+      }, function() { resolve([]); });
+    });
+  }
+  if (!entry.isDirectory) return [];
+  var reader = entry.createReader();
+  var entries = [];
+  async function readAll() {
+    var batch = await new Promise(function(resolve) { reader.readEntries(resolve); });
+    if (!batch.length) return;
+    entries = entries.concat(batch);
+    await readAll();
+  }
+  await readAll();
+  var results = [];
+  for (var i = 0; i < entries.length; i += 1) {
+    var child = await entryToUploads(entries[i], prefix + entry.name + "/");
+    results = results.concat(child);
+  }
+  return results;
+}
+
+async function collectDroppedUploads(dataTransfer) {
+  var items = Array.from(dataTransfer.items || []);
+  if (!items.length || !items[0].webkitGetAsEntry) {
+    return Array.from(dataTransfer.files || []).map(function(file) { return { file: file, path: file.name }; });
+  }
+  var uploads = [];
+  for (var i = 0; i < items.length; i += 1) {
+    var entry = items[i].webkitGetAsEntry();
+    var found = await entryToUploads(entry, "");
+    uploads = uploads.concat(found);
+  }
+  return uploads;
+}
+
 async function uploadDashboardFiles(files) {
   if (!files || !files.length) return;
+  var uploads = Array.from(files).map(function(item) {
+    if (item.file) return item;
+    return { file: item, path: item.webkitRelativePath || item.name };
+  });
   var form = new FormData();
-  for (var i = 0; i < files.length; i += 1) {
-    form.append("files", files[i], files[i].webkitRelativePath || files[i].name);
-  }
+  uploads.forEach(function(item) {
+    form.append("files", item.file, item.path || item.file.name);
+  });
   var status = document.getElementById("dashboardUploadStatus");
-  status.textContent = "Uploading " + files.length + " file(s)...";
+  status.textContent = "Uploading " + uploads.length + " item(s)...";
   try {
     var res = await fetch("/upload", { method: "POST", body: form });
     if (res.status === 401) { location.href = "/login"; return; }
@@ -358,23 +490,22 @@ async function loadFiles(path) {
     document.getElementById("folderCount").textContent = folders;
     document.getElementById("fileCount").textContent = files;
     if (!items.length) {
-      box.innerHTML = '<div class="empty-note" style="grid-column:1/-1">No files yet. Open Cloud Drive to upload files.</div>';
+      box.innerHTML = '<div class="empty-note" style="grid-column:1/-1">No files yet. Upload files from this dashboard.</div>';
       return;
     }
     box.innerHTML = items.slice(0, 12).map(function(item) {
-      var openHref = "/open/" + encodeURIComponent(item.path).replace(/%2F/g, "/");
-      var folderAttr = item.type === "folder" ? ' data-folder="' + escapeHtml(item.path) + '"' : "";
-      var openAction = item.type === "folder"
-        ? '<button type="button" data-folder="' + escapeHtml(item.path) + '">Open</button>'
-        : '<a href="' + openHref + '" target="_blank">Open</a>';
-      return '<article class="preview-card"' + folderAttr + '>' +
+      var openHref = "/open/" + encodePath(item.path);
+      var openAttr = item.type === "folder" ? ' data-folder="' + escapeHtml(item.path) + '"' : ' data-open="' + openHref + '"';
+      return '<article class="preview-card"' + openAttr + '>' +
+        '<button class="file-menu-button" type="button" data-menu-button aria-label="File options">&#8942;</button>' +
+        '<div class="file-menu">' +
+          '<button type="button" data-rename-file="' + escapeHtml(item.path) + '" data-current-name="' + escapeHtml(item.name) + '">Rename</button>' +
+          '<button type="button" data-move-file="' + escapeHtml(item.path) + '">Move</button>' +
+          '<button type="button" class="danger" data-delete-file="' + escapeHtml(item.path) + '">Delete</button>' +
+        '</div>' +
         '<div class="icon">' + fileIcon(item) + '</div>' +
         '<strong>' + escapeHtml(item.name) + '</strong>' +
         '<span>' + escapeHtml(item.type) + '</span>' +
-        '<div class="card-actions">' + openAction +
-          '<button type="button" data-rename-file="' + escapeHtml(item.path) + '" data-current-name="' + escapeHtml(item.name) + '">Rename</button>' +
-          '<button type="button" class="danger" data-delete-file="' + escapeHtml(item.path) + '">Delete</button>' +
-        '</div>' +
       '</article>';
     }).join("");
   } catch (e) {
@@ -411,10 +542,17 @@ async function loadStreams() {
     box.innerHTML = '<div class="empty-note">Could not load stream history.</div>';
   }
 }
+var uploadMenu = document.getElementById("dashboardUploadMenu");
+document.getElementById("dashboardUploadBtn").addEventListener("click", function(event) {
+  event.stopPropagation();
+  uploadMenu.classList.toggle("open");
+});
 document.getElementById("dashboardFileBtn").addEventListener("click", function() {
+  uploadMenu.classList.remove("open");
   document.getElementById("dashboardFileInput").click();
 });
 document.getElementById("dashboardFolderBtn").addEventListener("click", function() {
+  uploadMenu.classList.remove("open");
   document.getElementById("dashboardFolderInput").click();
 });
 document.getElementById("dashboardFileInput").addEventListener("change", function() {
@@ -433,16 +571,35 @@ dashboardUploadZone.addEventListener("dragover", function(event) {
 dashboardUploadZone.addEventListener("dragleave", function() {
   dashboardUploadZone.classList.remove("drag-over");
 });
-dashboardUploadZone.addEventListener("drop", function(event) {
+dashboardUploadZone.addEventListener("drop", async function(event) {
   event.preventDefault();
   dashboardUploadZone.classList.remove("drag-over");
-  uploadDashboardFiles(event.dataTransfer.files);
+  var uploads = await collectDroppedUploads(event.dataTransfer);
+  uploadDashboardFiles(uploads);
 });
 
+document.addEventListener("click", function(event) {
+  if (!event.target.closest(".upload-picker")) uploadMenu.classList.remove("open");
+  if (!event.target.closest(".preview-card")) {
+    document.querySelectorAll(".file-menu.open").forEach(function(menu) { menu.classList.remove("open"); });
+  }
+});
 document.getElementById("filePreview").addEventListener("click", async function(event) {
+  var menuButton = event.target.closest("[data-menu-button]");
+  if (menuButton) {
+    event.preventDefault();
+    event.stopPropagation();
+    var menu = menuButton.parentElement.querySelector(".file-menu");
+    document.querySelectorAll(".file-menu.open").forEach(function(openMenu) {
+      if (openMenu !== menu) openMenu.classList.remove("open");
+    });
+    menu.classList.toggle("open");
+    return;
+  }
   var renameBtn = event.target.closest("[data-rename-file]");
   if (renameBtn) {
     event.preventDefault();
+    event.stopPropagation();
     var nextName = prompt("New name", renameBtn.getAttribute("data-current-name") || "");
     if (!nextName) return;
     await fetch("/api/files/rename", {
@@ -453,9 +610,24 @@ document.getElementById("filePreview").addEventListener("click", async function(
     loadFiles(currentDrivePath);
     return;
   }
+  var moveBtn = event.target.closest("[data-move-file]");
+  if (moveBtn) {
+    event.preventDefault();
+    event.stopPropagation();
+    var destination = prompt("Move to folder path. Leave blank for root.", currentDrivePath || "");
+    if (destination === null) return;
+    await fetch("/api/files/move", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: moveBtn.getAttribute("data-move-file"), destination: destination })
+    });
+    loadFiles(currentDrivePath);
+    return;
+  }
   var deleteBtn = event.target.closest("[data-delete-file]");
   if (deleteBtn) {
     event.preventDefault();
+    event.stopPropagation();
     if (!confirm("Delete this file or folder?")) return;
     await fetch("/api/files/delete", {
       method: "POST",
@@ -465,10 +637,15 @@ document.getElementById("filePreview").addEventListener("click", async function(
     loadFiles(currentDrivePath);
     return;
   }
-  var folderCard = event.target.closest("[data-folder]");
-  if (!folderCard) return;
-  event.preventDefault();
-  loadFiles(folderCard.getAttribute("data-folder") || "");
+  var card = event.target.closest(".preview-card");
+  if (!card) return;
+  var folderPath = card.getAttribute("data-folder");
+  if (folderPath !== null) {
+    loadFiles(folderPath || "");
+    return;
+  }
+  var openHref = card.getAttribute("data-open");
+  if (openHref) window.open(openHref, "_blank");
 });
 document.getElementById("streamList").addEventListener("click", async function(event) {
   var editBtn = event.target.closest("[data-edit-stream]");
