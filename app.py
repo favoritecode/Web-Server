@@ -1,5 +1,5 @@
 from flask import Flask, send_from_directory, redirect, session, request, jsonify, Response
-import os, yt_dlp, requests
+import os, json, yt_dlp, requests
 
 try:
     import favoriteweb_local_secrets as local_secrets
@@ -125,7 +125,7 @@ def upload_page():
 def dashboard_page():
     if "user" not in session:
         return redirect("/login")
-    return redirect("/upload")
+    return send_from_directory(BASE_DIR, "dashboard.html")
 
 @app.route("/profile")
 def profile_page():
@@ -249,6 +249,38 @@ def api_user():
 # =====================
 # LOGOUT
 # =====================
+
+
+@app.route("/api/ytplayer/history")
+def ytplayer_history():
+    if "user" not in session:
+        return jsonify({"error": "login required"}), 401
+
+    data_path = os.path.join(BASE_DIR, "ytplayer", "videos.json")
+    try:
+        with open(data_path, "r", encoding="utf-8") as f:
+            videos = json.load(f)
+    except Exception:
+        videos = {}
+
+    public_host = (
+        request.headers.get("X-Public-Host")
+        or request.headers.get("X-Forwarded-Host")
+        or request.host
+    )
+    public_proto = request.headers.get("X-Public-Proto") or request.headers.get("X-Forwarded-Proto") or "https"
+    base = f"{public_proto}://{public_host}"
+
+    streams = []
+    for stream_id, source in reversed(list(videos.items())):
+        streams.append({
+            "id": stream_id,
+            "source": source,
+            "video": f"{base}/ytplayer/stream/{stream_id}",
+            "audio": f"{base}/ytplayer/play/{stream_id}",
+        })
+
+    return jsonify({"streams": streams})
 
 @app.route("/logout")
 def logout():
