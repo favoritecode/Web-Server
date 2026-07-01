@@ -114,6 +114,37 @@
   color: #8ea1bd;
   font-size: 13px;
 }
+.drive-panel-actions {
+  align-items: flex-start;
+  justify-content: flex-end;
+}
+.drive-account-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(86px, 1fr));
+  gap: 8px;
+  min-width: 252px;
+}
+.drive-account-summary span {
+  display: block;
+  padding: 9px 10px;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  border-radius: 12px;
+  background: rgba(255,255,255,0.045);
+}
+.drive-account-summary b {
+  display: block;
+  color: #8ea1bd;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.drive-account-summary strong {
+  display: block;
+  margin-top: 3px;
+  color: #edf2ff;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
 .dashboard-upload-zone {
   border: 1px dashed rgba(148, 163, 184, 0.22);
   border-radius: 14px;
@@ -331,6 +362,8 @@
   .dash-hero h1 { font-size: 28px; }
   .metrics-grid { grid-template-columns: 1fr; }
   .panel-head { flex-direction: column; }
+  .drive-panel-actions { width: 100%; }
+  .drive-account-summary { width: 100%; min-width: 0; }
 }
 </style>
 </head>
@@ -359,7 +392,15 @@
       <div class="dash-panel">
         <div class="panel-head">
           <div><h2>Cloud Drive</h2><p>Browse uploaded files and folders here. Open File Manager for upload and full management.</p><p id="drivePath" style="margin-top:8px;color:#7dd3fc">Path: /</p></div>
-          <div class="panel-actions"><button class="dash-btn" id="driveBack" type="button" style="display:none">Back</button><a class="dash-btn primary" href="/drive">Open Drive</a></div>
+          <div class="panel-actions drive-panel-actions">
+            <button class="dash-btn" id="driveBack" type="button" style="display:none">Back</button>
+            <div class="drive-account-summary">
+              <span><b>Role</b><strong id="dashRole">--</strong></span>
+              <span><b>Status</b><strong id="dashStatus">--</strong></span>
+              <span><b>Limit</b><strong id="dashQuota">--</strong></span>
+              <span><b>Usage</b><strong id="dashUsage">--</strong></span>
+            </div>
+          </div>
         </div>
         <div class="dashboard-upload-zone" id="dashboardUploadZone">
           <div class="upload-inline-actions">
@@ -405,6 +446,41 @@ function fileIcon(item) {
   return "&#128196;";
 }
 var currentDrivePath = "";
+
+function fmtBytes(bytes) {
+  bytes = Number(bytes || 0);
+  if (bytes < 1024) return bytes + " B";
+  var units = ["KB", "MB", "GB", "TB"];
+  var value = bytes / 1024;
+  var unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value = value / 1024;
+    unit += 1;
+  }
+  return (value >= 10 ? value.toFixed(1) : value.toFixed(2)).replace(/\.0+$/, "") + " " + units[unit];
+}
+
+function pretty(value) {
+  value = String(value || "").trim();
+  return value ? value.charAt(0).toUpperCase() + value.slice(1) : "User";
+}
+
+async function loadAccountSummary() {
+  try {
+    var res = await fetch("/api/user", { cache: "no-store" });
+    if (res.status === 401) { location.href = "/login"; return; }
+    var user = await res.json();
+    document.getElementById("dashRole").textContent = pretty(user.role || "user");
+    document.getElementById("dashStatus").textContent = pretty(user.status || "active");
+    document.getElementById("dashQuota").textContent = fmtBytes(user.quota_bytes || 0);
+    document.getElementById("dashUsage").textContent = fmtBytes(user.used_bytes || 0);
+  } catch (e) {
+    document.getElementById("dashRole").textContent = "--";
+    document.getElementById("dashStatus").textContent = "--";
+    document.getElementById("dashQuota").textContent = "--";
+    document.getElementById("dashUsage").textContent = "--";
+  }
+}
 
 function encodePath(path) {
   return encodeURIComponent(path || "").replace(/%2F/g, "/");
@@ -676,6 +752,7 @@ document.getElementById("driveBack").addEventListener("click", function() {
   var parent = currentDrivePath.split("/").slice(0, -1).join("/");
   loadFiles(parent);
 });
+loadAccountSummary();
 loadFiles("");
 loadStreams();
 </script>

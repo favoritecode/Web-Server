@@ -164,7 +164,10 @@
         <div class="info-list">
           <div class="info-row"><span>Name</span><span id="profileName">Loading...</span></div>
           <div class="info-row"><span>Email</span><span id="profileEmail">Loading...</span></div>
-          <div class="info-row"><span>Status</span><span>Signed in with Google</span></div>
+          <div class="info-row"><span>Role</span><span id="profileRole">Loading...</span></div>
+          <div class="info-row"><span>Status</span><span id="profileStatus">Loading...</span></div>
+          <div class="info-row"><span>Quota</span><span id="profileQuota">Loading...</span></div>
+          <div class="info-row"><span>Usage</span><span id="profileUsage">Loading...</span></div>
         </div>
         <div class="action-row">
           <a class="account-btn primary" href="/dashboard">Open Dashboard</a>
@@ -180,7 +183,7 @@
           </label>
           <label>Default Tool
             <select id="defaultTool">
-              <option value="/upload">Cloud Drive</option>
+              <option value="/drive">Cloud Drive</option>
               <option value="/download">Download</option>
               <option value="/ytplayer/">YT Stream</option>
               <option value="/ocr">OCR</option>
@@ -209,19 +212,41 @@
     subtitle.textContent = "Your signed-in FavoriteWeb profile and quick account actions.";
   }
 
+  function fmtBytes(bytes) {
+    bytes = Number(bytes || 0);
+    if (bytes < 1024) return bytes + " B";
+    var units = ["KB", "MB", "GB", "TB"];
+    var value = bytes / 1024;
+    var unit = 0;
+    while (value >= 1024 && unit < units.length - 1) {
+      value = value / 1024;
+      unit += 1;
+    }
+    return (value >= 10 ? value.toFixed(1) : value.toFixed(2)).replace(/\.0+$/, "") + " " + units[unit];
+  }
+
+  function pretty(value) {
+    value = String(value || "").trim();
+    return value ? value.charAt(0).toUpperCase() + value.slice(1) : "User";
+  }
+
   fetch("/api/user", { cache: "no-store" })
     .then(function(r) { return r.json(); })
     .then(function(user) {
       if (!user.logged_in) { window.location.href = "/login"; return; }
       document.getElementById("profileName").textContent = user.name || "FavoriteWeb User";
       document.getElementById("profileEmail").textContent = user.email || "No email available";
+      document.getElementById("profileRole").textContent = pretty(user.role || "user");
+      document.getElementById("profileStatus").textContent = pretty(user.status || "active");
+      document.getElementById("profileQuota").textContent = fmtBytes(user.quota_bytes || 0);
+      document.getElementById("profileUsage").textContent = fmtBytes(user.used_bytes || 0);
       if (user.picture) document.getElementById("profileImage").src = user.picture;
     })
     .catch(function() { window.location.href = "/login"; });
 
   var saved = JSON.parse(localStorage.getItem("favoritewebSettings") || "{}");
   document.getElementById("displayLabel").value = saved.displayLabel || "FavoriteWeb Dashboard";
-  document.getElementById("defaultTool").value = saved.defaultTool || "/upload";
+  document.getElementById("defaultTool").value = saved.defaultTool || "/drive";
   document.getElementById("settingsForm").addEventListener("submit", function(event) {
     event.preventDefault();
     var data = {
