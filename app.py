@@ -362,6 +362,7 @@ def admin_page():
 # UPLOAD API
 # =====================
 
+@app.route("/drive/upload", methods=["POST"])
 @app.route("/upload", methods=["POST"])
 def upload():
 
@@ -566,8 +567,18 @@ def drive_open_file(filename):
     real_root = os.path.dirname(file_path)
     real_name = os.path.basename(file_path)
     mime, _ = mimetypes.guess_type(file_path)
-    return send_from_directory(real_root, real_name, as_attachment=not (mime and (mime.startswith("image") or mime == "application/pdf")))
+    return send_from_directory(real_root, real_name, as_attachment=not (mime and (mime.startswith("image") or mime.startswith("video") or mime.startswith("audio") or mime == "application/pdf")))
 
+
+@app.route("/drive/download/<path:filename>")
+def drive_download_file(filename):
+    blocked = active_user_required_redirect()
+    if blocked:
+        return blocked
+    file_path = safe_drive_path(filename)
+    if not file_path or not os.path.exists(file_path) or os.path.isdir(file_path):
+        return "Not Found", 404
+    return send_from_directory(os.path.dirname(file_path), os.path.basename(file_path), as_attachment=True)
 @app.route("/open/<path:filename>")
 def open_file(filename):
     blocked = active_user_required_redirect()

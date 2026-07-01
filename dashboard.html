@@ -37,6 +37,7 @@
   gap: 10px;
 }
 .dash-btn {
+  white-space: nowrap;
   min-height: 42px;
   display: inline-flex;
   align-items: center;
@@ -464,7 +465,7 @@ async function uploadDashboardFiles(files) {
   var status = document.getElementById("dashboardUploadStatus");
   status.textContent = "Uploading " + uploads.length + " item(s)...";
   try {
-    var res = await fetch("/upload", { method: "POST", body: form });
+    var res = await fetch("/drive/upload", { method: "POST", body: form });
     if (res.status === 401) { location.href = "/login"; return; }
     status.textContent = res.ok ? "Upload complete." : "Upload failed.";
     loadFiles(currentDrivePath);

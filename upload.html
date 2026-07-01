@@ -368,12 +368,18 @@ async function loadFiles(path) {
         </div>`;
     }
 
-    const menuMarkup = (item) => isAdmin ? `<button class="file-menu-button" type="button" data-menu-button aria-label="File options">&#8942;</button><div class="file-menu"><button type="button" data-delete-drive="${escapeHtml(item.path)}">Delete</button></div>` : "";
+    const menuMarkup = (item) => {
+      const download = item.type === "file" ? `<button type="button" data-download-drive="${escapeHtml(item.path)}">Download</button>` : "";
+      const remove = isAdmin ? `<button type="button" class="danger" data-delete-drive="${escapeHtml(item.path)}">Delete</button>` : "";
+      if (!download && !remove) return "";
+      return `<button class="file-menu-button" type="button" data-menu-button aria-label="File options">&#8942;</button><div class="file-menu">${download}${remove}</div>`;
+    };
 
     data.items.forEach(item => {
       if (item.type === "folder") {
         html += `
           <div class="file-card" data-folder="${escapeHtml(item.path)}">
+            ${menuMarkup(item)}
             <span class="file-icon">&#128193;</span>
             <div class="file-name">${escapeHtml(item.name)}</div>
             <span class="file-type-badge folder">Folder</span>
@@ -382,11 +388,12 @@ async function loadFiles(path) {
         const ext = item.name.split(".").pop().toLowerCase();
         const icon = getFileIcon(ext);
         html += `
-          <a class="file-card" href="/drive/open/${encodePath(item.path)}" target="_blank">
+          <div class="file-card" data-open="/drive/open/${encodePath(item.path)}">
+            ${menuMarkup(item)}
             <span class="file-icon">${icon}</span>
             <div class="file-name">${escapeHtml(item.name)}</div>
             <span class="file-type-badge file">${ext.toUpperCase()}</span>
-          </a>`;
+          </div>`;
       }
     });
 
@@ -440,6 +447,14 @@ fileGrid.addEventListener('click', async (event) => {
     return;
   }
 
+  const downloadButton = event.target.closest('[data-download-drive]');
+  if (downloadButton) {
+    event.preventDefault();
+    event.stopPropagation();
+    window.open('/drive/download/' + encodePath(downloadButton.getAttribute('data-download-drive')), '_blank');
+    return;
+  }
+
   const deleteButton = event.target.closest('[data-delete-drive]');
   if (deleteButton) {
     event.preventDefault();
@@ -456,8 +471,13 @@ fileGrid.addEventListener('click', async (event) => {
   }
 
   const folderCard = event.target.closest('[data-folder]');
-  if (!folderCard) return;
-  loadFiles(folderCard.getAttribute('data-folder') || '');
+  if (folderCard) {
+    loadFiles(folderCard.getAttribute('data-folder') || '');
+    return;
+  }
+
+  const openCard = event.target.closest('[data-open]');
+  if (openCard) window.open(openCard.getAttribute('data-open'), '_blank');
 });
 
 document.addEventListener('click', (event) => {
