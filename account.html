@@ -64,6 +64,33 @@
   margin-bottom: 16px;
   color: #f8fbff;
 }
+.profile-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 18px;
+}
+.profile-summary span {
+  display: block;
+  padding: 11px 12px;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  border-radius: 12px;
+  background: rgba(255,255,255,0.045);
+}
+.profile-summary b {
+  display: block;
+  color: #8ea1bd;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.profile-summary strong {
+  display: block;
+  margin-top: 4px;
+  color: #edf2ff;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
 .info-list {
   display: grid;
   gap: 12px;
@@ -143,6 +170,7 @@
   .account-title h1 { font-size: 27px; }
   .account-avatar { width: 68px; height: 68px; }
   .account-grid { grid-template-columns: 1fr; }
+  .profile-summary { grid-template-columns: 1fr; }
   .info-row { grid-template-columns: 1fr; gap: 5px; }
 }
 </style>
@@ -160,14 +188,16 @@
 
     <section class="account-grid">
       <div class="account-panel" id="profilePanel">
+        <div class="profile-summary">
+          <span><b>Status</b><strong id="profileStatus">Loading...</strong></span>
+          <span><b>Quota</b><strong id="profileQuota">Loading...</strong></span>
+          <span><b>Usage</b><strong id="profileUsage">Loading...</strong></span>
+        </div>
         <h2>Profile Details</h2>
         <div class="info-list">
           <div class="info-row"><span>Name</span><span id="profileName">Loading...</span></div>
           <div class="info-row"><span>Email</span><span id="profileEmail">Loading...</span></div>
           <div class="info-row"><span>Role</span><span id="profileRole">Loading...</span></div>
-          <div class="info-row"><span>Status</span><span id="profileStatus">Loading...</span></div>
-          <div class="info-row"><span>Quota</span><span id="profileQuota">Loading...</span></div>
-          <div class="info-row"><span>Usage</span><span id="profileUsage">Loading...</span></div>
         </div>
         <div class="action-row">
           <a class="account-btn primary" href="/dashboard">Open Dashboard</a>

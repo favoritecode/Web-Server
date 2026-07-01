@@ -19,8 +19,8 @@
 .admin-toolbar { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:14px; }
 .admin-search { min-height:42px; width:min(360px,100%); border:1px solid rgba(148,163,184,.16); border-radius:12px; background:rgba(255,255,255,.06); color:#edf2ff; padding:0 12px; outline:none; }
 .user-table { display:grid; gap:10px; }
-.user-header { display:grid; grid-template-columns: minmax(220px,1.4fr) 96px 118px 118px 178px 76px; gap:10px; align-items:center; margin-bottom:10px; padding:12px 14px; border:1px solid rgba(148,163,184,.14); border-radius:14px; background:linear-gradient(135deg, rgba(59,130,246,.12), rgba(147,51,234,.09)); color:#bfdbfe; font-size:11px; font-weight:800; text-transform:uppercase; letter-spacing:.08em; box-shadow:inset 0 1px 0 rgba(255,255,255,.05); }
-.user-row { display:grid; grid-template-columns: minmax(220px,1.4fr) 96px 118px 118px 178px 76px; gap:10px; align-items:center; padding:14px; border:1px solid rgba(148,163,184,.12); border-radius:14px; background:rgba(255,255,255,.04); }
+.user-header { display:grid; grid-template-columns: minmax(220px,1.4fr) 96px 118px 108px 190px 76px; gap:10px; align-items:center; margin-bottom:10px; padding:12px 14px; border:1px solid rgba(148,163,184,.14); border-radius:14px; background:linear-gradient(135deg, rgba(59,130,246,.12), rgba(147,51,234,.09)); color:#bfdbfe; font-size:11px; font-weight:800; text-transform:uppercase; letter-spacing:.08em; box-shadow:inset 0 1px 0 rgba(255,255,255,.05); }
+.user-row { display:grid; grid-template-columns: minmax(220px,1.4fr) 96px 118px 108px 190px 76px; gap:10px; align-items:center; padding:14px; border:1px solid rgba(148,163,184,.12); border-radius:14px; background:rgba(255,255,255,.04); }
 .user-person { display:flex; align-items:center; gap:10px; min-width:0; }
 .user-person img { width:38px; height:38px; border-radius:50%; object-fit:cover; background:#0b1020; }
 .user-person strong { display:block; color:#edf2ff; font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
@@ -29,7 +29,9 @@
 .user-row select option { background:#111827; }
 .quota-wrap { display:grid; gap:5px; align-content:center; }
 .quota-wrap input { width: 92px; }
-.quota-wrap .small-muted { order: -1; }
+.usage-wrap { display:grid; gap:7px; align-content:center; }
+.usage-top { display:flex; align-items:center; justify-content:space-between; gap:8px; color:#8ea1bd; font-size:11px; font-weight:800; text-transform:uppercase; letter-spacing:.06em; }
+.usage-top strong { color:#edf2ff; font-size:12px; letter-spacing:0; }
 .usage-bar { height:6px; border-radius:99px; background:rgba(148,163,184,.16); overflow:hidden; }
 .usage-fill { height:100%; width:0%; border-radius:99px; background:linear-gradient(90deg,#22c55e,#38bdf8); }
 .admin-btn { min-height:38px; border:0; border-radius:999px; background:linear-gradient(135deg,#9333ea,#0ea5e9); color:#fff; font-weight:800; cursor:pointer; padding:0 14px; }
@@ -57,7 +59,7 @@
     </section>
     <section class="admin-panel">
       <div class="admin-toolbar"><h2 style="color:#f8fbff;font-size:20px">Users</h2><span class="small-muted">Use the top search box to filter users.</span></div>
-      <div class="user-header"><span>Email</span><span>Role</span><span>Status</span><span>Quota</span><span>Usage</span><span>Action</span></div>
+      <div class="user-header"><span>Email</span><span>Role</span><span>Status</span><span>Limit</span><span>Usage</span><span>Action</span></div>
       <div class="user-table" id="userTable"><div class="small-muted">Loading users...</div></div>
     </section>
   </main>
@@ -99,8 +101,8 @@ function renderUsers() {
       '<div class="user-person"><img src="' + escapeHtml(user.picture || "/assets/favorite-web-logo.png") + '" alt=""><div><strong>' + escapeHtml(user.name || user.email) + '</strong><span>' + escapeHtml(user.email) + '</span></div></div>' +
       '<select data-role' + locked + '><option value="user">User</option><option value="admin">Admin</option></select>' +
       '<select data-status' + locked + '><option value="active">Active</option><option value="suspended">Suspended</option></select>' +
-      '<div class="quota-wrap"><input data-quota type="number" min="0" step="0.25" value="' + gbFromBytes(quota) + '"></div>' +
-      '<div class="quota-wrap"><span class="small-muted">' + fmtBytes(used) + ' / ' + fmtBytes(quota) + '</span><div class="usage-bar"><div class="usage-fill" style="width:' + pct + '%"></div></div></div>' +
+      '<div class="quota-wrap"><input data-quota type="number" min="0" step="0.25" value="' + gbFromBytes(quota) + '" title="Storage limit in GB"></div>' +
+      '<div class="usage-wrap" title="' + fmtBytes(used) + ' used of ' + fmtBytes(quota) + '"><div class="usage-top"><span>Storage</span><strong>' + pct + '%</strong></div><div class="usage-bar"><div class="usage-fill" style="width:' + pct + '%"></div></div></div>' +
       '<button class="admin-btn" data-save>Save</button>' +
     '</article>';
   }).join("");
