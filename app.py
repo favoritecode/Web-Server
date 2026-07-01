@@ -534,6 +534,27 @@ def list_drive_files():
     return jsonify({"current": drive_display_path(raw_path), "items": items})
 
 
+
+@app.route("/api/admin/drive/delete", methods=["POST"])
+def admin_drive_delete():
+    blocked = admin_required_json()
+    if blocked:
+        return blocked
+    data = request.get_json(silent=True) or {}
+    rel_path = (data.get("path") or "").strip().replace("\\", "/").strip("/")
+    if not rel_path:
+        return jsonify({"error": "Invalid path"}), 400
+    full_path = safe_drive_path(rel_path)
+    if not full_path or full_path == os.path.abspath(FILE_ROOT):
+        return jsonify({"error": "Invalid path"}), 400
+    if not os.path.exists(full_path):
+        return jsonify({"error": "Not found"}), 404
+    if os.path.isdir(full_path):
+        shutil.rmtree(full_path)
+    else:
+        os.remove(full_path)
+    return jsonify({"status": "ok"})
+
 @app.route("/drive/open/<path:filename>")
 def drive_open_file(filename):
     blocked = active_user_required_redirect()

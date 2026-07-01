@@ -200,6 +200,48 @@
   color: #60a5fa;
 }
 
+.file-card { position: relative; }
+.file-menu-button {
+  position: absolute;
+  top: 9px;
+  right: 9px;
+  width: 30px;
+  height: 30px;
+  border: 1px solid rgba(148,163,184,.18);
+  border-radius: 999px;
+  background: rgba(15,23,42,.78);
+  color: #dbeafe;
+  cursor: pointer;
+  font-size: 18px;
+  line-height: 1;
+  z-index: 3;
+}
+.file-menu {
+  position: absolute;
+  top: 43px;
+  right: 9px;
+  min-width: 118px;
+  padding: 7px;
+  border: 1px solid rgba(148,163,184,.16);
+  border-radius: 12px;
+  background: rgba(15,23,42,.97);
+  box-shadow: 0 16px 46px rgba(0,0,0,.36);
+  display: none;
+  z-index: 4;
+}
+.file-menu.open { display: grid; gap: 5px; }
+.file-menu button {
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #fecdd3;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 750;
+  padding: 8px 10px;
+  text-align: left;
+}
+.file-menu button:hover { background: rgba(244,63,94,.12); }
 /* Empty state */
 .empty-state {
   text-align: center;
@@ -287,6 +329,7 @@
 <script>
 // ============ FILE SYSTEM ============
 let currentPath = "";
+let isAdmin = false;
 
 const fileGrid = document.getElementById("fileGrid");
 const currentPathEl = document.getElementById("currentPath");
@@ -324,6 +367,8 @@ async function loadFiles(path) {
           <span class="file-type-badge folder">Back</span>
         </div>`;
     }
+
+    const menuMarkup = (item) => isAdmin ? `<button class="file-menu-button" type="button" data-menu-button aria-label="File options">&#8942;</button><div class="file-menu"><button type="button" data-delete-drive="${escapeHtml(item.path)}">Delete</button></div>` : "";
 
     data.items.forEach(item => {
       if (item.type === "folder") {
@@ -382,14 +427,58 @@ function escapeHtml(str) {
     .replace(/"/g, "&" + "quot;");
 }
 
-fileGrid.addEventListener('click', (event) => {
+fileGrid.addEventListener('click', async (event) => {
+  const menuButton = event.target.closest('[data-menu-button]');
+  if (menuButton) {
+    event.preventDefault();
+    event.stopPropagation();
+    const menu = menuButton.parentElement.querySelector('.file-menu');
+    document.querySelectorAll('.file-menu.open').forEach((openMenu) => {
+      if (openMenu !== menu) openMenu.classList.remove('open');
+    });
+    menu.classList.toggle('open');
+    return;
+  }
+
+  const deleteButton = event.target.closest('[data-delete-drive]');
+  if (deleteButton) {
+    event.preventDefault();
+    event.stopPropagation();
+    if (!confirm('Delete this file or folder?')) return;
+    const res = await fetch('/api/admin/drive/delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: deleteButton.getAttribute('data-delete-drive') })
+    });
+    if (!res.ok) alert('Delete failed');
+    loadFiles(currentPath);
+    return;
+  }
+
   const folderCard = event.target.closest('[data-folder]');
   if (!folderCard) return;
   loadFiles(folderCard.getAttribute('data-folder') || '');
 });
 
+document.addEventListener('click', (event) => {
+  if (!event.target.closest('.file-card')) {
+    document.querySelectorAll('.file-menu.open').forEach((menu) => menu.classList.remove('open'));
+  }
+});
+
+async function initDrive() {
+  try {
+    const res = await fetch('/api/user', { cache: 'no-store' });
+    if (res.ok) {
+      const user = await res.json();
+      isAdmin = Boolean(user.is_admin);
+    }
+  } catch (e) {}
+  loadFiles("");
+}
+
 // Initial load - empty string = root directory
-loadFiles("");
+initDrive();
 </script>
 
 <script src="/shared.js"></script>
