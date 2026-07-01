@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FavoriteWeb Admin</title>
+<link rel="stylesheet" href="/shared.css">
+<style>
+.admin-main { width: min(1240px, calc(100% - 32px)); margin: 42px auto 80px; }
+.admin-hero { display:flex; align-items:flex-end; justify-content:space-between; gap:18px; padding:28px; border:1px solid rgba(148,163,184,.16); border-radius:18px; background:linear-gradient(135deg, rgba(15,23,42,.82), rgba(17,24,39,.56)); box-shadow:0 22px 60px rgba(0,0,0,.28); }
+.admin-hero h1 { color:#f8fbff; font-size:34px; margin-bottom:8px; }
+.admin-hero p { color:#9aa7bd; line-height:1.6; }
+.admin-stats { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:14px; margin:20px 0; }
+.admin-stat, .admin-panel { border:1px solid rgba(148,163,184,.16); border-radius:16px; background:rgba(13,18,34,.68); backdrop-filter:blur(16px); }
+.admin-stat { padding:18px; }
+.admin-stat span { color:#8ea1bd; font-size:12px; text-transform:uppercase; letter-spacing:.08em; }
+.admin-stat strong { display:block; color:#f8fbff; font-size:28px; margin-top:8px; }
+.admin-panel { padding:18px; overflow:hidden; }
+.admin-toolbar { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:14px; }
+.admin-search { min-height:42px; width:min(360px,100%); border:1px solid rgba(148,163,184,.16); border-radius:12px; background:rgba(255,255,255,.06); color:#edf2ff; padding:0 12px; outline:none; }
+.user-table { display:grid; gap:10px; }
+.user-row { display:grid; grid-template-columns: minmax(220px,1.4fr) 96px 118px 118px 178px 76px; gap:10px; align-items:center; padding:14px; border:1px solid rgba(148,163,184,.12); border-radius:14px; background:rgba(255,255,255,.04); }
+.user-person { display:flex; align-items:center; gap:10px; min-width:0; }
+.user-person img { width:38px; height:38px; border-radius:50%; object-fit:cover; background:#0b1020; }
+.user-person strong { display:block; color:#edf2ff; font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.user-person span, .small-muted { color:#8ea1bd; font-size:12px; overflow-wrap:anywhere; }
+.user-row select, .user-row input { min-height:38px; border:1px solid rgba(148,163,184,.16); border-radius:10px; background:rgba(15,23,42,.8); color:#edf2ff; padding:0 10px; outline:none; }
+.user-row select option { background:#111827; }
+.quota-wrap { display:grid; gap:5px; align-content:center; }
+.quota-wrap input { width: 92px; }
+.quota-wrap .small-muted { order: -1; }
+.usage-bar { height:6px; border-radius:99px; background:rgba(148,163,184,.16); overflow:hidden; }
+.usage-fill { height:100%; width:0%; border-radius:99px; background:linear-gradient(90deg,#22c55e,#38bdf8); }
+.admin-btn { min-height:38px; border:0; border-radius:999px; background:linear-gradient(135deg,#9333ea,#0ea5e9); color:#fff; font-weight:800; cursor:pointer; padding:0 14px; }
+.admin-btn:disabled { opacity:.45; cursor:not-allowed; }
+.status-note { min-height:20px; color:#5eead4; font-size:13px; }
+@media (max-width: 980px) { .admin-stats { grid-template-columns:repeat(2,1fr); } .user-row { grid-template-columns:1fr 1fr; } .user-person { grid-column:1/-1; } }
+@media (max-width: 560px) { .admin-main { width:min(100% - 24px,1240px); margin-top:28px; } .admin-hero { flex-direction:column; align-items:flex-start; padding:22px; } .admin-hero h1 { font-size:28px; } .admin-stats, .user-row { grid-template-columns:1fr; } }
+</style>
+</head>
+<body>
+<div class="main-content">
+  <main class="admin-main">
+    <section class="admin-hero">
+      <div>
+        <h1>Admin Control</h1>
+        <p>Manage users, roles, suspension status, and per-user cloud storage limits.</p>
+      </div>
+      <p class="status-note" id="adminNote"></p>
+    </section>
+    <section class="admin-stats">
+      <div class="admin-stat"><span>Total Users</span><strong id="totalUsers">--</strong></div>
+      <div class="admin-stat"><span>Admins</span><strong id="adminCount">--</strong></div>
+      <div class="admin-stat"><span>Suspended</span><strong id="suspendedCount">--</strong></div>
+      <div class="admin-stat"><span>Total Used</span><strong id="usedTotal">--</strong></div>
+    </section>
+    <section class="admin-panel">
+      <div class="admin-toolbar"><h2 style="color:#f8fbff;font-size:20px">Users</h2><span class="small-muted">Use the top search box to filter users.</span></div>
+      <div class="user-table" id="userTable"><div class="small-muted">Loading users...</div></div>
+    </section>
+  </main>
+</div>
+<script>
+var allUsers = [];
+function escapeHtml(value) {
+  return String(value || "").replace(/[&<>"]/g, function(ch) {
+    return { "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;" }[ch];
+  });
+}
+function fmtBytes(bytes) {
+  bytes = Number(bytes || 0);
+  if (bytes < 1024) return bytes + " B";
+  var units = ["KB", "MB", "GB", "TB"];
+  var value = bytes;
+  var unit = "B";
+  for (var i = 0; i < units.length && value >= 1024; i += 1) { value = value / 1024; unit = units[i]; }
+  return value.toFixed(value >= 10 ? 1 : 2) + " " + unit;
+}
+function gbFromBytes(bytes) { return (Number(bytes || 0) / 1073741824).toFixed(2); }
+function bytesFromGb(value) { return Math.max(0, Math.round(Number(value || 0) * 1073741824)); }
+function renderUsers() {
+  var users = allUsers.slice();
+  document.getElementById("totalUsers").textContent = allUsers.length;
+  document.getElementById("adminCount").textContent = allUsers.filter(function(u) { return u.role === "admin"; }).length;
+  document.getElementById("suspendedCount").textContent = allUsers.filter(function(u) { return u.status === "suspended"; }).length;
+  document.getElementById("usedTotal").textContent = fmtBytes(allUsers.reduce(function(sum, user) { return sum + Number(user.used_bytes || 0); }, 0));
+  if (!users.length) {
+    document.getElementById("userTable").innerHTML = '<div class="small-muted">No users found.</div>';
+    return;
+  }
+  document.getElementById("userTable").innerHTML = users.map(function(user) {
+    var used = Number(user.used_bytes || 0);
+    var quota = Number(user.quota_bytes || 0);
+    var pct = quota ? Math.min(100, Math.round((used / quota) * 100)) : 0;
+    var locked = user.is_default_admin ? " disabled" : "";
+    return '<article class="user-row" data-email="' + escapeHtml(user.email) + '">' +
+      '<div class="user-person"><img src="' + escapeHtml(user.picture || "/assets/favorite-web-logo.png") + '" alt=""><div><strong>' + escapeHtml(user.name || user.email) + '</strong><span>' + escapeHtml(user.email) + '</span></div></div>' +
+      '<select data-role' + locked + '><option value="user">User</option><option value="admin">Admin</option></select>' +
+      '<select data-status' + locked + '><option value="active">Active</option><option value="suspended">Suspended</option></select>' +
+      '<div class="quota-wrap"><span class="small-muted">Quota GB</span><input data-quota type="number" min="0" step="0.25" value="' + gbFromBytes(quota) + '"></div>' +
+      '<div class="quota-wrap"><span class="small-muted">' + fmtBytes(used) + ' / ' + fmtBytes(quota) + '</span><div class="usage-bar"><div class="usage-fill" style="width:' + pct + '%"></div></div></div>' +
+      '<button class="admin-btn" data-save>Save</button>' +
+    '</article>';
+  }).join("");
+  users.forEach(function(user) {
+    var row = document.querySelector('[data-email="' + CSS.escape(user.email) + '"]');
+    if (!row) return;
+    row.querySelector('[data-role]').value = user.role || "user";
+    row.querySelector('[data-status]').value = user.status || "active";
+  });
+}
+async function loadUsers() {
+  var res = await fetch("/api/admin/users", { cache: "no-store" });
+  if (res.status === 403) { location.href = "/dashboard"; return; }
+  if (res.status === 401) { location.href = "/login"; return; }
+  var data = await res.json();
+  allUsers = data.users || [];
+  renderUsers();
+  if (window.favoriteWebApplySearch) window.favoriteWebApplySearch();
+}
+
+document.getElementById("userTable").addEventListener("click", async function(event) {
+  var btn = event.target.closest("[data-save]");
+  if (!btn) return;
+  var row = btn.closest(".user-row");
+  var note = document.getElementById("adminNote");
+  btn.disabled = true;
+  note.textContent = "Saving...";
+  try {
+    var res = await fetch("/api/admin/users/update", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        email: row.getAttribute("data-email"),
+        role: row.querySelector("[data-role]").value,
+        status: row.querySelector("[data-status]").value,
+        quota_bytes: bytesFromGb(row.querySelector("[data-quota]").value)
+      })
+    });
+    note.textContent = res.ok ? "User updated." : "Update failed.";
+    await loadUsers();
+  } catch (e) {
+    note.textContent = "Update failed.";
+  } finally {
+    btn.disabled = false;
+  }
+});
+loadUsers();
+</script>
+<script src="/shared.js"></script>
+</body>
+</html>

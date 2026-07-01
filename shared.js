@@ -55,6 +55,7 @@ function buildAuthArea(user) {
           </div>
           <a href="/profile" role="menuitem">View Profile</a>
           <a href="/dashboard" role="menuitem">Open Dashboard</a>
+          ${user.is_admin ? '<a href="/admin" role="menuitem">Admin Panel</a>' : ''}
           <a href="/settings" role="menuitem">Settings</a>
           <a href="/logout" role="menuitem" class="danger">Logout</a>
         </div>
@@ -114,14 +115,8 @@ function initToolSearch() {
   const inputs = Array.from(document.querySelectorAll(".fw-tool-search-input"));
   if (!inputs.length) return;
 
-  const cards = Array.from(document.querySelectorAll(".service-card"));
-  if (!cards.length) {
-    inputs.forEach((input) => { input.disabled = true; });
-    return;
-  }
-
-  const grid = document.querySelector(".services-grid");
   let empty = document.querySelector(".fw-no-tools");
+  const grid = document.querySelector(".services-grid");
   if (grid && !empty) {
     empty = document.createElement("div");
     empty.className = "fw-no-tools";
@@ -129,18 +124,26 @@ function initToolSearch() {
     grid.insertAdjacentElement("afterend", empty);
   }
 
+  function searchableItems() {
+    return Array.from(document.querySelectorAll(".service-card, .user-row, .preview-card, .file-card"));
+  }
+
   function applySearch(value) {
     const query = value.trim().toLowerCase();
-    let visible = 0;
+    window.favoriteWebSearchQuery = query;
+    let visibleTools = 0;
 
-    cards.forEach((card) => {
-      const text = [card.textContent, card.getAttribute("href"), card.dataset.keywords].join(" ").toLowerCase();
+    searchableItems().forEach((item) => {
+      const text = [item.textContent, item.getAttribute("href"), item.dataset.keywords, item.dataset.email, item.dataset.open, item.dataset.folder].join(" ").toLowerCase();
       const match = !query || text.includes(query);
-      card.classList.toggle("fw-card-hidden", !match);
-      if (match) visible += 1;
+      item.classList.toggle("fw-card-hidden", !match);
+      if (item.classList.contains("service-card") && match) visibleTools += 1;
     });
 
-    if (empty) empty.classList.toggle("show", visible === 0);
+    if (empty) {
+      const hasTools = document.querySelector(".service-card");
+      empty.classList.toggle("show", Boolean(hasTools) && visibleTools === 0);
+    }
     inputs.forEach((input) => {
       if (input.value !== value) input.value = value;
     });
@@ -149,6 +152,13 @@ function initToolSearch() {
   inputs.forEach((input) => {
     input.addEventListener("input", () => applySearch(input.value));
   });
+
+  window.favoriteWebApplySearch = () => applySearch(inputs[0] ? inputs[0].value : "");
+  const observerTargets = [document.querySelector(".services-grid"), document.getElementById("userTable"), document.getElementById("filePreview"), document.getElementById("fileGrid")].filter(Boolean);
+  observerTargets.forEach((target) => {
+    new MutationObserver(() => window.favoriteWebApplySearch()).observe(target, { childList: true, subtree: true });
+  });
+  applySearch("");
 }
 
 function initNavbarInteractions() {

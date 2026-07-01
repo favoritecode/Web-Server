@@ -1,5 +1,5 @@
 from flask import Flask, send_from_directory, redirect, session, request, jsonify, Response
-import os, json, re, shutil, yt_dlp, requests
+import os, json, re, shutil, time, yt_dlp, requests
 
 try:
     import favoriteweb_local_secrets as local_secrets
@@ -41,12 +41,158 @@ FILE_ROOT = os.path.join(BASE_DIR, "file")
 if not os.path.exists(FILE_ROOT):
     os.makedirs(FILE_ROOT)
 
+DEFAULT_ADMIN_EMAIL = "info.favoriteweb@gmail.com"
+DEFAULT_USER_QUOTA_BYTES = 2 * 1024 * 1024 * 1024
+USER_DB_PATH = os.path.join(BASE_DIR, "users.json")
+
+
+def normalize_email(email=""):
+    return (email or "").strip().lower()
+
+
+def user_key_from_email(email):
+    safe = re.sub(r"[^A-Za-z0-9_.-]+", "_", normalize_email(email)).strip("._")
+    return safe[:120] or "user"
+
+
+def load_user_db():
+    try:
+        with open(USER_DB_PATH, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except Exception:
+        data = {"users": {}}
+    if not isinstance(data, dict):
+        data = {"users": {}}
+    data.setdefault("users", {})
+    return data
+
+
+def save_user_db(data):
+    with open(USER_DB_PATH, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)
+
+
+def dir_size(path):
+    total = 0
+    if not os.path.exists(path):
+        return 0
+    for root_dir, _, files in os.walk(path):
+        for name in files:
+            try:
+                total += os.path.getsize(os.path.join(root_dir, name))
+            except OSError:
+                pass
+    return total
+
+
+def user_record_from_session(create=True):
+    user = session.get("user") or {}
+    email = normalize_email(user.get("email"))
+    if not email:
+        return None
+    data = load_user_db()
+    users = data.setdefault("users", {})
+    record = users.get(email)
+    now = int(time.time())
+    if not record and create:
+        record = {
+            "email": email,
+            "name": user.get("name") or email,
+            "picture": user.get("picture") or "",
+            "role": "admin" if email == DEFAULT_ADMIN_EMAIL else "user",
+            "status": "active",
+            "quota_bytes": DEFAULT_USER_QUOTA_BYTES,
+            "created_at": now,
+        }
+        users[email] = record
+    if record:
+        record["name"] = user.get("name") or record.get("name") or email
+        record["picture"] = user.get("picture") or record.get("picture") or ""
+        record["last_seen"] = now
+        if email == DEFAULT_ADMIN_EMAIL:
+            record["role"] = "admin"
+            record["status"] = "active"
+        record.setdefault("quota_bytes", DEFAULT_USER_QUOTA_BYTES)
+        record.setdefault("status", "active")
+        record.setdefault("role", "user")
+        if create:
+            save_user_db(data)
+    return record
+
+
+def is_current_admin():
+    record = user_record_from_session(create=True)
+    return bool(record and record.get("role") == "admin" and record.get("status") == "active")
+
+
+def current_user_quota():
+    record = user_record_from_session(create=True) or {}
+    return int(record.get("quota_bytes") or DEFAULT_USER_QUOTA_BYTES)
+
+
+def current_user_storage_used():
+    return dir_size(current_user_file_root())
+
+
+def active_user_required_json():
+    if "user" not in session:
+        return jsonify({"error": "login required"}), 401
+    record = user_record_from_session(create=True)
+    if record and record.get("status") == "suspended":
+        return jsonify({"error": "account suspended"}), 403
+    return None
+
+
+def active_user_required_redirect():
+    if "user" not in session:
+        return redirect("/login")
+    record = user_record_from_session(create=True)
+    if record and record.get("status") == "suspended":
+        return redirect("/logout")
+    return None
+
+
+def admin_required_json():
+    blocked = active_user_required_json()
+    if blocked:
+        return blocked
+    if not is_current_admin():
+        return jsonify({"error": "admin required"}), 403
+    return None
+
+
+def admin_required_redirect():
+    blocked = active_user_required_redirect()
+    if blocked:
+        return blocked
+    if not is_current_admin():
+        return redirect("/dashboard")
+    return None
+
+
+def ensure_default_admin():
+    data = load_user_db()
+    users = data.setdefault("users", {})
+    record = users.get(DEFAULT_ADMIN_EMAIL) or {
+        "email": DEFAULT_ADMIN_EMAIL,
+        "name": "FavoriteWeb Admin",
+        "picture": "",
+        "created_at": int(time.time()),
+    }
+    record["role"] = "admin"
+    record["status"] = "active"
+    record.setdefault("quota_bytes", DEFAULT_USER_QUOTA_BYTES)
+    users[DEFAULT_ADMIN_EMAIL] = record
+    save_user_db(data)
+
+
+ensure_default_admin()
+
 
 def current_user_key():
     user = session.get("user") or {}
     raw = user.get("email") or user.get("sub") or user.get("name") or "user"
-    safe = re.sub(r"[^A-Za-z0-9_.-]+", "_", raw).strip("._")
-    return safe[:120] or "user"
+    return user_key_from_email(raw)
 
 
 def current_user_file_root():
@@ -162,6 +308,7 @@ def callback():
     token = google.authorize_access_token()
     resp = google.get("https://www.googleapis.com/oauth2/v3/userinfo")
     session["user"] = resp.json()
+    user_record_from_session(create=True)
     session.permanent = True
     return redirect("/drive")
 
@@ -171,33 +318,45 @@ def callback():
 
 @app.route("/upload")
 def upload_page():
-    if "user" not in session:
-        return redirect("/login")
+    blocked = active_user_required_redirect()
+    if blocked:
+        return blocked
     return redirect("/drive")
 
 @app.route("/drive")
 def drive_page():
-    if "user" not in session:
-        return redirect("/login")
+    blocked = active_user_required_redirect()
+    if blocked:
+        return blocked
     return send_from_directory(BASE_DIR, "upload.html")
 
 @app.route("/dashboard")
 def dashboard_page():
-    if "user" not in session:
-        return redirect("/login")
+    blocked = active_user_required_redirect()
+    if blocked:
+        return blocked
     return send_from_directory(BASE_DIR, "dashboard.html")
 
 @app.route("/profile")
 def profile_page():
-    if "user" not in session:
-        return redirect("/login")
+    blocked = active_user_required_redirect()
+    if blocked:
+        return blocked
     return send_from_directory(BASE_DIR, "account.html")
 
 @app.route("/settings")
 def settings_page():
-    if "user" not in session:
-        return redirect("/login")
+    blocked = active_user_required_redirect()
+    if blocked:
+        return blocked
     return send_from_directory(BASE_DIR, "account.html")
+
+@app.route("/admin")
+def admin_page():
+    blocked = admin_required_redirect()
+    if blocked:
+        return blocked
+    return send_from_directory(BASE_DIR, "admin.html")
 
 # =====================
 # UPLOAD API
@@ -206,8 +365,15 @@ def settings_page():
 @app.route("/upload", methods=["POST"])
 def upload():
 
-    if "user" not in session:
-        return jsonify({"error": "login required"}), 401
+    blocked = active_user_required_json()
+    if blocked:
+        return blocked
+
+    incoming = int(request.content_length or 0)
+    used = current_user_storage_used()
+    quota = current_user_quota()
+    if quota and incoming and used + incoming > quota:
+        return jsonify({"error": "quota exceeded", "used_bytes": used, "quota_bytes": quota}), 413
 
     files = request.files.getlist("files")
 
@@ -220,8 +386,10 @@ def upload():
             continue
         os.makedirs(os.path.dirname(save_path), exist_ok=True)
         file.save(save_path)
-
-    return jsonify({"status": "ok"})
+    final_used = current_user_storage_used()
+    if quota and final_used > quota:
+        return jsonify({"error": "quota exceeded", "used_bytes": final_used, "quota_bytes": quota}), 413
+    return jsonify({"status": "ok", "used_bytes": final_used, "quota_bytes": quota})
 
 # =====================
 # File list APIs
@@ -231,8 +399,9 @@ import mimetypes
 
 @app.route("/api/files")
 def list_files():
-    if "user" not in session:
-        return jsonify({"error": "login required"}), 401
+    blocked = active_user_required_json()
+    if blocked:
+        return blocked
 
     path = request.args.get("path", "")
     root, full_path = safe_user_path(path)
@@ -264,8 +433,9 @@ def list_files():
 
 @app.route("/api/files/rename", methods=["POST"])
 def rename_file_item():
-    if "user" not in session:
-        return jsonify({"error": "login required"}), 401
+    blocked = active_user_required_json()
+    if blocked:
+        return blocked
     data = request.get_json(silent=True) or {}
     old_path = (data.get("path") or "").strip().replace("\\", "/").strip("/")
     new_name = (data.get("newName") or "").strip()
@@ -288,8 +458,9 @@ def rename_file_item():
 
 @app.route("/api/files/move", methods=["POST"])
 def move_file_item():
-    if "user" not in session:
-        return jsonify({"error": "login required"}), 401
+    blocked = active_user_required_json()
+    if blocked:
+        return blocked
     data = request.get_json(silent=True) or {}
     rel_path = (data.get("path") or "").strip().replace("\\", "/").strip("/")
     dest_path = (data.get("destination") or "").strip().replace("\\", "/").strip("/")
@@ -313,8 +484,9 @@ def move_file_item():
 
 @app.route("/api/files/delete", methods=["POST"])
 def delete_file_item():
-    if "user" not in session:
-        return jsonify({"error": "login required"}), 401
+    blocked = active_user_required_json()
+    if blocked:
+        return blocked
     data = request.get_json(silent=True) or {}
     rel_path = (data.get("path") or "").strip().replace("\\", "/").strip("/")
     if not rel_path:
@@ -333,8 +505,9 @@ def delete_file_item():
 
 @app.route("/api/drive/files")
 def list_drive_files():
-    if "user" not in session:
-        return jsonify({"error": "login required"}), 401
+    blocked = active_user_required_json()
+    if blocked:
+        return blocked
 
     raw_path = (request.args.get("path", "") or "").replace("\\", "/").strip("/")
     full_path = safe_drive_path(raw_path)
@@ -363,8 +536,9 @@ def list_drive_files():
 
 @app.route("/drive/open/<path:filename>")
 def drive_open_file(filename):
-    if "user" not in session:
-        return redirect("/login")
+    blocked = active_user_required_redirect()
+    if blocked:
+        return blocked
     file_path = safe_drive_path(filename)
     if not file_path or not os.path.exists(file_path) or os.path.isdir(file_path):
         return "Not Found", 404
@@ -375,8 +549,9 @@ def drive_open_file(filename):
 
 @app.route("/open/<path:filename>")
 def open_file(filename):
-    if "user" not in session:
-        return redirect("/login")
+    blocked = active_user_required_redirect()
+    if blocked:
+        return blocked
 
     root, file_path = safe_user_path(filename)
     if not file_path or not os.path.exists(file_path):
@@ -394,8 +569,9 @@ def open_file(filename):
 
 @app.route("/stream/<path:filename>")
 def stream_video(filename):
-    if "user" not in session:
-        return redirect("/login")
+    blocked = active_user_required_redirect()
+    if blocked:
+        return blocked
     root, file_path = safe_user_path(filename)
     if not file_path or not os.path.exists(file_path):
         return "Not Found", 404
@@ -406,8 +582,9 @@ def stream_video(filename):
 
 @app.route("/file/<path:filename>")
 def download(filename):
-    if "user" not in session:
-        return redirect("/login")
+    blocked = active_user_required_redirect()
+    if blocked:
+        return blocked
     root, file_path = safe_user_path(filename)
     if not file_path or not os.path.exists(file_path):
         return "Not Found", 404
@@ -420,11 +597,19 @@ def download(filename):
 def api_user():
     user = session.get("user")
     if user:
+        record = user_record_from_session(create=True) or {}
+        used = current_user_storage_used()
+        quota = int(record.get("quota_bytes") or DEFAULT_USER_QUOTA_BYTES)
         return jsonify({
             "logged_in": True,
             "name": user.get("name"),
             "email": user.get("email"),
             "picture": user.get("picture"),
+            "role": record.get("role", "user"),
+            "status": record.get("status", "active"),
+            "is_admin": record.get("role") == "admin",
+            "used_bytes": used,
+            "quota_bytes": quota,
         })
     return jsonify({"logged_in": False})
 
@@ -435,8 +620,9 @@ def api_user():
 
 @app.route("/api/ytplayer/history")
 def ytplayer_history():
-    if "user" not in session:
-        return jsonify({"error": "login required"}), 401
+    blocked = active_user_required_json()
+    if blocked:
+        return blocked
 
     data_path = os.path.join(BASE_DIR, "ytplayer", "videos.json")
     try:
@@ -472,8 +658,9 @@ def ytplayer_history():
 
 @app.route("/api/ytplayer/update", methods=["POST"])
 def ytplayer_update():
-    if "user" not in session:
-        return jsonify({"error": "login required"}), 401
+    blocked = active_user_required_json()
+    if blocked:
+        return blocked
     data = request.get_json(silent=True) or {}
     stream_id = str(data.get("id") or "")
     source = (data.get("source") or "").strip()
@@ -500,8 +687,9 @@ def ytplayer_update():
 
 @app.route("/api/ytplayer/delete", methods=["POST"])
 def ytplayer_delete():
-    if "user" not in session:
-        return jsonify({"error": "login required"}), 401
+    blocked = active_user_required_json()
+    if blocked:
+        return blocked
     data = request.get_json(silent=True) or {}
     stream_id = str(data.get("id") or "")
     if not stream_id:
@@ -520,6 +708,68 @@ def ytplayer_delete():
     videos.pop(stream_id, None)
     with open(data_path, "w", encoding="utf-8") as f:
         json.dump(videos, f, indent=2)
+    return jsonify({"status": "ok"})
+
+@app.route("/api/admin/users")
+def admin_users():
+    blocked = admin_required_json()
+    if blocked:
+        return blocked
+    data = load_user_db()
+    users = []
+    for email, record in sorted(data.get("users", {}).items()):
+        key = user_key_from_email(email)
+        root = os.path.join(FILE_ROOT, "_users", key)
+        quota = int(record.get("quota_bytes") or DEFAULT_USER_QUOTA_BYTES)
+        users.append({
+            "email": email,
+            "name": record.get("name") or email,
+            "picture": record.get("picture") or "",
+            "role": record.get("role") or "user",
+            "status": record.get("status") or "active",
+            "quota_bytes": quota,
+            "used_bytes": dir_size(root),
+            "created_at": record.get("created_at"),
+            "last_seen": record.get("last_seen"),
+            "is_default_admin": email == DEFAULT_ADMIN_EMAIL,
+        })
+    return jsonify({"users": users, "default_quota_bytes": DEFAULT_USER_QUOTA_BYTES})
+
+
+@app.route("/api/admin/users/update", methods=["POST"])
+def admin_update_user():
+    blocked = admin_required_json()
+    if blocked:
+        return blocked
+    data_in = request.get_json(silent=True) or {}
+    email = normalize_email(data_in.get("email"))
+    if not email:
+        return jsonify({"error": "email required"}), 400
+    data = load_user_db()
+    users = data.setdefault("users", {})
+    record = users.get(email)
+    if not record:
+        return jsonify({"error": "user not found"}), 404
+    if email != DEFAULT_ADMIN_EMAIL:
+        role = data_in.get("role")
+        status = data_in.get("status")
+        if role in ("user", "admin"):
+            record["role"] = role
+        if status in ("active", "suspended"):
+            record["status"] = status
+    else:
+        record["role"] = "admin"
+        record["status"] = "active"
+    if "quota_bytes" in data_in:
+        try:
+            quota = int(data_in.get("quota_bytes"))
+        except (TypeError, ValueError):
+            return jsonify({"error": "invalid quota"}), 400
+        if quota < 0:
+            return jsonify({"error": "invalid quota"}), 400
+        record["quota_bytes"] = quota
+    users[email] = record
+    save_user_db(data)
     return jsonify({"status": "ok"})
 @app.route("/logout")
 def logout():
