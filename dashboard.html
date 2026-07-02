@@ -315,8 +315,53 @@
   gap: 12px;
 }
 .stream-row {
-  padding: 14px;
+  padding: 14px 52px 14px 14px;
+  position: relative;
 }
+.stream-menu-button {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 32px;
+  height: 32px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 999px;
+  background: rgba(15,23,42,0.76);
+  color: #dbeafe;
+  cursor: pointer;
+  font-size: 20px;
+  line-height: 1;
+}
+.stream-menu {
+  position: absolute;
+  top: 48px;
+  right: 12px;
+  min-width: 154px;
+  padding: 7px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 12px;
+  background: rgba(15,23,42,0.97);
+  box-shadow: 0 16px 46px rgba(0,0,0,0.36);
+  display: none;
+  z-index: 15;
+}
+.stream-menu.open { display: grid; gap: 5px; }
+.stream-menu button,
+.stream-menu a {
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #dbeafe;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 750;
+  padding: 8px 10px;
+  text-align: left;
+  text-decoration: none;
+}
+.stream-menu button:hover,
+.stream-menu a:hover { background: rgba(59,130,246,0.14); }
+.stream-menu button.danger { color: #fecdd3; }
 .stream-row strong {
   display: block;
   color: #edf2ff;
@@ -655,16 +700,23 @@ async function loadStreams() {
       return;
     }
     box.innerHTML = streams.map(function(item) {
+      var actions = '';
+      if (item.can_download) {
+        actions += '<a href="' + escapeHtml(item.video) + '" target="_blank">Download Video</a>';
+        actions += '<a href="' + escapeHtml(item.audio) + '" target="_blank">Download Audio</a>';
+      }
+      if (item.can_share) {
+        actions += '<button type="button" data-share-stream="' + escapeHtml(item.video) + '">Share</button>';
+      }
+      if (item.can_delete) {
+        actions += '<button type="button" class="danger" data-delete-stream="' + escapeHtml(item.id) + '">Delete</button>';
+      }
+      if (!actions) actions = '<span class="small-muted">No actions</span>';
       return '<article class="stream-row">' +
-        '<strong>' + escapeHtml(item.source) + '</strong>' +
-        '<small>ID: ' + escapeHtml(item.id) + '</small>' +
-        '<div class="stream-links card-actions">' +
-          '<a href="' + item.video + '" target="_blank">Video Stream</a>' +
-          '<a href="' + item.audio + '" target="_blank">Audio Stream</a>' +
-          '<a href="' + escapeHtml(item.source) + '" target="_blank">Source</a>' +
-          '<button type="button" data-edit-stream="' + escapeHtml(item.id) + '" data-source="' + escapeHtml(item.source) + '">Edit</button>' +
-          '<button type="button" class="danger" data-delete-stream="' + escapeHtml(item.id) + '">Delete</button>' +
-        '</div>' +
+        '<button class="stream-menu-button" type="button" data-stream-menu-button aria-label="Stream options">&#8942;</button>' +
+        '<div class="stream-menu">' + actions + '</div>' +
+        '<strong>' + escapeHtml(item.title || item.source) + '</strong>' +
+        '<small>ID: ' + escapeHtml(item.id) + (item.owned ? ' &middot; Own stream' : ' &middot; Shared access') + '</small>' +
       '</article>';
     }).join("");
   } catch (e) {
@@ -715,6 +767,9 @@ dashboardUploadZone.addEventListener("drop", async function(event) {
 
 document.addEventListener("click", function(event) {
   if (!event.target.closest(".upload-picker")) uploadMenu.classList.remove("open");
+  if (!event.target.closest(".stream-row")) {
+    document.querySelectorAll(".stream-menu.open").forEach(function(menu) { menu.classList.remove("open"); });
+  }
   if (!event.target.closest(".preview-card")) {
     document.querySelectorAll(".file-menu.open").forEach(function(menu) { menu.classList.remove("open"); });
   }
@@ -783,16 +838,30 @@ document.getElementById("filePreview").addEventListener("click", async function(
   if (openHref) window.open(openHref, "_blank");
 });
 document.getElementById("streamList").addEventListener("click", async function(event) {
-  var editBtn = event.target.closest("[data-edit-stream]");
-  if (editBtn) {
-    var nextSource = prompt("Update source URL", editBtn.getAttribute("data-source") || "");
-    if (!nextSource) return;
-    await fetch("/api/ytplayer/update", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: editBtn.getAttribute("data-edit-stream"), source: nextSource })
+  var menuButton = event.target.closest("[data-stream-menu-button]");
+  if (menuButton) {
+    event.preventDefault();
+    event.stopPropagation();
+    var menu = menuButton.parentElement.querySelector(".stream-menu");
+    document.querySelectorAll(".stream-menu.open").forEach(function(openMenu) {
+      if (openMenu !== menu) openMenu.classList.remove("open");
     });
-    loadStreams();
+    menu.classList.toggle("open");
+    return;
+  }
+  var shareBtn = event.target.closest("[data-share-stream]");
+  if (shareBtn) {
+    var shareUrl = shareBtn.getAttribute("data-share-stream");
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: "FavoriteWeb stream", url: shareUrl });
+      } else if (navigator.clipboard) {
+        await navigator.clipboard.writeText(shareUrl);
+        alert("Share link copied.");
+      } else {
+        prompt("Share link", shareUrl);
+      }
+    } catch (e) {}
     return;
   }
   var deleteBtn = event.target.closest("[data-delete-stream]");

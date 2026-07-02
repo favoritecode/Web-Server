@@ -99,7 +99,7 @@ function renderUsers() {
     var locked = user.is_default_admin ? " disabled" : "";
     return '<article class="user-row" data-email="' + escapeHtml(user.email) + '">' +
       '<div class="user-person"><img src="' + escapeHtml(user.picture || "/assets/favorite-web-logo.png") + '" alt=""><div><strong>' + escapeHtml(user.name || user.email) + '</strong><span>' + escapeHtml(user.email) + '</span></div></div>' +
-      '<select data-role' + locked + '><option value="user">User</option><option value="admin">Admin</option></select>' +
+      '<select data-role' + locked + '><option value="user">User</option><option value="moderator">Moderator</option><option value="admin">Admin</option></select>' +
       '<select data-status' + locked + '><option value="active">Active</option><option value="suspended">Suspended</option></select>' +
       '<div class="quota-wrap"><input data-quota type="number" min="0" step="0.25" value="' + gbFromBytes(quota) + '" title="Storage limit in GB"></div>' +
       '<div class="usage-wrap" title="' + fmtBytes(used) + ' used of ' + fmtBytes(quota) + '"><div class="usage-top"><span>Storage</span><strong>' + pct + '%</strong></div><div class="usage-bar"><div class="usage-fill" style="width:' + pct + '%"></div></div></div>' +

@@ -135,9 +135,20 @@ def user_record_from_session(create=True):
     return record
 
 
+def current_user_role():
+    record = user_record_from_session(create=True) or {}
+    if record.get("status") != "active":
+        return "user"
+    role = record.get("role") or "user"
+    return role if role in {"user", "moderator", "admin"} else "user"
+
+
 def is_current_admin():
-    record = user_record_from_session(create=True)
-    return bool(record and record.get("role") == "admin" and record.get("status") == "active")
+    return current_user_role() == "admin"
+
+
+def is_current_moderator():
+    return current_user_role() in {"moderator", "admin"}
 
 
 def current_user_quota():
@@ -664,7 +675,8 @@ def api_user():
             "picture": user.get("picture"),
             "role": record.get("role", "user"),
             "status": record.get("status", "active"),
-            "is_admin": record.get("role") == "admin",
+            "is_admin": current_user_role() == "admin",
+            "is_moderator": current_user_role() in {"moderator", "admin"},
             "used_bytes": used,
             "quota_bytes": quota,
             "backup_mode": is_backup_runtime(),
@@ -692,6 +704,8 @@ def ytplayer_history():
 
     base = public_origin()
     owner = current_user_key()
+    role = current_user_role()
+    can_view_all = role in {"moderator", "admin"}
     streams = []
     for stream_id, record in reversed(list(videos.items())):
         if isinstance(record, dict):
@@ -702,17 +716,23 @@ def ytplayer_history():
             source = str(record or "")
             record_owner = None
             title = source
-        if record_owner != owner:
+        owned = record_owner == owner
+        if not can_view_all and not owned:
             continue
         streams.append({
             "id": stream_id,
             "source": source,
             "title": title,
+            "owner": record_owner or "",
+            "owned": owned,
+            "can_download": owned,
+            "can_share": owned or role in {"moderator", "admin"},
+            "can_delete": owned or role == "admin",
             "video": f"{base}/ytplayer/stream/{stream_id}",
             "audio": f"{base}/ytplayer/play/{stream_id}",
         })
 
-    return jsonify({"streams": streams})
+    return jsonify({"streams": streams, "role": role})
 
 
 @app.route("/api/ytplayer/update", methods=["POST"])
@@ -762,8 +782,10 @@ def ytplayer_delete():
         videos = {}
 
     record = videos.get(stream_id)
-    if not isinstance(record, dict) or record.get("owner") != current_user_key():
+    if not isinstance(record, dict):
         return jsonify({"error": "Not found"}), 404
+    if record.get("owner") != current_user_key() and not is_current_admin():
+        return jsonify({"error": "Not allowed"}), 403
     videos.pop(stream_id, None)
     with open(data_path, "w", encoding="utf-8") as f:
         json.dump(videos, f, indent=2)
@@ -812,7 +834,7 @@ def admin_update_user():
     if email != DEFAULT_ADMIN_EMAIL:
         role = data_in.get("role")
         status = data_in.get("status")
-        if role in ("user", "admin"):
+        if role in ("user", "moderator", "admin"):
             record["role"] = role
         if status in ("active", "suspended"):
             record["status"] = status
@@ -920,7 +942,3 @@ if __name__ == "__main__":
         
         print("[WARN] Waitress not found, using Werkzeug dev server")
         app.run(host="0.0.0.0", port=8000, debug=False, use_reloader=False)
-
-
-
-

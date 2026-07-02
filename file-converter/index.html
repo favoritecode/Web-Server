@@ -33,6 +33,9 @@
 .convert-btn { min-height:44px; border:0; border-radius:999px; padding:0 22px; background:linear-gradient(135deg,#9333ea,#0ea5e9); color:#fff; font-weight:900; cursor:pointer; box-shadow:0 14px 34px rgba(99,102,241,.24); }
 .convert-btn:disabled { opacity:.45; cursor:not-allowed; box-shadow:none; }
 .status { flex:1; min-height:22px; color:#7dd3fc; font-size:13px; }
+.progress-wrap { width:100%; height:8px; margin-top:12px; border-radius:999px; background:rgba(148,163,184,.16); overflow:hidden; display:none; }
+.progress-fill { height:100%; width:0%; border-radius:999px; background:linear-gradient(90deg,#22c55e,#38bdf8,#a855f7); transition:width .25s ease; }
+.progress-meta { display:none; margin-top:7px; color:#8ea1bd; font-size:12px; justify-content:space-between; }
 .status.error { color:#fecdd3; }
 .feature-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:12px; margin-top:18px; }
 .feature { padding:12px; border:1px solid rgba(148,163,184,.12); border-radius:12px; background:rgba(255,255,255,.04); }
@@ -120,6 +123,8 @@
           <div class="status" id="statusLine"></div>
           <button class="convert-btn" id="convertBtn" type="button" disabled>Convert File</button>
         </div>
+        <div class="progress-wrap" id="progressWrap"><div class="progress-fill" id="progressFill"></div></div>
+        <div class="progress-meta" id="progressMeta"><span id="progressLabel">Working</span><span id="progressPercent">0%</span></div>
 
         <div class="feature-grid">
           <div class="feature"><strong>Documents</strong><span>LibreOffice is used when available for Office and PDF formats.</span></div>
@@ -152,6 +157,12 @@ const fileInfo = document.getElementById("fileInfo");
 const targetFormat = document.getElementById("targetFormat");
 const convertBtn = document.getElementById("convertBtn");
 const statusLine = document.getElementById("statusLine");
+const progressWrap = document.getElementById("progressWrap");
+const progressFill = document.getElementById("progressFill");
+const progressMeta = document.getElementById("progressMeta");
+const progressLabel = document.getElementById("progressLabel");
+const progressPercent = document.getElementById("progressPercent");
+let progressTimer = null;
 
 function formatSize(bytes) {
   if (bytes < 1024) return bytes + " B";
@@ -165,6 +176,30 @@ function setStatus(message, isError) {
   statusLine.textContent = message || "";
   statusLine.classList.toggle("error", Boolean(isError));
 }
+function setProgress(value, label) {
+  const pct = Math.max(0, Math.min(100, Math.round(value || 0)));
+  progressWrap.style.display = "block";
+  progressMeta.style.display = "flex";
+  progressFill.style.width = pct + "%";
+  progressLabel.textContent = label || "Working";
+  progressPercent.textContent = pct + "%";
+}
+function resetProgress() {
+  clearInterval(progressTimer);
+  progressTimer = null;
+  progressFill.style.width = "0%";
+  progressWrap.style.display = "none";
+  progressMeta.style.display = "none";
+  progressPercent.textContent = "0%";
+}
+function startConvertProgress() {
+  clearInterval(progressTimer);
+  let value = 45;
+  progressTimer = setInterval(function() {
+    value = Math.min(94, value + (value < 75 ? 4 : 1));
+    setProgress(value, "Converting");
+  }, 900);
+}
 function setMode(mode) {
   currentMode = mode;
   document.querySelectorAll(".mode-btn").forEach(btn => btn.classList.toggle("active", btn.dataset.mode === mode));
@@ -177,6 +212,7 @@ function setMode(mode) {
   document.getElementById("imageQualityControl").style.display = mode === "image" ? "grid" : "none";
   document.getElementById("imageWidthControl").style.display = mode === "image" ? "grid" : "none";
   setStatus("");
+  resetProgress();
 }
 document.querySelectorAll(".mode-btn").forEach(btn => btn.addEventListener("click", () => setMode(btn.dataset.mode)));
 dropZone.addEventListener("click", () => fileInput.click());
@@ -193,8 +229,9 @@ function handleFile(file) {
   fileInfo.textContent = file.name + " (" + formatSize(file.size) + ")";
   convertBtn.disabled = false;
   setStatus("");
+  resetProgress();
 }
-convertBtn.addEventListener("click", async function() {
+convertBtn.addEventListener("click", function() {
   if (!selectedFile) return;
   const form = new FormData();
   form.append("file", selectedFile);
@@ -207,19 +244,35 @@ convertBtn.addEventListener("click", async function() {
   form.append("width", document.getElementById("imageWidth").value);
   convertBtn.disabled = true;
   convertBtn.textContent = "Converting...";
-  setStatus("Converting file. Large video files can take some time.");
-  try {
-    const res = await fetch("/file-converter/convert", { method: "POST", body: form });
-    if (!res.ok) {
-      const data = await res.json().catch(() => ({}));
-      setStatus(data.error || "Conversion failed.", true);
+  setStatus("Uploading file...");
+  setProgress(3, "Starting");
+  const xhr = new XMLHttpRequest();
+  xhr.open("POST", "/file-converter/convert");
+  xhr.responseType = "blob";
+  xhr.upload.onprogress = function(event) {
+    if (!event.lengthComputable) return;
+    const uploaded = Math.round((event.loaded / event.total) * 40);
+    setProgress(Math.max(5, uploaded), "Uploading");
+  };
+  xhr.onload = async function() {
+    clearInterval(progressTimer);
+    if (xhr.status < 200 || xhr.status >= 300) {
+      let message = "Conversion failed.";
+      try {
+        const data = JSON.parse(await xhr.response.text());
+        message = data.error || message;
+      } catch (e) {}
+      setStatus(message, true);
+      setProgress(100, "Failed");
+      convertBtn.disabled = false;
+      convertBtn.textContent = "Convert File";
       return;
     }
-    const blob = await res.blob();
-    const disposition = res.headers.get("content-disposition") || "";
+    setProgress(100, "Complete");
+    const disposition = xhr.getResponseHeader("content-disposition") || "";
     const match = disposition.match(/filename\*?=(?:UTF-8'')?"?([^";]+)/i);
     const filename = match ? decodeURIComponent(match[1]) : "converted." + targetFormat.value;
-    const url = URL.createObjectURL(blob);
+    const url = URL.createObjectURL(xhr.response);
     const a = document.createElement("a");
     a.href = url;
     a.download = filename;
@@ -228,12 +281,24 @@ convertBtn.addEventListener("click", async function() {
     a.remove();
     URL.revokeObjectURL(url);
     setStatus("Conversion complete. Download started.");
-  } catch (error) {
-    setStatus("Conversion failed: " + error.message, true);
-  } finally {
     convertBtn.disabled = false;
     convertBtn.textContent = "Convert File";
-  }
+  };
+  xhr.onerror = function() {
+    clearInterval(progressTimer);
+    setStatus("Conversion failed: network error", true);
+    setProgress(100, "Failed");
+    convertBtn.disabled = false;
+    convertBtn.textContent = "Convert File";
+  };
+  xhr.onloadstart = function() { setProgress(5, "Uploading"); };
+  xhr.onreadystatechange = function() {
+    if (xhr.readyState === 2) {
+      setStatus("Converting file. Large video files can take some time.");
+      startConvertProgress();
+    }
+  };
+  xhr.send(form);
 });
 setMode("document");
 </script>

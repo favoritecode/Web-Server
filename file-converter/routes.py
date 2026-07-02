@@ -1,5 +1,5 @@
 from flask import after_this_request, jsonify, request, send_file, send_from_directory
-from PIL import Image, ImageOps, UnidentifiedImageError
+from PIL import Image, ImageDraw, ImageFont, ImageOps, UnidentifiedImageError
 import csv
 import html
 import json
@@ -8,6 +8,9 @@ import re
 import shutil
 import subprocess
 import tempfile
+import textwrap
+import zipfile
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -17,7 +20,7 @@ IMAGE_FORMATS = {"jpg", "jpeg", "png", "webp", "bmp", "tiff", "gif", "ico", "pdf
 VIDEO_FORMATS = {"mp4", "mkv", "webm", "mov", "avi", "flv", "m4v", "ogv"}
 AUDIO_FORMATS = {"mp3", "m4a", "aac", "wav", "flac", "ogg", "opus", "wma"}
 DOCUMENT_FORMATS = {"pdf", "docx", "doc", "odt", "rtf", "txt", "html", "md", "csv", "json"}
-TEXT_DOCUMENTS = {"txt", "html", "md", "csv", "json"}
+TEXT_DOCUMENTS = {"txt", "html", "md", "csv", "json", "rtf", "docx", "odt"}
 
 
 def init_routes(app):
@@ -182,11 +185,11 @@ def convert_audio(input_path, target, quality, form, temp_dir):
 
 
 def convert_document(input_path, source_ext, target, temp_dir):
-    if source_ext in TEXT_DOCUMENTS and target in TEXT_DOCUMENTS:
+    if source_ext in TEXT_DOCUMENTS and target in {"txt", "html", "md", "csv", "json", "rtf", "doc", "docx", "odt", "pdf"}:
         return convert_text_document(input_path, source_ext, target, temp_dir)
     soffice = find_soffice()
     if not soffice:
-        raise ConverterError("Document conversion needs LibreOffice on the server. Install LibreOffice to convert PDF, DOCX, DOC, ODT, and RTF.", 503)
+        raise ConverterError("This document type needs LibreOffice on the server. TXT, HTML, MD, CSV, JSON, RTF and DOCX text conversions work without it.", 503)
     out_dir = Path(temp_dir) / "doc-out"
     out_dir.mkdir(exist_ok=True)
     target_filter = "html" if target == "html" else target
@@ -199,11 +202,32 @@ def convert_document(input_path, source_ext, target, temp_dir):
     return candidates[0]
 
 
+def read_document_text(input_path, source_ext):
+    if source_ext == "docx":
+        return read_docx_text(input_path)
+    if source_ext == "odt":
+        return read_odt_text(input_path)
+    raw = input_path.read_text(encoding="utf-8", errors="ignore")
+    if source_ext == "html":
+        raw = re.sub(r"<br\s*/?>", "\n", raw, flags=re.I)
+        raw = re.sub(r"</p\s*>", "\n", raw, flags=re.I)
+        raw = re.sub(r"<[^>]+>", "", raw)
+        return html.unescape(raw)
+    if source_ext == "json":
+        try:
+            return json.dumps(json.loads(raw), ensure_ascii=False, indent=2)
+        except Exception:
+            return raw
+    if source_ext == "rtf":
+        return strip_rtf(raw)
+    return raw
+
+
 def convert_text_document(input_path, source_ext, target, temp_dir):
-    text = input_path.read_text(encoding="utf-8", errors="ignore")
+    text = read_document_text(input_path, source_ext)
     output = Path(temp_dir) / f"converted.{target}"
     if target == "html":
-        output.write_text("<pre>" + html.escape(text) + "</pre>", encoding="utf-8")
+        output.write_text("<!doctype html><meta charset=\"utf-8\"><pre>" + html.escape(text) + "</pre>", encoding="utf-8")
     elif target == "json":
         output.write_text(json.dumps({"text": text}, ensure_ascii=False, indent=2), encoding="utf-8")
     elif target == "csv":
@@ -211,9 +235,117 @@ def convert_text_document(input_path, source_ext, target, temp_dir):
             writer = csv.writer(f)
             for line in text.splitlines():
                 writer.writerow([line])
+    elif target == "doc":
+        output.write_text("<html><head><meta charset=\"utf-8\"></head><body><pre>" + html.escape(text) + "</pre></body></html>", encoding="utf-8")
+    elif target == "docx":
+        write_docx(output, text)
+    elif target == "odt":
+        write_odt(output, text)
+    elif target == "pdf":
+        write_text_pdf(output, text)
+    elif target == "rtf":
+        escaped = text.replace("\\", r"\\").replace("{", r"\{").replace("}", r"\}").replace("\n", r"\par ")
+        output.write_text(r"{\rtf1\ansi " + escaped + "}", encoding="utf-8")
     else:
         output.write_text(text, encoding="utf-8")
     return output
+
+def strip_rtf(value):
+    value = re.sub(r"\\par[d]?", "\n", value)
+    value = re.sub(r"\\'[0-9a-fA-F]{2}", "", value)
+    value = re.sub(r"\\[a-zA-Z]+-?\d* ?", "", value)
+    value = value.replace("{", "").replace("}", "")
+    return value.strip()
+
+
+def read_docx_text(path):
+    try:
+        with zipfile.ZipFile(path) as docx:
+            xml = docx.read("word/document.xml")
+        root = ET.fromstring(xml)
+        ns = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
+        lines = []
+        for para in root.findall(".//w:p", ns):
+            parts = [node.text or "" for node in para.findall(".//w:t", ns)]
+            if parts:
+                lines.append("".join(parts))
+        return "\n".join(lines)
+    except Exception as exc:
+        raise ConverterError("Could not read DOCX text: " + str(exc), 400)
+
+def read_odt_text(path):
+    try:
+        with zipfile.ZipFile(path) as odt:
+            xml = odt.read("content.xml")
+        root = ET.fromstring(xml)
+        ns = {"text": "urn:oasis:names:tc:opendocument:xmlns:text:1.0"}
+        lines = []
+        for para in root.findall(".//text:p", ns):
+            parts = [node.text or "" for node in para.iter()]
+            line = "".join(parts).strip()
+            if line:
+                lines.append(line)
+        return "\n".join(lines)
+    except Exception as exc:
+        raise ConverterError("Could not read ODT text: " + str(exc), 400)
+
+
+def write_docx(path, text):
+    paragraphs = "".join("<w:p><w:r><w:t>{}</w:t></w:r></w:p>".format(html.escape(line)) for line in (text.splitlines() or [""]))
+    content_types = '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>'''
+    rels = '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>'''
+    document = '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>{}<w:sectPr/></w:body></w:document>'''.format(paragraphs)
+    with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as docx:
+        docx.writestr("[Content_Types].xml", content_types)
+        docx.writestr("_rels/.rels", rels)
+        docx.writestr("word/document.xml", document)
+
+
+def write_odt(path, text):
+    paragraphs = "".join('<text:p text:style-name="Standard">{}</text:p>'.format(html.escape(line)) for line in (text.splitlines() or [""]))
+    content = '''<?xml version="1.0" encoding="UTF-8"?><office:document-content xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" office:version="1.2"><office:body><office:text>{}</office:text></office:body></office:document-content>'''.format(paragraphs)
+    styles = '''<?xml version="1.0" encoding="UTF-8"?><office:document-styles xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" office:version="1.2"/>'''
+    manifest = '''<?xml version="1.0" encoding="UTF-8"?><manifest:manifest xmlns:manifest="urn:oasis:names:tc:opendocument:xmlns:manifest:1.0" manifest:version="1.2"><manifest:file-entry manifest:full-path="/" manifest:media-type="application/vnd.oasis.opendocument.text"/><manifest:file-entry manifest:full-path="content.xml" manifest:media-type="text/xml"/><manifest:file-entry manifest:full-path="styles.xml" manifest:media-type="text/xml"/></manifest:manifest>'''
+    with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as odt:
+        odt.writestr("mimetype", "application/vnd.oasis.opendocument.text", compress_type=zipfile.ZIP_STORED)
+        odt.writestr("content.xml", content)
+        odt.writestr("styles.xml", styles)
+        odt.writestr("META-INF/manifest.xml", manifest)
+
+
+def load_pdf_font(size=24):
+    for candidate in (
+        r"C:\Windows\Fonts\Nirmala.ttf",
+        r"C:\Windows\Fonts\arial.ttf",
+        "/usr/share/fonts/truetype/noto/NotoSansBengali-Regular.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+    ):
+        try:
+            if Path(candidate).exists():
+                return ImageFont.truetype(candidate, size=size)
+        except Exception:
+            pass
+    return ImageFont.load_default()
+
+
+def write_text_pdf(path, text):
+    font = load_pdf_font()
+    lines = []
+    for line in text.splitlines() or [""]:
+        lines.extend(textwrap.wrap(line, width=95) or [""])
+    if not lines:
+        lines = [""]
+    pages = []
+    for start in range(0, len(lines), 48):
+        img = Image.new("RGB", (1240, 1754), "white")
+        draw = ImageDraw.Draw(img)
+        y = 80
+        for line in lines[start:start + 48]:
+            draw.text((80, y), line, fill="black", font=font)
+            y += 32
+        pages.append(img)
+    first, rest = pages[0], pages[1:]
+    first.save(path, "PDF", resolution=150.0, save_all=True, append_images=rest)
 
 
 def audio_bitrate(quality):
