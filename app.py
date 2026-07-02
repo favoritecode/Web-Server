@@ -860,6 +860,25 @@ def drive_public_share(token):
 
 @app.route("/download/<path:filename>")
 def download_own_file(filename):
+    download_public_dir = os.path.join(BASE_DIR, "download", "public")
+    public_file = os.path.abspath(os.path.join(download_public_dir, filename))
+    try:
+        if os.path.commonpath([os.path.abspath(download_public_dir), public_file]) == os.path.abspath(download_public_dir) and os.path.isfile(public_file):
+            response = send_from_directory(download_public_dir, filename)
+            response.headers["Cache-Control"] = "no-cache"
+            return response
+    except ValueError:
+        pass
+
+    if "/" not in filename and "." not in filename and len(filename) >= 6:
+        try:
+            html = open(os.path.join(download_public_dir, "index.html"), "r", encoding="utf-8").read()
+            script = '<script>window.__VIDEO_ID__ = ' + json.dumps(filename) + ';</script>'
+            html = html.replace("</head>", script + "</head>")
+            return Response(html, content_type="text/html; charset=utf-8")
+        except Exception as exc:
+            return jsonify({"error": "Failed to load download page", "details": str(exc)}), 500
+
     blocked = active_user_required_redirect()
     if blocked:
         return blocked

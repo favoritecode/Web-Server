@@ -397,6 +397,16 @@
 @media (max-width: 440px) {
   .stats-bar { grid-template-columns: 1fr; }
 }
+
+/* homepage stats spacing fix */
+.stats-bar {
+  width: min(1180px, calc(100% - 28px));
+  max-width: none;
+  margin: 24px auto 0;
+}
+@media (max-width: 768px) {
+  .stats-bar { margin-top: 18px; }
+}
 </style>
 </head>
 <body>
