@@ -145,6 +145,30 @@
   font-size: 12px;
   overflow-wrap: anywhere;
 }
+.drive-storage-card {
+  grid-column: 1 / -1;
+}
+.drive-storage-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.drive-storage-bar {
+  height: 7px;
+  margin-top: 9px;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.16);
+  overflow: hidden;
+}
+.drive-storage-fill {
+  display: block;
+  height: 100%;
+  width: 0%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #22c55e, #38bdf8, #a855f7);
+  transition: width 0.28s ease;
+}
 .dashboard-upload-zone {
   border: 1px dashed rgba(148, 163, 184, 0.22);
   border-radius: 14px;
@@ -397,8 +421,10 @@
             <div class="drive-account-summary">
               <span><b>Role</b><strong id="dashRole">--</strong></span>
               <span><b>Status</b><strong id="dashStatus">--</strong></span>
-              <span><b>Limit</b><strong id="dashQuota">--</strong></span>
-              <span><b>Usage</b><strong id="dashUsage">--</strong></span>
+              <span class="drive-storage-card">
+                <div class="drive-storage-top"><b>Storage</b><strong id="dashStorageText">--</strong></div>
+                <div class="drive-storage-bar"><i class="drive-storage-fill" id="dashStorageFill"></i></div>
+              </span>
             </div>
           </div>
         </div>
@@ -446,6 +472,7 @@ function fileIcon(item) {
   return "&#128196;";
 }
 var currentDrivePath = "";
+var uploadsEnabled = true;
 
 function fmtBytes(bytes) {
   bytes = Number(bytes || 0);
@@ -470,15 +497,20 @@ async function loadAccountSummary() {
     var res = await fetch("/api/user", { cache: "no-store" });
     if (res.status === 401) { location.href = "/login"; return; }
     var user = await res.json();
+    var used = Number(user.used_bytes || 0);
+    var quota = Number(user.quota_bytes || 0);
+    var pct = quota ? Math.min(100, Math.round((used / quota) * 100)) : 0;
+    uploadsEnabled = user.uploads_enabled !== false;
     document.getElementById("dashRole").textContent = pretty(user.role || "user");
     document.getElementById("dashStatus").textContent = pretty(user.status || "active");
-    document.getElementById("dashQuota").textContent = fmtBytes(user.quota_bytes || 0);
-    document.getElementById("dashUsage").textContent = fmtBytes(user.used_bytes || 0);
+    document.getElementById("dashStorageText").textContent = fmtBytes(used) + " / " + fmtBytes(quota);
+    document.getElementById("dashStorageFill").style.width = pct + "%";
+    applyUploadMode(user.backup_mode);
   } catch (e) {
     document.getElementById("dashRole").textContent = "--";
     document.getElementById("dashStatus").textContent = "--";
-    document.getElementById("dashQuota").textContent = "--";
-    document.getElementById("dashUsage").textContent = "--";
+    document.getElementById("dashStorageText").textContent = "--";
+    document.getElementById("dashStorageFill").style.width = "0%";
   }
 }
 
@@ -528,7 +560,23 @@ async function collectDroppedUploads(dataTransfer) {
   return uploads;
 }
 
+function applyUploadMode(isBackupMode) {
+  var zone = document.getElementById("dashboardUploadZone");
+  var status = document.getElementById("dashboardUploadStatus");
+  var button = document.getElementById("dashboardUploadBtn");
+  if (!zone || !button || uploadsEnabled) return;
+  zone.classList.remove("drag-over");
+  zone.style.opacity = "0.72";
+  button.disabled = true;
+  button.textContent = "Upload Disabled";
+  status.textContent = isBackupMode ? "Backup mode is read-only. Turn on a local FavoriteWeb PC server to upload files." : "Uploads are disabled.";
+}
+
 async function uploadDashboardFiles(files) {
+  if (!uploadsEnabled) {
+    document.getElementById("dashboardUploadStatus").textContent = "Backup mode is read-only. Turn on a local FavoriteWeb PC server to upload files.";
+    return;
+  }
   if (!files || !files.length) return;
   var uploads = Array.from(files).map(function(item) {
     if (item.file) return item;
@@ -543,7 +591,12 @@ async function uploadDashboardFiles(files) {
   try {
     var res = await fetch("/drive/upload", { method: "POST", body: form });
     if (res.status === 401) { location.href = "/login"; return; }
-    status.textContent = res.ok ? "Upload complete." : "Upload failed.";
+    if (res.ok) {
+      status.textContent = "Upload complete.";
+    } else {
+      var data = await res.json().catch(function() { return {}; });
+      status.textContent = data.error || "Upload failed.";
+    }
     loadFiles(currentDrivePath);
   } catch (e) {
     status.textContent = "Upload failed.";
@@ -643,6 +696,7 @@ document.getElementById("dashboardFolderInput").addEventListener("change", funct
 var dashboardUploadZone = document.getElementById("dashboardUploadZone");
 dashboardUploadZone.addEventListener("dragover", function(event) {
   event.preventDefault();
+  if (!uploadsEnabled) return;
   dashboardUploadZone.classList.add("drag-over");
 });
 dashboardUploadZone.addEventListener("dragleave", function() {
@@ -651,6 +705,10 @@ dashboardUploadZone.addEventListener("dragleave", function() {
 dashboardUploadZone.addEventListener("drop", async function(event) {
   event.preventDefault();
   dashboardUploadZone.classList.remove("drag-over");
+  if (!uploadsEnabled) {
+    document.getElementById("dashboardUploadStatus").textContent = "Backup mode is read-only. Turn on a local FavoriteWeb PC server to upload files.";
+    return;
+  }
   var uploads = await collectDroppedUploads(event.dataTransfer);
   uploadDashboardFiles(uploads);
 });

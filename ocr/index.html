@@ -6,550 +6,223 @@
 <title>OCR Tool - FavoriteWeb</title>
 <link rel="stylesheet" href="/shared.css">
 <style>
-.ocr-hero {
-  text-align: center;
-  padding: 40px 20px 20px;
-}
-
-.ocr-hero h1 {
-  font-size: 32px;
-  font-weight: 700;
-  background: linear-gradient(135deg, #fb923c, #f472b6);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-  margin-bottom: 8px;
-}
-
-.ocr-hero p {
-  color: #6b7280;
-  font-size: 15px;
-}
-
-.ocr-panel {
-  max-width: 960px;
-  margin: 20px auto;
-  padding: 0 20px;
-}
-
-/* Language Selector */
-.lang-selector {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 20px;
-  padding: 14px 20px;
-  background: rgba(255,255,255,0.04);
-  border-radius: 12px;
-  border: 1px solid rgba(255,255,255,0.06);
-}
-
-.lang-selector label {
-  font-size: 14px;
-  font-weight: 500;
-  color: #9ca3af;
-  white-space: nowrap;
-}
-
-.lang-selector select {
-  padding: 8px 14px;
-  font-size: 14px;
-  font-family: inherit;
-  border: 1px solid rgba(255,255,255,0.15);
-  border-radius: 8px;
-  background: rgba(0,0,0,0.3);
-  color: #e0e0e0;
-  outline: none;
-  cursor: pointer;
-}
-
-.lang-selector select:focus {
-  border-color: #f472b6;
-}
-
-.lang-selector select option {
-  background: #1e1b4b;
-  color: #e0e0e0;
-}
-
-.lang-selector .lang-badge {
-  font-size: 11px;
-  padding: 4px 10px;
-  border-radius: 20px;
-  background: rgba(244,114,182,0.1);
-  color: #f472b6;
-  font-weight: 500;
-}
-
-/* Upload Area */
-.ocr-upload {
-  background: rgba(255,255,255,0.04);
-  border: 2px dashed rgba(255,255,255,0.12);
-  border-radius: 16px;
-  padding: 40px 20px;
-  text-align: center;
-  cursor: pointer;
-  transition: all 0.3s;
-}
-
-.ocr-upload:hover, .ocr-upload.drag-over {
-  border-color: #f472b6;
-  background: rgba(244,114,182,0.06);
-}
-
-.ocr-upload .upload-icon {
-  font-size: 48px;
-  margin-bottom: 12px;
-}
-
-.ocr-upload h3 {
-  font-size: 18px;
-  font-weight: 600;
-  color: #f0f0f0;
-  margin-bottom: 6px;
-}
-
-.ocr-upload p {
-  color: #6b7280;
-  font-size: 14px;
-  margin-bottom: 6px;
-}
-
-.ocr-upload .file-info {
-  font-size: 12px;
-  color: #9ca3af;
-  margin-top: 8px;
-}
-
-.ocr-upload .extract-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 12px 28px;
-  background: linear-gradient(135deg, #f472b6, #fb923c);
-  color: #fff;
-  border: none;
-  border-radius: 10px;
-  font-size: 15px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.25s;
-  margin-top: 12px;
-}
-
-.ocr-upload .extract-btn:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 6px 24px rgba(244,114,182,0.3);
-}
-
-.ocr-upload .extract-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-  transform: none;
-}
-
-/* Preview */
-.preview-area {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 20px;
-  margin-top: 24px;
-}
-
-.preview-area .image-preview {
-  background: rgba(0,0,0,0.2);
-  border: 1px solid rgba(255,255,255,0.08);
-  border-radius: 12px;
-  overflow: hidden;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 200px;
-  max-height: 400px;
-}
-
-.preview-area .image-preview img {
-  max-width: 100%;
-  max-height: 400px;
-  object-fit: contain;
-}
-
-.preview-area .image-preview .placeholder {
-  color: #4b5563;
-  font-size: 14px;
-  text-align: center;
-  padding: 20px;
-}
-
-.preview-area .image-preview .placeholder .ph-icon {
-  font-size: 48px;
-  margin-bottom: 8px;
-  display: block;
-}
-
-/* Result area */
-.result-area {
-  background: rgba(255,255,255,0.04);
-  border: 1px solid rgba(255,255,255,0.08);
-  border-radius: 12px;
-  display: flex;
-  flex-direction: column;
-}
-
-.result-area .result-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 12px 16px;
-  border-bottom: 1px solid rgba(255,255,255,0.06);
-}
-
-.result-area .result-header h4 {
-  font-size: 14px;
-  font-weight: 600;
-  color: #9ca3af;
-}
-
-.result-area .result-header .result-actions {
-  display: flex;
-  gap: 8px;
-}
-
-.result-area .result-header .result-actions button {
-  padding: 6px 12px;
-  border: none;
-  border-radius: 6px;
-  font-size: 12px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s;
-  color: #fff;
-}
-
-.result-area .result-header .btn-copy {
-  background: rgba(129,140,248,0.2);
-  color: #818cf8;
-}
-
-.result-area .result-header .btn-copy:hover {
-  background: rgba(129,140,248,0.3);
-}
-
-.result-area .result-header .btn-download {
-  background: rgba(52,211,153,0.2);
-  color: #34d399;
-}
-
-.result-area .result-header .btn-download:hover {
-  background: rgba(52,211,153,0.3);
-}
-
-.result-area .result-body {
-  padding: 16px;
-  flex: 1;
-  overflow: auto;
-  max-height: 400px;
-}
-
-.result-area .result-body textarea {
-  width: 100%;
-  height: 100%;
-  min-height: 160px;
-  background: transparent;
-  border: none;
-  color: #e0e0e0;
-  font-size: 14px;
-  font-family: 'Consolas', 'Courier New', monospace;
-  line-height: 1.7;
-  resize: vertical;
-  outline: none;
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-
-.result-area .result-body textarea::placeholder {
-  color: #4b5563;
-}
-
-.result-area .result-body .ocr-status {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 20px;
-  color: #6b7280;
-  font-size: 14px;
-}
-
-.result-area .result-body .ocr-status .spinner {
-  width: 20px;
-  height: 20px;
-  border: 2px solid rgba(255,255,255,0.1);
-  border-top-color: #f472b6;
-  border-radius: 50%;
-  animation: spin 0.8s linear infinite;
-}
-
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
-
-.result-area .result-body .ocr-status .error-text {
-  color: #f87171;
-}
-
-/* Detected text info */
-.detected-info {
-  margin-top: 16px;
-  padding: 12px 16px;
-  background: rgba(255,255,255,0.03);
-  border-radius: 10px;
-  border: 1px solid rgba(255,255,255,0.06);
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  font-size: 13px;
-  color: #6b7280;
-}
-
-.detected-info .chars {
-  color: #a78bfa;
-  font-weight: 600;
-}
-
-/* Responsive */
-@media (max-width: 768px) {
-  .preview-area {
-    grid-template-columns: 1fr;
-  }
-  .ocr-hero h1 { font-size: 24px; }
-  .lang-selector { flex-wrap: wrap; }
-}
+.ocr-main { width:min(1120px, calc(100% - 32px)); margin:42px auto 80px; }
+.ocr-hero { display:flex; align-items:flex-end; justify-content:space-between; gap:20px; padding:28px; border:1px solid rgba(148,163,184,.16); border-radius:18px; background:linear-gradient(135deg, rgba(15,23,42,.82), rgba(17,24,39,.54)); box-shadow:0 22px 60px rgba(0,0,0,.28); backdrop-filter:blur(18px); }
+.ocr-hero h1 { color:#f8fbff; font-size:34px; margin-bottom:8px; }
+.ocr-hero p { color:#9aa7bd; line-height:1.6; }
+.ocr-toolbar { display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin:20px 0; padding:14px; border:1px solid rgba(148,163,184,.14); border-radius:14px; background:rgba(255,255,255,.045); }
+.ocr-toolbar label { color:#9aa7bd; font-size:13px; font-weight:750; }
+.ocr-toolbar select { min-height:40px; border:1px solid rgba(148,163,184,.18); border-radius:10px; background:rgba(15,23,42,.82); color:#edf2ff; padding:0 12px; outline:none; }
+.ocr-toolbar select option { background:#111827; }
+.lang-badge { color:#7dd3fc; font-size:12px; font-weight:750; }
+.ocr-grid { display:grid; grid-template-columns:minmax(0,.95fr) minmax(360px,1.05fr); gap:18px; }
+.ocr-card { border:1px solid rgba(148,163,184,.16); border-radius:16px; background:rgba(13,18,34,.68); backdrop-filter:blur(16px); }
+.drop-zone { min-height:360px; padding:24px; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; gap:12px; border-style:dashed; cursor:pointer; transition:border-color .2s ease, background .2s ease, transform .2s ease; }
+.drop-zone:hover, .drop-zone.drag-over { border-color:rgba(56,189,248,.45); background:rgba(56,189,248,.08); transform:translateY(-1px); }
+.drop-zone h2 { color:#edf2ff; font-size:22px; }
+.drop-zone p, .hint { color:#8ea1bd; font-size:13px; line-height:1.6; }
+.file-chip { min-height:36px; padding:8px 12px; border-radius:999px; background:rgba(96,165,250,.12); color:#bfdbfe; font-size:12px; font-weight:750; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.ocr-btn { min-height:42px; border:0; border-radius:999px; padding:0 18px; background:linear-gradient(135deg,#9333ea,#0ea5e9); color:#fff; font-weight:850; cursor:pointer; box-shadow:0 14px 34px rgba(99,102,241,.24); }
+.ocr-btn:disabled { opacity:.45; cursor:not-allowed; box-shadow:none; }
+.preview-box { width:100%; max-height:220px; display:none; align-items:center; justify-content:center; overflow:hidden; border-radius:12px; background:rgba(0,0,0,.2); border:1px solid rgba(148,163,184,.12); }
+.preview-box img { max-width:100%; max-height:220px; object-fit:contain; }
+.result-card { display:flex; min-height:360px; flex-direction:column; }
+.result-head { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:14px 16px; border-bottom:1px solid rgba(148,163,184,.12); }
+.result-head h2 { color:#edf2ff; font-size:18px; }
+.result-actions { display:flex; gap:8px; }
+.result-actions button { min-height:34px; border:1px solid rgba(96,165,250,.22); border-radius:999px; background:rgba(59,130,246,.1); color:#bfdbfe; padding:0 12px; font-size:12px; font-weight:750; cursor:pointer; }
+.result-body { flex:1; padding:16px; }
+textarea { width:100%; height:100%; min-height:260px; border:0; outline:none; resize:vertical; background:transparent; color:#e5edff; font:14px/1.7 Consolas, 'Courier New', monospace; }
+.status-line { min-height:22px; margin-top:10px; color:#7dd3fc; font-size:13px; }
+.status-line.error { color:#fecdd3; }
+.ocr-stats { display:flex; flex-wrap:wrap; gap:10px; margin-top:14px; color:#8ea1bd; font-size:12px; }
+.ocr-stats span { padding:7px 10px; border:1px solid rgba(148,163,184,.12); border-radius:999px; background:rgba(255,255,255,.04); }
+@media (max-width: 860px) { .ocr-hero { flex-direction:column; align-items:flex-start; } .ocr-grid { grid-template-columns:1fr; } }
+@media (max-width: 560px) { .ocr-main { width:min(100% - 24px,1120px); margin-top:28px; } .ocr-hero { padding:22px; } .ocr-hero h1 { font-size:28px; } .result-head { flex-direction:column; align-items:flex-start; } }
 </style>
 </head>
 <body>
-
 <div class="main-content">
-  <div class="ocr-hero">
-    <h1>📝 OCR Text Extractor</h1>
-    <p>Extract text from images — supports English, Bangla (বাংলা), and both</p>
-  </div>
+  <main class="ocr-main">
+    <section class="ocr-hero">
+      <div>
+        <h1>OCR Text Extractor</h1>
+        <p>Extract text from scanned images with local Tesseract OCR tuned for English, Bangla, or mixed documents.</p>
+      </div>
+    </section>
 
-  <div class="ocr-panel">
-
-    <!-- Language Selector -->
-    <div class="lang-selector">
-      <label>🌐 Language</label>
+    <section class="ocr-toolbar">
+      <label for="langSelect">Language</label>
       <select id="langSelect">
         <option value="eng">English</option>
-        <option value="ben">বাংলা (Bangla)</option>
-        <option value="both">English + বাংলা (Both)</option>
+        <option value="ben">Bangla</option>
+        <option value="both">English + Bangla</option>
       </select>
-      <span class="lang-badge" id="langBadge">Text will be extracted in selected language</span>
-    </div>
+      <span class="lang-badge" id="langBadge">Mode: English</span>
+    </section>
 
-    <!-- Upload Zone -->
-    <div class="ocr-upload" id="ocrDropZone">
-      <div class="upload-icon">🖼️</div>
-      <h3>Drop an image here or click to browse</h3>
-      <p>Supports JPG, PNG, WEBP, BMP, TIFF</p>
-      <div class="file-info" id="fileInfo">No image selected</div>
-      <input type="file" id="imageInput" accept="image/*" hidden>
-      <button class="extract-btn" id="extractBtn" onclick="extractText()" disabled>🔍 Extract Text</button>
-    </div>
-
-    <!-- Preview + Result -->
-    <div class="preview-area" id="previewArea" style="display:none">
-      <div class="image-preview" id="imagePreview">
-        <div class="placeholder">
-          <span class="ph-icon">🖼️</span>
-          Image preview
-        </div>
+    <section class="ocr-grid">
+      <div class="ocr-card drop-zone" id="ocrDropZone">
+        <div class="preview-box" id="previewBox"></div>
+        <h2>Select Image</h2>
+        <p>Drop an image here or click to browse. JPG, PNG, WEBP, BMP and TIFF are supported.</p>
+        <div class="file-chip" id="fileInfo">No image selected</div>
+        <input type="file" id="imageInput" accept="image/*" hidden>
+        <button class="ocr-btn" id="extractBtn" type="button" disabled>Extract Text</button>
+        <div class="hint">Clear, high-resolution scans give the best result.</div>
       </div>
 
-      <div class="result-area">
-        <div class="result-header">
-          <h4>📄 Extracted Text</h4>
+      <div class="ocr-card result-card">
+        <div class="result-head">
+          <h2>Extracted Text</h2>
           <div class="result-actions">
-            <button class="btn-copy" onclick="copyResult()">📋 Copy</button>
-            <button class="btn-download" onclick="downloadResult()">⬇ Download</button>
+            <button type="button" id="copyBtn">Copy</button>
+            <button type="button" id="downloadBtn">Download</button>
           </div>
         </div>
         <div class="result-body">
           <textarea id="resultText" placeholder="Extracted text will appear here..." readonly></textarea>
-          <div class="ocr-status" id="ocrStatus" style="display:none">
-            <div class="spinner"></div>
-            <span>Processing with OCR...</span>
+          <div class="status-line" id="statusLine"></div>
+          <div class="ocr-stats" id="statsLine" style="display:none">
+            <span id="detectedLang">Language: -</span>
+            <span id="charCount">Characters: 0</span>
+            <span id="wordCount">Words: 0</span>
           </div>
         </div>
       </div>
-    </div>
-
-    <!-- Detected Info -->
-    <div class="detected-info" id="detectedInfo" style="display:none">
-      <span>Language: <strong id="detectedLang">-</strong></span>
-      <span>Characters: <span class="chars" id="charCount">0</span></span>
-      <span>Words: <span class="chars" id="wordCount">0</span></span>
-    </div>
-
-  </div>
+    </section>
+  </main>
 </div>
 
 <script>
 let selectedFile = null;
-
 const dropZone = document.getElementById("ocrDropZone");
 const imageInput = document.getElementById("imageInput");
 const extractBtn = document.getElementById("extractBtn");
 const fileInfo = document.getElementById("fileInfo");
-const previewArea = document.getElementById("previewArea");
-const imagePreview = document.getElementById("imagePreview");
+const previewBox = document.getElementById("previewBox");
 const resultText = document.getElementById("resultText");
-const ocrStatus = document.getElementById("ocrStatus");
-const detectedInfo = document.getElementById("detectedInfo");
+const statusLine = document.getElementById("statusLine");
+const statsLine = document.getElementById("statsLine");
 const detectedLang = document.getElementById("detectedLang");
 const charCount = document.getElementById("charCount");
 const wordCount = document.getElementById("wordCount");
 const langSelect = document.getElementById("langSelect");
 const langBadge = document.getElementById("langBadge");
 
-// Language change badge
+function formatSize(bytes) {
+  if (bytes < 1024) return bytes + " B";
+  const units = ["KB", "MB", "GB"];
+  let value = bytes / 1024;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) { value /= 1024; unit += 1; }
+  return (value >= 10 ? value.toFixed(1) : value.toFixed(2)).replace(/\.0+$/, "") + " " + units[unit];
+}
+
+function setStatus(message, isError) {
+  statusLine.textContent = message || "";
+  statusLine.classList.toggle("error", Boolean(isError));
+}
+
 langSelect.addEventListener("change", function() {
-  const labels = { eng: "English only", ben: "বাংলা only", both: "English + বাংলা" };
+  const labels = { eng: "English", ben: "Bangla", both: "English + Bangla" };
   langBadge.textContent = "Mode: " + (labels[this.value] || "English");
 });
 
-// Drag & Drop
-dropZone.addEventListener("dragover", e => {
-  e.preventDefault();
+function openPicker() { imageInput.click(); }
+dropZone.addEventListener("click", function(event) {
+  if (event.target === extractBtn) return;
+  openPicker();
+});
+dropZone.addEventListener("dragover", function(event) {
+  event.preventDefault();
   dropZone.classList.add("drag-over");
 });
-
-dropZone.addEventListener("dragleave", () => {
+dropZone.addEventListener("dragleave", function() { dropZone.classList.remove("drag-over"); });
+dropZone.addEventListener("drop", function(event) {
+  event.preventDefault();
   dropZone.classList.remove("drag-over");
+  if (event.dataTransfer.files.length) handleFile(event.dataTransfer.files[0]);
+});
+imageInput.addEventListener("change", function() {
+  if (this.files.length) handleFile(this.files[0]);
 });
 
-dropZone.addEventListener("drop", e => {
-  e.preventDefault();
-  dropZone.classList.remove("drag-over");
-  const files = e.dataTransfer.files;
-  if (files.length > 0) handleFile(files[0]);
-});
-
-dropZone.addEventListener("click", () => {
-  if (!selectedFile) imageInput.click();
-});
-
-imageInput.onchange = () => {
-  if (imageInput.files.length > 0) handleFile(imageInput.files[0]);
-};
-
-// Handle file selection
 function handleFile(file) {
   if (!file || !file.type.startsWith("image/")) {
-    alert("Please select a valid image file");
+    setStatus("Please select a valid image file.", true);
     return;
   }
-
   selectedFile = file;
-  fileInfo.textContent = `📎 ${file.name} (${formatSize(file.size)})`;
+  fileInfo.textContent = file.name + " (" + formatSize(file.size) + ")";
   extractBtn.disabled = false;
-  previewArea.style.display = "grid";
+  resultText.value = "";
+  statsLine.style.display = "none";
+  setStatus("");
 
-  // Show preview
   const reader = new FileReader();
-  reader.onload = function(e) {
-    imagePreview.innerHTML = `<img src="${e.target.result}" alt="Preview">`;
+  reader.onload = function(event) {
+    previewBox.style.display = "flex";
+    previewBox.innerHTML = '<img src="' + event.target.result + '" alt="Preview">';
   };
   reader.readAsDataURL(file);
-
-  // Hide previous result
-  resultText.value = "";
-  detectedInfo.style.display = "none";
 }
 
-// Extract text
 async function extractText() {
-  if (!selectedFile) {
-    alert("Please select an image first");
-    return;
-  }
-
-  const lang = langSelect.value;
+  if (!selectedFile) return;
   const formData = new FormData();
   formData.append("image", selectedFile);
-  formData.append("lang", lang);
-
-  // Show loading
+  formData.append("lang", langSelect.value);
   extractBtn.disabled = true;
-  extractBtn.innerHTML = "⏳ Processing...";
-  ocrStatus.style.display = "flex";
+  extractBtn.textContent = "Processing...";
   resultText.value = "";
+  statsLine.style.display = "none";
+  setStatus("Processing image with local OCR...");
 
   try {
     const res = await fetch("/ocr/extract", { method: "POST", body: formData });
-    const data = await res.json();
-
-    if (data.error) {
-      resultText.value = "Error: " + data.error;
+    const data = await res.json().catch(function() { return {}; });
+    if (!res.ok || data.error) {
+      resultText.value = data.error || "OCR failed.";
+      setStatus(data.error || "OCR failed.", true);
       return;
     }
-
     const text = data.text || "No text detected";
     resultText.value = text;
-
-    // Show stats
-    detectedLang.textContent = lang === "ben" ? "বাংলা" : lang === "both" ? "English + বাংলা" : "English";
-    charCount.textContent = text.length;
-    wordCount.textContent = text.trim() ? text.trim().split(/\s+/).length : 0;
-    detectedInfo.style.display = "flex";
-
-  } catch (err) {
-    resultText.value = "❌ Server error: " + err.message;
+    const labels = { eng: "English", ben: "Bangla", both: "English + Bangla" };
+    detectedLang.textContent = "Language: " + (labels[data.lang] || data.lang || "English");
+    charCount.textContent = "Characters: " + text.length;
+    wordCount.textContent = "Words: " + (text.trim() ? text.trim().split(/\s+/).length : 0);
+    statsLine.style.display = "flex";
+    setStatus((data.warnings && data.warnings.length) ? data.warnings.join(". ") : "OCR complete.", Boolean(data.warnings && data.warnings.length));
+  } catch (error) {
+    resultText.value = "Server error: " + error.message;
+    setStatus("Server error: " + error.message, true);
   } finally {
     extractBtn.disabled = false;
-    extractBtn.innerHTML = "🔍 Extract Text";
-    ocrStatus.style.display = "none";
+    extractBtn.textContent = "Extract Text";
   }
 }
 
-// Copy result
-function copyResult() {
-  const text = resultText.value;
-  if (!text) return;
-  navigator.clipboard.writeText(text).then(() => {
-    const btn = event.target.closest("button");
-    const orig = btn.innerHTML;
-    btn.innerHTML = "✅ Copied!";
-    setTimeout(() => btn.innerHTML = orig, 1500);
-  }).catch(() => {
-    resultText.select();
-    document.execCommand("copy");
-  });
-}
-
-// Download result
-function downloadResult() {
-  const text = resultText.value;
-  if (!text) return;
-  const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+extractBtn.addEventListener("click", extractText);
+document.getElementById("copyBtn").addEventListener("click", async function() {
+  if (!resultText.value) return;
+  await navigator.clipboard.writeText(resultText.value);
+  setStatus("Copied to clipboard.");
+});
+document.getElementById("downloadBtn").addEventListener("click", function() {
+  if (!resultText.value) return;
+  const blob = new Blob([resultText.value], { type: "text/plain;charset=utf-8" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = "ocr-result.txt";
+  a.download = "favoriteweb-ocr.txt";
+  document.body.appendChild(a);
   a.click();
+  a.remove();
   URL.revokeObjectURL(url);
-}
-
-function formatSize(bytes) {
-  if (!bytes) return "0 B";
-  const units = ["B", "KB", "MB"];
-  let i = 0;
-  let size = bytes;
-  while (size >= 1024 && i < units.length - 1) { size /= 1024; i++; }
-  return size.toFixed(1) + " " + units[i];
-}
+});
 </script>
-
 <script src="/shared.js"></script>
 </body>
 </html>

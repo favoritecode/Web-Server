@@ -46,6 +46,21 @@ DEFAULT_USER_QUOTA_BYTES = 2 * 1024 * 1024 * 1024
 USER_DB_PATH = os.path.join(BASE_DIR, "users.json")
 
 
+def env_enabled(name):
+    return str(os.environ.get(name, "")).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def is_backup_runtime():
+    explicit = os.environ.get("FAVORITEWEB_BACKUP_MODE")
+    if explicit is not None:
+        return str(explicit).strip().lower() in {"1", "true", "yes", "on"}
+    return any(os.environ.get(name) for name in ("RENDER", "RENDER_SERVICE_ID", "RENDER_EXTERNAL_HOSTNAME"))
+
+
+def uploads_enabled():
+    return not is_backup_runtime()
+
+
 def normalize_email(email=""):
     return (email or "").strip().lower()
 
@@ -370,6 +385,12 @@ def upload():
     if blocked:
         return blocked
 
+    if not uploads_enabled():
+        return jsonify({
+            "error": "Backup mode is read-only. Please turn on a local FavoriteWeb PC server to upload files.",
+            "backup_mode": True,
+        }), 503
+
     incoming = int(request.content_length or 0)
     used = current_user_storage_used()
     quota = current_user_quota()
@@ -642,6 +663,8 @@ def api_user():
             "is_admin": record.get("role") == "admin",
             "used_bytes": used,
             "quota_bytes": quota,
+            "backup_mode": is_backup_runtime(),
+            "uploads_enabled": uploads_enabled(),
         })
     return jsonify({"logged_in": False})
 
