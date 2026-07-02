@@ -297,6 +297,38 @@
   .toolbar { flex-direction: column; align-items: stretch; text-align: center; }
   .toolbar .left { justify-content: center; }
 }
+
+/* premium drive polish */
+.upload-panel { max-width: 1120px; }
+.upload-hero {
+  width: min(1120px, calc(100% - 28px));
+  margin: 28px auto 0;
+  padding: 34px 22px 24px;
+  border: 1px solid rgba(148,163,184,.14);
+  border-radius: 22px;
+  background: linear-gradient(145deg, rgba(15,23,42,.72), rgba(17,24,39,.38));
+  box-shadow: 0 24px 70px rgba(0,0,0,.26), inset 0 1px 0 rgba(255,255,255,.05);
+}
+.toolbar {
+  border: 1px solid rgba(148,163,184,.13);
+  background: rgba(15,23,42,.52);
+  backdrop-filter: blur(14px);
+}
+.file-grid { grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); }
+.file-card {
+  min-height: 138px;
+  border-radius: 14px;
+  background: linear-gradient(160deg, rgba(255,255,255,.065), rgba(255,255,255,.032));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.045);
+}
+.file-card:hover { border-color: rgba(56,189,248,.34); }
+.file-menu { min-width: 142px; }
+@media (max-width: 560px) {
+  .upload-hero { width: min(100% - 24px, 1120px); border-radius: 18px; }
+  .upload-panel { padding: 0 12px; }
+  .file-grid { grid-template-columns: repeat(auto-fill, minmax(136px, 1fr)); gap: 12px; }
+  .file-card { padding: 18px 12px; }
+}
 </style>
 </head>
 <body>
@@ -373,7 +405,7 @@ async function loadFiles(path) {
     }
 
     const menuMarkup = (item) => {
-      const download = item.can_download && item.type === "file" ? `<button type="button" data-download-drive="${escapeHtml(item.path)}">Download</button>` : "";
+      const download = item.can_download ? `<button type="button" data-download-drive="${escapeHtml(item.path)}">Download</button>` : "";
       const share = item.can_share ? `<button type="button" data-share-drive="${escapeHtml(item.path)}" data-share-type="${escapeHtml(item.type)}">Share</button>` : "";
       const remove = item.can_delete ? `<button type="button" class="danger" data-delete-drive="${escapeHtml(item.path)}">Delete</button>` : "";
       if (!download && !share && !remove) return "";

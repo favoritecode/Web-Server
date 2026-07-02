@@ -1,5 +1,5 @@
-from flask import Flask, send_from_directory, redirect, session, request, jsonify, Response
-import os, json, re, shutil, time, yt_dlp, requests
+from flask import Flask, send_from_directory, redirect, session, request, jsonify, Response, send_file, after_this_request
+import os, json, re, shutil, time, tempfile, yt_dlp, requests
 
 try:
     import favoriteweb_local_secrets as local_secrets
@@ -282,7 +282,7 @@ def drive_item_permissions(rel_path="", item_type="file"):
     return {
         "owned": bool(owner_key and owner_key == current_user_key()),
         "owner": owner_key,
-        "can_download": item_type == "file" and has_owner,
+        "can_download": has_owner,
         "can_share": has_owner and role in {"moderator", "admin"},
         "can_delete": has_owner and role == "admin",
     }
@@ -299,6 +299,23 @@ def share_serializer():
 def make_share_token(display_path):
     return share_serializer().dumps({"path": drive_display_path(display_path), "ts": int(time.time())})
 
+
+
+def send_path_download(file_path, download_name=None):
+    if not file_path or not os.path.exists(file_path):
+        return "Not Found", 404
+    if os.path.isdir(file_path):
+        temp_dir = tempfile.mkdtemp(prefix="favoriteweb-folder-")
+        zip_base = os.path.join(temp_dir, download_name or os.path.basename(file_path) or "folder")
+        archive_path = shutil.make_archive(zip_base, "zip", root_dir=file_path)
+
+        @after_this_request
+        def cleanup(response):
+            shutil.rmtree(temp_dir, ignore_errors=True)
+            return response
+
+        return send_file(archive_path, as_attachment=True, download_name=(download_name or os.path.basename(file_path) or "folder") + ".zip")
+    return send_from_directory(os.path.dirname(file_path), os.path.basename(file_path), as_attachment=True)
 
 def shared_file_response(display_path, download=False):
     file_path = safe_drive_path(display_path)
@@ -614,16 +631,18 @@ def list_drive_files():
 
     items = []
     if os.path.exists(full_path):
-        for name in os.listdir(full_path):
-            if not raw_path and name == "_users":
-                item_name = "Users"
-                rel_path = "Users"
-                item_path = os.path.join(full_path, name)
-            else:
-                item_name = name
+        entries = []
+        if not raw_path and os.path.isdir(os.path.join(full_path, "_users")):
+            users_root = os.path.join(full_path, "_users")
+            for user_dir in os.listdir(users_root):
+                entries.append((user_dir, "Users/" + user_dir, os.path.join(users_root, user_dir)))
+        else:
+            for name in os.listdir(full_path):
+                if not raw_path and name == "_users":
+                    continue
                 rel_path = "/".join(part for part in [raw_path, name] if part)
-                item_path = os.path.join(full_path, name)
-            display_path = drive_display_path(rel_path)
+                entries.append((name, drive_display_path(rel_path), os.path.join(full_path, name)))
+        for item_name, display_path, item_path in entries:
             item_type = "folder" if os.path.isdir(item_path) else "file"
             item = {
                 "name": item_name,
@@ -721,9 +740,9 @@ def download_own_file(filename):
     if blocked:
         return blocked
     root, file_path = safe_user_path(filename)
-    if not file_path or not os.path.exists(file_path) or os.path.isdir(file_path):
+    if not file_path or not os.path.exists(file_path):
         return "Not Found", 404
-    return send_from_directory(os.path.dirname(file_path), os.path.basename(file_path), as_attachment=True)
+    return send_path_download(file_path, os.path.basename(file_path) or "download")
 @app.route("/drive/open/<path:filename>")
 def drive_open_file(filename):
     blocked = active_user_required_redirect()
@@ -744,9 +763,9 @@ def drive_download_file(filename):
     if blocked:
         return blocked
     file_path = safe_drive_path(filename)
-    if not file_path or not os.path.exists(file_path) or os.path.isdir(file_path):
+    if not file_path or not os.path.exists(file_path):
         return "Not Found", 404
-    return send_from_directory(os.path.dirname(file_path), os.path.basename(file_path), as_attachment=True)
+    return send_path_download(file_path, os.path.basename(file_path) or "download")
 @app.route("/open/<path:filename>")
 def open_file(filename):
     blocked = active_user_required_redirect()

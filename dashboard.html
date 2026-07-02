@@ -698,7 +698,7 @@ async function loadFiles(path) {
       return '<article class="preview-card"' + openAttr + '>' +
         '<button class="file-menu-button" type="button" data-menu-button aria-label="File options">&#8942;</button>' +
         '<div class="file-menu">' +
-          (item.type === "file" ? '<button type="button" data-download-file="' + escapeHtml(item.path) + '">Download</button>' : '') +
+          '<button type="button" data-download-file="' + escapeHtml(item.path) + '">Download</button>' +
           '<button type="button" data-share-file="' + escapeHtml(item.path) + '">Share</button>' +
           '<button type="button" data-move-file="' + escapeHtml(item.path) + '">Move</button>' +
           '<button type="button" data-rename-file="' + escapeHtml(item.path) + '" data-current-name="' + escapeHtml(item.name) + '">Rename</button>' +
@@ -727,6 +727,9 @@ async function loadStreams() {
     }
     box.innerHTML = streams.map(function(item) {
       var actions = '';
+      actions += '<a href="' + escapeHtml(item.video) + '" target="_blank">Video Stream</a>';
+      actions += '<a href="' + escapeHtml(item.audio) + '" target="_blank">Audio Stream</a>';
+      if (item.source) actions += '<a href="' + escapeHtml(item.source) + '" target="_blank">Source</a>';
       if (item.can_download) {
         actions += '<a href="' + escapeHtml(item.video) + '" target="_blank">Download Video</a>';
         actions += '<a href="' + escapeHtml(item.audio) + '" target="_blank">Download Audio</a>';
@@ -734,10 +737,12 @@ async function loadStreams() {
       if (item.can_share) {
         actions += '<button type="button" data-share-stream="' + escapeHtml(item.video) + '">Share</button>';
       }
+      if (item.can_edit) {
+        actions += '<button type="button" data-edit-stream="' + escapeHtml(item.id) + '" data-source="' + escapeHtml(item.source) + '">Edit Source</button>';
+      }
       if (item.can_delete) {
         actions += '<button type="button" class="danger" data-delete-stream="' + escapeHtml(item.id) + '">Delete</button>';
       }
-      if (!actions) actions = '<span class="small-muted">No actions</span>';
       return '<article class="stream-row">' +
         '<button class="stream-menu-button" type="button" data-stream-menu-button aria-label="Stream options">&#8942;</button>' +
         '<div class="stream-menu">' + actions + '</div>' +
@@ -902,6 +907,18 @@ document.getElementById("streamList").addEventListener("click", async function(e
         prompt("Share link", shareUrl);
       }
     } catch (e) {}
+    return;
+  }
+  var editBtn = event.target.closest("[data-edit-stream]");
+  if (editBtn) {
+    var nextSource = prompt("Update source URL", editBtn.getAttribute("data-source") || "");
+    if (!nextSource) return;
+    await fetch("/api/ytplayer/update", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: editBtn.getAttribute("data-edit-stream"), source: nextSource })
+    });
+    loadStreams();
     return;
   }
   var deleteBtn = event.target.closest("[data-delete-stream]");
