@@ -7,6 +7,7 @@ const NAV_ITEMS = [
   { href: "/ytplayer/", label: "YT Stream" },
   { href: "/ocr", label: "OCR" },
   { href: "/analytics", label: "Web Analyzer" },
+  { href: "/file-converter", label: "File Converter" },
 ];
 
 function getCurrentPage() {

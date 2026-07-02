@@ -633,6 +633,10 @@ def stream_video(filename):
 # DOWNLOAD
 # =====================
 
+@app.route("/file")
+def file_converter_legacy_redirect():
+    return redirect("/file-converter")
+
 @app.route("/file/<path:filename>")
 def download(filename):
     blocked = active_user_required_redirect()
@@ -851,6 +855,13 @@ if analytics_backend_path.exists():
 
 from ocr.routes import init_routes
 init_routes(app)
+
+converter_backend_path = Path(BASE_DIR) / "file-converter" / "routes.py"
+if converter_backend_path.exists():
+    converter_spec = importlib.util.spec_from_file_location("favoriteweb_file_converter", converter_backend_path)
+    converter_module = importlib.util.module_from_spec(converter_spec)
+    converter_spec.loader.exec_module(converter_module)
+    converter_module.init_routes(app)
 
 from shofikul.routes import init_routes as shofikul_routes
 shofikul_routes(app)

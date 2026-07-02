@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>File Converter - FavoriteWeb</title>
+<link rel="stylesheet" href="/shared.css">
+<style>
+.converter-main { width:min(1180px, calc(100% - 32px)); margin:42px auto 80px; }
+.converter-hero { display:flex; align-items:flex-end; justify-content:space-between; gap:20px; padding:28px; border:1px solid rgba(148,163,184,.16); border-radius:18px; background:linear-gradient(135deg, rgba(15,23,42,.82), rgba(17,24,39,.54)); box-shadow:0 22px 60px rgba(0,0,0,.28); backdrop-filter:blur(18px); }
+.converter-hero h1 { color:#f8fbff; font-size:34px; margin-bottom:8px; }
+.converter-hero p { color:#9aa7bd; line-height:1.6; max-width:720px; }
+.converter-shell { display:grid; grid-template-columns:280px minmax(0,1fr); gap:18px; margin-top:22px; }
+.converter-tabs, .converter-panel { border:1px solid rgba(148,163,184,.16); border-radius:16px; background:rgba(13,18,34,.68); backdrop-filter:blur(16px); }
+.converter-tabs { padding:12px; display:grid; gap:8px; align-content:start; }
+.mode-btn { width:100%; min-height:58px; border:1px solid rgba(148,163,184,.12); border-radius:12px; background:rgba(255,255,255,.04); color:#dbeafe; text-align:left; padding:10px 12px; cursor:pointer; transition:all .2s ease; }
+.mode-btn strong { display:block; color:#f8fbff; font-size:14px; margin-bottom:4px; }
+.mode-btn span { color:#8ea1bd; font-size:12px; }
+.mode-btn.active { border-color:rgba(56,189,248,.38); background:linear-gradient(135deg, rgba(59,130,246,.16), rgba(147,51,234,.12)); }
+.converter-panel { padding:20px; }
+.drop-zone { min-height:210px; border:1px dashed rgba(148,163,184,.26); border-radius:16px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px; text-align:center; cursor:pointer; background:rgba(255,255,255,.035); transition:all .2s ease; }
+.drop-zone:hover, .drop-zone.drag-over { border-color:rgba(56,189,248,.48); background:rgba(56,189,248,.08); transform:translateY(-1px); }
+.drop-zone h2 { color:#edf2ff; font-size:22px; }
+.drop-zone p { color:#8ea1bd; font-size:13px; line-height:1.6; }
+.file-pill { max-width:100%; padding:8px 12px; border-radius:999px; background:rgba(96,165,250,.12); color:#bfdbfe; font-size:12px; font-weight:800; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.controls-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:14px; margin-top:16px; }
+.control { display:grid; gap:7px; }
+.control label { color:#8ea1bd; font-size:12px; font-weight:800; text-transform:uppercase; letter-spacing:.06em; }
+.control select, .control input { min-height:42px; width:100%; border:1px solid rgba(148,163,184,.16); border-radius:12px; background:rgba(15,23,42,.82); color:#edf2ff; padding:0 12px; outline:none; }
+.control select option { background:#111827; }
+.advanced { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:14px; margin-top:14px; }
+.convert-row { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:12px; margin-top:18px; }
+.convert-btn { min-height:44px; border:0; border-radius:999px; padding:0 22px; background:linear-gradient(135deg,#9333ea,#0ea5e9); color:#fff; font-weight:900; cursor:pointer; box-shadow:0 14px 34px rgba(99,102,241,.24); }
+.convert-btn:disabled { opacity:.45; cursor:not-allowed; box-shadow:none; }
+.status { flex:1; min-height:22px; color:#7dd3fc; font-size:13px; }
+.status.error { color:#fecdd3; }
+.feature-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:12px; margin-top:18px; }
+.feature { padding:12px; border:1px solid rgba(148,163,184,.12); border-radius:12px; background:rgba(255,255,255,.04); }
+.feature strong { display:block; color:#edf2ff; font-size:13px; margin-bottom:5px; }
+.feature span { color:#8ea1bd; font-size:12px; line-height:1.5; }
+@media (max-width: 920px) { .converter-shell { grid-template-columns:1fr; } .converter-tabs { grid-template-columns:repeat(2,minmax(0,1fr)); } .controls-grid, .advanced { grid-template-columns:1fr 1fr; } .feature-grid { grid-template-columns:1fr 1fr; } }
+@media (max-width: 560px) { .converter-main { width:min(100% - 24px,1180px); margin-top:28px; } .converter-hero { padding:22px; } .converter-hero h1 { font-size:28px; } .converter-tabs, .controls-grid, .advanced, .feature-grid { grid-template-columns:1fr; } }
+</style>
+</head>
+<body>
+<div class="main-content">
+  <main class="converter-main">
+    <section class="converter-hero">
+      <div>
+        <h1>File Converter</h1>
+        <p>Convert documents, images, videos and audio from one clean tool. Video conversion includes quality and resolution controls, and video can be converted directly to audio.</p>
+      </div>
+    </section>
+
+    <section class="converter-shell">
+      <aside class="converter-tabs">
+        <button class="mode-btn active" type="button" data-mode="document"><strong>Document Converter</strong><span>PDF, DOCX, ODT, TXT, HTML, CSV</span></button>
+        <button class="mode-btn" type="button" data-mode="image"><strong>Image Converter</strong><span>JPG, PNG, WEBP, GIF, PDF</span></button>
+        <button class="mode-btn" type="button" data-mode="video"><strong>Video Converter</strong><span>MP4, MKV, WEBM, MOV, audio extract</span></button>
+        <button class="mode-btn" type="button" data-mode="audio"><strong>Audio Converter</strong><span>MP3, M4A, WAV, FLAC, OPUS</span></button>
+      </aside>
+
+      <div class="converter-panel">
+        <div class="drop-zone" id="dropZone">
+          <h2 id="dropTitle">Select a document file</h2>
+          <p id="dropHint">Drop a file here or click to browse.</p>
+          <div class="file-pill" id="fileInfo">No file selected</div>
+          <input type="file" id="fileInput" hidden>
+        </div>
+
+        <div class="controls-grid">
+          <div class="control">
+            <label for="targetFormat">Convert To</label>
+            <select id="targetFormat"></select>
+          </div>
+          <div class="control" id="qualityControl">
+            <label for="qualitySelect">Quality</label>
+            <select id="qualitySelect">
+              <option value="balanced">Balanced</option>
+              <option value="high">High Quality</option>
+              <option value="small">Smaller File</option>
+            </select>
+          </div>
+          <div class="control" id="audioBitrateControl">
+            <label for="audioBitrate">Audio Bitrate</label>
+            <select id="audioBitrate">
+              <option value="160k">160 kbps</option>
+              <option value="96k">96 kbps</option>
+              <option value="192k">192 kbps</option>
+              <option value="256k">256 kbps</option>
+              <option value="320k">320 kbps</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="advanced" id="advancedControls">
+          <div class="control" id="resolutionControl">
+            <label for="resolutionSelect">Video Resolution</label>
+            <select id="resolutionSelect">
+              <option value="source">Keep Source</option>
+              <option value="2160">4K</option>
+              <option value="1440">1440p</option>
+              <option value="1080">1080p</option>
+              <option value="720">720p</option>
+              <option value="480">480p</option>
+              <option value="360">360p</option>
+            </select>
+          </div>
+          <div class="control" id="imageQualityControl">
+            <label for="imageQuality">Image Quality</label>
+            <input id="imageQuality" type="number" min="20" max="100" value="92">
+          </div>
+          <div class="control" id="imageWidthControl">
+            <label for="imageWidth">Resize Width</label>
+            <input id="imageWidth" type="number" min="0" placeholder="Auto">
+          </div>
+        </div>
+
+        <div class="convert-row">
+          <div class="status" id="statusLine"></div>
+          <button class="convert-btn" id="convertBtn" type="button" disabled>Convert File</button>
+        </div>
+
+        <div class="feature-grid">
+          <div class="feature"><strong>Documents</strong><span>LibreOffice is used when available for Office and PDF formats.</span></div>
+          <div class="feature"><strong>Images</strong><span>Pillow handles fast local image conversion and resizing.</span></div>
+          <div class="feature"><strong>Video</strong><span>FFmpeg converts format, quality, resolution and audio extraction.</span></div>
+          <div class="feature"><strong>Private</strong><span>Files are processed temporarily and deleted after conversion.</span></div>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+<script>
+const formats = {
+  document: ["pdf", "docx", "doc", "odt", "rtf", "txt", "html", "md", "csv", "json"],
+  image: ["jpg", "png", "webp", "bmp", "tiff", "gif", "ico", "pdf"],
+  video: ["mp4", "mkv", "webm", "mov", "avi", "flv", "m4v", "mp3", "m4a", "aac", "wav", "flac", "ogg", "opus"],
+  audio: ["mp3", "m4a", "aac", "wav", "flac", "ogg", "opus", "wma"]
+};
+const hints = {
+  document: ["Select a document file", "PDF, DOCX, DOC, ODT, RTF, TXT, HTML, MD, CSV and JSON."],
+  image: ["Select an image file", "JPG, PNG, WEBP, BMP, TIFF, GIF, ICO and PDF."],
+  video: ["Select a video file", "Convert video formats or extract audio from video."],
+  audio: ["Select an audio file", "Convert audio between MP3, M4A, AAC, WAV, FLAC, OGG, OPUS and WMA."]
+};
+let currentMode = "document";
+let selectedFile = null;
+const dropZone = document.getElementById("dropZone");
+const fileInput = document.getElementById("fileInput");
+const fileInfo = document.getElementById("fileInfo");
+const targetFormat = document.getElementById("targetFormat");
+const convertBtn = document.getElementById("convertBtn");
+const statusLine = document.getElementById("statusLine");
+
+function formatSize(bytes) {
+  if (bytes < 1024) return bytes + " B";
+  const units = ["KB", "MB", "GB"];
+  let value = bytes / 1024;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) { value /= 1024; unit += 1; }
+  return (value >= 10 ? value.toFixed(1) : value.toFixed(2)).replace(/\.0+$/, "") + " " + units[unit];
+}
+function setStatus(message, isError) {
+  statusLine.textContent = message || "";
+  statusLine.classList.toggle("error", Boolean(isError));
+}
+function setMode(mode) {
+  currentMode = mode;
+  document.querySelectorAll(".mode-btn").forEach(btn => btn.classList.toggle("active", btn.dataset.mode === mode));
+  document.getElementById("dropTitle").textContent = hints[mode][0];
+  document.getElementById("dropHint").textContent = hints[mode][1];
+  targetFormat.innerHTML = formats[mode].map(ext => `<option value="${ext}">${ext.toUpperCase()}</option>`).join("");
+  document.getElementById("qualityControl").style.display = mode === "video" || mode === "audio" ? "grid" : "none";
+  document.getElementById("audioBitrateControl").style.display = mode === "audio" || mode === "video" ? "grid" : "none";
+  document.getElementById("resolutionControl").style.display = mode === "video" ? "grid" : "none";
+  document.getElementById("imageQualityControl").style.display = mode === "image" ? "grid" : "none";
+  document.getElementById("imageWidthControl").style.display = mode === "image" ? "grid" : "none";
+  setStatus("");
+}
+document.querySelectorAll(".mode-btn").forEach(btn => btn.addEventListener("click", () => setMode(btn.dataset.mode)));
+dropZone.addEventListener("click", () => fileInput.click());
+dropZone.addEventListener("dragover", event => { event.preventDefault(); dropZone.classList.add("drag-over"); });
+dropZone.addEventListener("dragleave", () => dropZone.classList.remove("drag-over"));
+dropZone.addEventListener("drop", event => {
+  event.preventDefault();
+  dropZone.classList.remove("drag-over");
+  if (event.dataTransfer.files.length) handleFile(event.dataTransfer.files[0]);
+});
+fileInput.addEventListener("change", function() { if (this.files.length) handleFile(this.files[0]); });
+function handleFile(file) {
+  selectedFile = file;
+  fileInfo.textContent = file.name + " (" + formatSize(file.size) + ")";
+  convertBtn.disabled = false;
+  setStatus("");
+}
+convertBtn.addEventListener("click", async function() {
+  if (!selectedFile) return;
+  const form = new FormData();
+  form.append("file", selectedFile);
+  form.append("category", currentMode);
+  form.append("target", targetFormat.value);
+  form.append("quality", document.getElementById("qualitySelect").value);
+  form.append("audioBitrate", document.getElementById("audioBitrate").value);
+  form.append("resolution", document.getElementById("resolutionSelect").value);
+  form.append("imageQuality", document.getElementById("imageQuality").value);
+  form.append("width", document.getElementById("imageWidth").value);
+  convertBtn.disabled = true;
+  convertBtn.textContent = "Converting...";
+  setStatus("Converting file. Large video files can take some time.");
+  try {
+    const res = await fetch("/file-converter/convert", { method: "POST", body: form });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      setStatus(data.error || "Conversion failed.", true);
+      return;
+    }
+    const blob = await res.blob();
+    const disposition = res.headers.get("content-disposition") || "";
+    const match = disposition.match(/filename\*?=(?:UTF-8'')?"?([^";]+)/i);
+    const filename = match ? decodeURIComponent(match[1]) : "converted." + targetFormat.value;
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    setStatus("Conversion complete. Download started.");
+  } catch (error) {
+    setStatus("Conversion failed: " + error.message, true);
+  } finally {
+    convertBtn.disabled = false;
+    convertBtn.textContent = "Convert File";
+  }
+});
+setMode("document");
+</script>
+<script src="/shared.js"></script>
+</body>
+</html>
