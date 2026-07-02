@@ -648,6 +648,30 @@ async function uploadDashboardFiles(files) {
   }
 }
 
+async function shareDriveItem(path, scope) {
+  try {
+    var res = await fetch("/api/drive/share-link", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: path, scope: scope || "drive" })
+    });
+    var data = await res.json().catch(function() { return {}; });
+    if (!res.ok || !data.url) {
+      alert(data.error || "Share failed");
+      return;
+    }
+    if (navigator.share) {
+      await navigator.share({ title: "FavoriteWeb Cloud Drive", url: data.url });
+    } else if (navigator.clipboard) {
+      await navigator.clipboard.writeText(data.url);
+      alert("Share link copied.");
+    } else {
+      prompt("Share link", data.url);
+    }
+  } catch (e) {
+    alert("Share failed");
+  }
+}
 async function loadFiles(path) {
   path = path || "";
   var box = document.getElementById("filePreview");
@@ -674,8 +698,10 @@ async function loadFiles(path) {
       return '<article class="preview-card"' + openAttr + '>' +
         '<button class="file-menu-button" type="button" data-menu-button aria-label="File options">&#8942;</button>' +
         '<div class="file-menu">' +
-          '<button type="button" data-rename-file="' + escapeHtml(item.path) + '" data-current-name="' + escapeHtml(item.name) + '">Rename</button>' +
+          (item.type === "file" ? '<button type="button" data-download-file="' + escapeHtml(item.path) + '">Download</button>' : '') +
+          '<button type="button" data-share-file="' + escapeHtml(item.path) + '">Share</button>' +
           '<button type="button" data-move-file="' + escapeHtml(item.path) + '">Move</button>' +
+          '<button type="button" data-rename-file="' + escapeHtml(item.path) + '" data-current-name="' + escapeHtml(item.name) + '">Rename</button>' +
           '<button type="button" class="danger" data-delete-file="' + escapeHtml(item.path) + '">Delete</button>' +
         '</div>' +
         '<div class="icon">' + fileIcon(item) + '</div>' +
@@ -784,6 +810,20 @@ document.getElementById("filePreview").addEventListener("click", async function(
       if (openMenu !== menu) openMenu.classList.remove("open");
     });
     menu.classList.toggle("open");
+    return;
+  }
+  var downloadBtn = event.target.closest("[data-download-file]");
+  if (downloadBtn) {
+    event.preventDefault();
+    event.stopPropagation();
+    window.open("/download/" + encodePath(downloadBtn.getAttribute("data-download-file")), "_blank");
+    return;
+  }
+  var shareFileBtn = event.target.closest("[data-share-file]");
+  if (shareFileBtn) {
+    event.preventDefault();
+    event.stopPropagation();
+    await shareDriveItem(shareFileBtn.getAttribute("data-share-file"), "user");
     return;
   }
   var renameBtn = event.target.closest("[data-rename-file]");

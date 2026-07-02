@@ -16,6 +16,7 @@ def secret_value(name, default=""):
     return default
 
 from werkzeug.middleware.proxy_fix import ProxyFix
+from itsdangerous import BadSignature, URLSafeSerializer
 
 app = Flask(__name__)
 app.secret_key = secret_value("FLASK_SECRET_KEY", "change-me-in-env")
@@ -258,6 +259,70 @@ def drive_display_path(rel_path=""):
     if rel_path == "_users" or rel_path.startswith("_users/"):
         return "Users" + rel_path[6:]
     return rel_path
+
+def drive_internal_path(rel_path=""):
+    rel_path = (rel_path or "").replace("\\", "/").strip("/")
+    if rel_path == "Users" or rel_path.startswith("Users/"):
+        return "_users" + rel_path[5:]
+    return rel_path
+
+
+def drive_owner_key(rel_path=""):
+    internal = drive_internal_path(rel_path)
+    parts = [part for part in internal.split("/") if part]
+    if len(parts) >= 2 and parts[0] == "_users":
+        return parts[1]
+    return ""
+
+
+def drive_item_permissions(rel_path="", item_type="file"):
+    owner_key = drive_owner_key(rel_path)
+    role = current_user_role()
+    has_owner = bool(owner_key)
+    return {
+        "owned": bool(owner_key and owner_key == current_user_key()),
+        "owner": owner_key,
+        "can_download": item_type == "file" and has_owner,
+        "can_share": has_owner and role in {"moderator", "admin"},
+        "can_delete": has_owner and role == "admin",
+    }
+
+
+def can_delete_drive_path(rel_path=""):
+    perms = drive_item_permissions(rel_path)
+    return bool(perms.get("can_delete"))
+
+def share_serializer():
+    return URLSafeSerializer(app.secret_key, salt="favoriteweb-drive-share")
+
+
+def make_share_token(display_path):
+    return share_serializer().dumps({"path": drive_display_path(display_path), "ts": int(time.time())})
+
+
+def shared_file_response(display_path, download=False):
+    file_path = safe_drive_path(display_path)
+    if not file_path or not os.path.exists(file_path):
+        return "Not Found", 404
+    if os.path.isdir(file_path):
+        rows = []
+        for name in sorted(os.listdir(file_path)):
+            child_display = drive_display_path("/".join(part for part in [display_path.strip("/"), name] if part))
+            child_path = safe_drive_path(child_display)
+            child_token = make_share_token(child_display)
+            icon = "&#128193;" if child_path and os.path.isdir(child_path) else "&#128196;"
+            rows.append(f'<a class="share-item" href="/share/{child_token}"><span>{icon}</span><strong>{html_escape(name)}</strong></a>')
+        body = "".join(rows) or '<div class="empty">This folder is empty.</div>'
+        title = html_escape(os.path.basename(file_path) or "Shared Folder")
+        return Response(f'''<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>{title}</title><style>body{{margin:0;background:#070b16;color:#e5eefb;font-family:Arial,sans-serif}}main{{width:min(960px,calc(100% - 28px));margin:34px auto}}h1{{font-size:26px}}.grid{{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:14px}}.share-item{{min-height:110px;padding:16px;border:1px solid rgba(148,163,184,.16);border-radius:12px;background:rgba(255,255,255,.05);color:inherit;text-decoration:none;display:grid;align-content:center;gap:10px;text-align:center}}.share-item span{{font-size:32px}}.share-item strong{{font-size:13px;overflow-wrap:anywhere}}.empty{{padding:24px;border:1px dashed rgba(148,163,184,.2);border-radius:12px;color:#94a3b8}}</style></head><body><main><h1>{title}</h1><div class="grid">{body}</div></main></body></html>''', mimetype="text/html")
+    mime, _ = mimetypes.guess_type(file_path)
+    inline = mime and (mime.startswith("image") or mime.startswith("video") or mime.startswith("audio") or mime == "application/pdf" or mime.startswith("text"))
+    return send_from_directory(os.path.dirname(file_path), os.path.basename(file_path), as_attachment=download or not inline)
+
+
+def html_escape(value):
+    return str(value or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
+
 def public_origin():
     public_host = (
         request.headers.get("X-Public-Host")
@@ -558,14 +623,46 @@ def list_drive_files():
                 item_name = name
                 rel_path = "/".join(part for part in [raw_path, name] if part)
                 item_path = os.path.join(full_path, name)
-            items.append({
+            display_path = drive_display_path(rel_path)
+            item_type = "folder" if os.path.isdir(item_path) else "file"
+            item = {
                 "name": item_name,
-                "path": drive_display_path(rel_path),
-                "type": "folder" if os.path.isdir(item_path) else "file"
-            })
+                "path": display_path,
+                "type": item_type,
+            }
+            item.update(drive_item_permissions(display_path, item_type))
+            items.append(item)
 
     return jsonify({"current": drive_display_path(raw_path), "items": items})
 
+
+
+def delete_drive_path(rel_path):
+    internal_path = drive_internal_path(rel_path)
+    full_path = safe_drive_path(rel_path)
+    if not full_path or full_path == os.path.abspath(FILE_ROOT) or internal_path in {"", "_users"}:
+        return jsonify({"error": "Invalid path"}), 400
+    if not can_delete_drive_path(rel_path):
+        return jsonify({"error": "Not allowed"}), 403
+    if not os.path.exists(full_path):
+        return jsonify({"error": "Not found"}), 404
+    if os.path.isdir(full_path):
+        shutil.rmtree(full_path)
+    else:
+        os.remove(full_path)
+    return jsonify({"status": "ok"})
+
+
+@app.route("/api/drive/delete", methods=["POST"])
+def drive_delete():
+    blocked = active_user_required_json()
+    if blocked:
+        return blocked
+    data = request.get_json(silent=True) or {}
+    rel_path = (data.get("path") or "").strip().replace("\\", "/").strip("/")
+    if not rel_path:
+        return jsonify({"error": "Invalid path"}), 400
+    return delete_drive_path(rel_path)
 
 
 @app.route("/api/admin/drive/delete", methods=["POST"])
@@ -577,17 +674,56 @@ def admin_drive_delete():
     rel_path = (data.get("path") or "").strip().replace("\\", "/").strip("/")
     if not rel_path:
         return jsonify({"error": "Invalid path"}), 400
-    full_path = safe_drive_path(rel_path)
-    if not full_path or full_path == os.path.abspath(FILE_ROOT):
-        return jsonify({"error": "Invalid path"}), 400
-    if not os.path.exists(full_path):
-        return jsonify({"error": "Not found"}), 404
-    if os.path.isdir(full_path):
-        shutil.rmtree(full_path)
-    else:
-        os.remove(full_path)
-    return jsonify({"status": "ok"})
+    return delete_drive_path(rel_path)
 
+
+@app.route("/api/drive/share-link", methods=["POST"])
+def drive_share_link():
+    blocked = active_user_required_json()
+    if blocked:
+        return blocked
+    data = request.get_json(silent=True) or {}
+    rel_path = (data.get("path") or "").strip().replace("\\", "/").strip("/")
+    scope = (data.get("scope") or "drive").strip().lower()
+    if not rel_path:
+        return jsonify({"error": "Invalid path"}), 400
+    if scope == "user":
+        root, full_path = safe_user_path(rel_path)
+        if not full_path or not os.path.exists(full_path):
+            return jsonify({"error": "Not found"}), 404
+        display_path = "Users/" + current_user_key() + "/" + rel_path
+        allowed = True
+    else:
+        full_path = safe_drive_path(rel_path)
+        if not full_path or not os.path.exists(full_path):
+            return jsonify({"error": "Not found"}), 404
+        display_path = drive_display_path(rel_path)
+        item_type = "folder" if os.path.isdir(full_path) else "file"
+        allowed = bool(drive_item_permissions(display_path, item_type).get("can_share"))
+    if not allowed:
+        return jsonify({"error": "Not allowed"}), 403
+    token = make_share_token(display_path)
+    return jsonify({"url": public_origin() + "/share/" + token})
+
+@app.route("/share/<token>")
+def drive_public_share(token):
+    try:
+        data = share_serializer().loads(token)
+    except BadSignature:
+        return "Not Found", 404
+    display_path = drive_display_path(data.get("path") or "")
+    return shared_file_response(display_path)
+
+
+@app.route("/download/<path:filename>")
+def download_own_file(filename):
+    blocked = active_user_required_redirect()
+    if blocked:
+        return blocked
+    root, file_path = safe_user_path(filename)
+    if not file_path or not os.path.exists(file_path) or os.path.isdir(file_path):
+        return "Not Found", 404
+    return send_from_directory(os.path.dirname(file_path), os.path.basename(file_path), as_attachment=True)
 @app.route("/drive/open/<path:filename>")
 def drive_open_file(filename):
     blocked = active_user_required_redirect()

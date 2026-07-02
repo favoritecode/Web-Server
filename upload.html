@@ -234,14 +234,16 @@
   border: 0;
   border-radius: 8px;
   background: transparent;
-  color: #fecdd3;
+  color: #dbeafe;
   cursor: pointer;
   font-size: 12px;
   font-weight: 750;
   padding: 8px 10px;
   text-align: left;
 }
-.file-menu button:hover { background: rgba(244,63,94,.12); }
+.file-menu button:hover { background: rgba(59,130,246,.14); }
+.file-menu button.danger { color: #fecdd3; }
+.file-menu button.danger:hover { background: rgba(244,63,94,.12); }
 /* Empty state */
 .empty-state {
   text-align: center;
@@ -329,7 +331,7 @@
 <script>
 // ============ FILE SYSTEM ============
 let currentPath = "";
-let isAdmin = false;
+let currentUserRole = "user";
 
 const fileGrid = document.getElementById("fileGrid");
 const currentPathEl = document.getElementById("currentPath");
@@ -343,6 +345,8 @@ async function loadFiles(path) {
 
     currentPath = data.current || "";
     currentPathEl.textContent = currentPath || "/";
+    const nextUrl = currentPath ? "/drive?path=" + encodeURIComponent(currentPath) : "/drive";
+    history.replaceState(null, "", nextUrl);
     backBtn.style.display = currentPath ? "inline-flex" : "none";
 
     if (!data.items || data.items.length === 0) {
@@ -369,10 +373,11 @@ async function loadFiles(path) {
     }
 
     const menuMarkup = (item) => {
-      const download = item.type === "file" ? `<button type="button" data-download-drive="${escapeHtml(item.path)}">Download</button>` : "";
-      const remove = isAdmin ? `<button type="button" class="danger" data-delete-drive="${escapeHtml(item.path)}">Delete</button>` : "";
-      if (!download && !remove) return "";
-      return `<button class="file-menu-button" type="button" data-menu-button aria-label="File options">&#8942;</button><div class="file-menu">${download}${remove}</div>`;
+      const download = item.can_download && item.type === "file" ? `<button type="button" data-download-drive="${escapeHtml(item.path)}">Download</button>` : "";
+      const share = item.can_share ? `<button type="button" data-share-drive="${escapeHtml(item.path)}" data-share-type="${escapeHtml(item.type)}">Share</button>` : "";
+      const remove = item.can_delete ? `<button type="button" class="danger" data-delete-drive="${escapeHtml(item.path)}">Delete</button>` : "";
+      if (!download && !share && !remove) return "";
+      return `<button class="file-menu-button" type="button" data-menu-button aria-label="File options">&#8942;</button><div class="file-menu">${download}${share}${remove}</div>`;
     };
 
     data.items.forEach(item => {
@@ -455,12 +460,42 @@ fileGrid.addEventListener('click', async (event) => {
     return;
   }
 
+  const shareButton = event.target.closest('[data-share-drive]');
+  if (shareButton) {
+    event.preventDefault();
+    event.stopPropagation();
+    const itemPath = shareButton.getAttribute('data-share-drive') || '';
+    try {
+      const res = await fetch('/api/drive/share-link', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: itemPath, scope: 'drive' })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.url) {
+        alert(data.error || 'Share failed');
+        return;
+      }
+      if (navigator.share) {
+        await navigator.share({ title: 'FavoriteWeb Cloud Drive', url: data.url });
+      } else if (navigator.clipboard) {
+        await navigator.clipboard.writeText(data.url);
+        alert('Share link copied.');
+      } else {
+        prompt('Share link', data.url);
+      }
+    } catch (e) {
+      alert('Share failed');
+    }
+    return;
+  }
+
   const deleteButton = event.target.closest('[data-delete-drive]');
   if (deleteButton) {
     event.preventDefault();
     event.stopPropagation();
     if (!confirm('Delete this file or folder?')) return;
-    const res = await fetch('/api/admin/drive/delete', {
+    const res = await fetch('/api/drive/delete', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ path: deleteButton.getAttribute('data-delete-drive') })
@@ -491,10 +526,11 @@ async function initDrive() {
     const res = await fetch('/api/user', { cache: 'no-store' });
     if (res.ok) {
       const user = await res.json();
-      isAdmin = Boolean(user.is_admin);
+      currentUserRole = user.role || 'user';
     }
   } catch (e) {}
-  loadFiles("");
+  const params = new URLSearchParams(location.search);
+  loadFiles(params.get('path') || "");
 }
 
 // Initial load - empty string = root directory
