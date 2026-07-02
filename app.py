@@ -278,14 +278,33 @@ def drive_owner_key(rel_path=""):
 def drive_item_permissions(rel_path="", item_type="file"):
     owner_key = drive_owner_key(rel_path)
     role = current_user_role()
-    has_owner = bool(owner_key)
+    owned = bool(owner_key and owner_key == current_user_key())
+    internal = drive_internal_path(rel_path)
+    parts = [part for part in internal.split("/") if part]
+    is_root = internal in {"", "_users"}
+    is_user_root = len(parts) == 2 and parts[0] == "_users"
+    is_private = bool(owner_key)
+    can_view = (not is_private) or owned or role in {"moderator", "admin"}
+    can_download = can_view and not is_root
+    can_share = can_download
+    can_owner_manage = owned and not is_root and not is_user_root
+    can_admin_manage = role == "admin" and can_view and not is_root
     return {
-        "owned": bool(owner_key and owner_key == current_user_key()),
+        "owned": owned,
         "owner": owner_key,
-        "can_download": has_owner,
-        "can_share": has_owner and role in {"moderator", "admin"},
-        "can_delete": has_owner and role == "admin",
+        "can_download": can_download,
+        "can_share": can_share,
+        "can_rename": can_owner_manage or can_admin_manage,
+        "can_move": can_owner_manage or can_admin_manage,
+        "can_delete": can_owner_manage or can_admin_manage,
     }
+
+
+def can_view_drive_path(rel_path=""):
+    internal = drive_internal_path(rel_path)
+    if internal in {"", "_users"}:
+        return True
+    return bool(drive_item_permissions(rel_path).get("can_download"))
 
 
 def can_delete_drive_path(rel_path=""):
@@ -629,13 +648,40 @@ def list_drive_files():
     if not full_path:
         return jsonify({"error": "invalid path"}), 400
 
+    role = current_user_role()
+    user_key = current_user_key()
+    if raw_path.startswith("Users/") and drive_owner_key(raw_path) not in {"", user_key} and role not in {"moderator", "admin"}:
+        return jsonify({"error": "Not allowed"}), 403
+
     items = []
     if os.path.exists(full_path):
         entries = []
-        if not raw_path and os.path.isdir(os.path.join(full_path, "_users")):
+        if not raw_path:
+            for name in os.listdir(full_path):
+                if name == "_users":
+                    continue
+                rel_path = drive_display_path(name)
+                entries.append((name, rel_path, os.path.join(full_path, name)))
             users_root = os.path.join(full_path, "_users")
-            for user_dir in os.listdir(users_root):
-                entries.append((user_dir, "Users/" + user_dir, os.path.join(users_root, user_dir)))
+            if os.path.isdir(users_root):
+                if role in {"moderator", "admin"}:
+                    for user_dir in os.listdir(users_root):
+                        entries.append((user_dir, "Users/" + user_dir, os.path.join(users_root, user_dir)))
+                else:
+                    own_root = os.path.join(users_root, user_key)
+                    if os.path.isdir(own_root):
+                        for name in os.listdir(own_root):
+                            entries.append((name, "Users/" + user_key + "/" + name, os.path.join(own_root, name)))
+        elif raw_path == "Users":
+            users_root = os.path.join(FILE_ROOT, "_users")
+            if role in {"moderator", "admin"} and os.path.isdir(users_root):
+                for user_dir in os.listdir(users_root):
+                    entries.append((user_dir, "Users/" + user_dir, os.path.join(users_root, user_dir)))
+            else:
+                own_root = os.path.join(users_root, user_key)
+                if os.path.isdir(own_root):
+                    for name in os.listdir(own_root):
+                        entries.append((name, "Users/" + user_key + "/" + name, os.path.join(own_root, name)))
         else:
             for name in os.listdir(full_path):
                 if not raw_path and name == "_users":
@@ -644,15 +690,21 @@ def list_drive_files():
                 entries.append((name, drive_display_path(rel_path), os.path.join(full_path, name)))
         for item_name, display_path, item_path in entries:
             item_type = "folder" if os.path.isdir(item_path) else "file"
+            perms = drive_item_permissions(display_path, item_type)
+            if not (perms.get("can_download") or drive_internal_path(display_path) in {"", "_users"}):
+                continue
             item = {
                 "name": item_name,
                 "path": display_path,
                 "type": item_type,
             }
-            item.update(drive_item_permissions(display_path, item_type))
+            item.update(perms)
             items.append(item)
 
-    return jsonify({"current": drive_display_path(raw_path), "items": items})
+    display_current = drive_display_path(raw_path)
+    if raw_path == "Users" and role not in {"moderator", "admin"}:
+        display_current = ""
+    return jsonify({"current": display_current, "items": items})
 
 
 
@@ -672,6 +724,57 @@ def delete_drive_path(rel_path):
     return jsonify({"status": "ok"})
 
 
+def rename_drive_path(rel_path, new_name):
+    rel_path = drive_display_path(rel_path)
+    new_name = (new_name or "").strip()
+    if not rel_path or not new_name or "/" in new_name or "\\" in new_name:
+        return jsonify({"error": "Invalid name"}), 400
+    if not drive_item_permissions(rel_path).get("can_rename"):
+        return jsonify({"error": "Not allowed"}), 403
+    old_full = safe_drive_path(rel_path)
+    parent_rel = "/".join(rel_path.split("/")[:-1])
+    parent_full = safe_drive_path(parent_rel)
+    if not old_full or not parent_full or not os.path.exists(old_full):
+        return jsonify({"error": "Not found"}), 404
+    new_full = os.path.abspath(os.path.join(parent_full, new_name))
+    try:
+        if os.path.commonpath([os.path.abspath(parent_full), new_full]) != os.path.abspath(parent_full):
+            return jsonify({"error": "Invalid path"}), 400
+    except ValueError:
+        return jsonify({"error": "Invalid path"}), 400
+    if os.path.exists(new_full):
+        return jsonify({"error": "Name already exists"}), 409
+    os.rename(old_full, new_full)
+    return jsonify({"status": "ok"})
+
+
+def move_drive_path(rel_path, dest_path):
+    rel_path = drive_display_path(rel_path)
+    dest_path = drive_display_path(dest_path)
+    if not rel_path:
+        return jsonify({"error": "Invalid path"}), 400
+    if not drive_item_permissions(rel_path).get("can_move"):
+        return jsonify({"error": "Not allowed"}), 403
+    source_full = safe_drive_path(rel_path)
+    dest_full = safe_drive_path(dest_path)
+    if not source_full or not dest_full or not os.path.exists(source_full):
+        return jsonify({"error": "Not found"}), 404
+    if not os.path.isdir(dest_full) or not drive_item_permissions(dest_path).get("can_download"):
+        return jsonify({"error": "Destination folder not found"}), 404
+    target_full = os.path.abspath(os.path.join(dest_full, os.path.basename(source_full)))
+    try:
+        if os.path.commonpath([os.path.abspath(FILE_ROOT), target_full]) != os.path.abspath(FILE_ROOT):
+            return jsonify({"error": "Invalid destination"}), 400
+    except ValueError:
+        return jsonify({"error": "Invalid destination"}), 400
+    if target_full == source_full or target_full.startswith(source_full + os.sep):
+        return jsonify({"error": "Invalid destination"}), 400
+    if os.path.exists(target_full):
+        return jsonify({"error": "Destination already has this name"}), 409
+    shutil.move(source_full, target_full)
+    return jsonify({"status": "ok"})
+
+
 @app.route("/api/drive/delete", methods=["POST"])
 def drive_delete():
     blocked = active_user_required_json()
@@ -682,6 +785,27 @@ def drive_delete():
     if not rel_path:
         return jsonify({"error": "Invalid path"}), 400
     return delete_drive_path(rel_path)
+
+
+@app.route("/api/drive/rename", methods=["POST"])
+def drive_rename():
+    blocked = active_user_required_json()
+    if blocked:
+        return blocked
+    data = request.get_json(silent=True) or {}
+    rel_path = (data.get("path") or "").strip().replace("\\", "/").strip("/")
+    return rename_drive_path(rel_path, data.get("newName") or "")
+
+
+@app.route("/api/drive/move", methods=["POST"])
+def drive_move():
+    blocked = active_user_required_json()
+    if blocked:
+        return blocked
+    data = request.get_json(silent=True) or {}
+    rel_path = (data.get("path") or "").strip().replace("\\", "/").strip("/")
+    dest_path = (data.get("destination") or "").strip().replace("\\", "/").strip("/")
+    return move_drive_path(rel_path, dest_path)
 
 
 @app.route("/api/admin/drive/delete", methods=["POST"])
@@ -748,6 +872,8 @@ def drive_open_file(filename):
     blocked = active_user_required_redirect()
     if blocked:
         return blocked
+    if not can_view_drive_path(filename):
+        return "Not Found", 404
     file_path = safe_drive_path(filename)
     if not file_path or not os.path.exists(file_path) or os.path.isdir(file_path):
         return "Not Found", 404
@@ -762,6 +888,8 @@ def drive_download_file(filename):
     blocked = active_user_required_redirect()
     if blocked:
         return blocked
+    if not can_view_drive_path(filename):
+        return "Not Found", 404
     file_path = safe_drive_path(filename)
     if not file_path or not os.path.exists(file_path):
         return "Not Found", 404
@@ -882,6 +1010,7 @@ def ytplayer_history():
             "owned": owned,
             "can_download": owned,
             "can_share": owned or role in {"moderator", "admin"},
+            "can_edit": owned or role == "admin",
             "can_delete": owned or role == "admin",
             "video": f"{base}/ytplayer/stream/{stream_id}",
             "audio": f"{base}/ytplayer/play/{stream_id}",
@@ -898,6 +1027,7 @@ def ytplayer_update():
     data = request.get_json(silent=True) or {}
     stream_id = str(data.get("id") or "")
     source = (data.get("source") or "").strip()
+    slug = (data.get("slug") or "").strip()
     if not stream_id or not source:
         return jsonify({"error": "Invalid stream"}), 400
 
@@ -909,11 +1039,22 @@ def ytplayer_update():
         videos = {}
 
     record = videos.get(stream_id)
-    if not isinstance(record, dict) or record.get("owner") != current_user_key():
+    if not isinstance(record, dict):
         return jsonify({"error": "Not found"}), 404
+    if record.get("owner") != current_user_key() and current_user_role() != "admin":
+        return jsonify({"error": "Not allowed"}), 403
+    new_stream_id = stream_id
+    if slug:
+        if not re.fullmatch(r"[A-Za-z0-9_-]{3,80}", slug):
+            return jsonify({"error": "Slug can use letters, numbers, dash and underscore only"}), 400
+        if slug != stream_id and slug in videos:
+            return jsonify({"error": "Slug already exists"}), 409
+        new_stream_id = slug
     record["url"] = source
     record["title"] = source
-    videos[stream_id] = record
+    if new_stream_id != stream_id:
+        videos.pop(stream_id, None)
+    videos[new_stream_id] = record
     with open(data_path, "w", encoding="utf-8") as f:
         json.dump(videos, f, indent=2)
     return jsonify({"status": "ok"})

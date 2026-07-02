@@ -100,6 +100,34 @@
   color: #4b5563;
 }
 
+.slug-row {
+  margin-top: 12px;
+  display: grid;
+  grid-template-columns: 130px 1fr;
+  align-items: center;
+  gap: 12px;
+}
+
+.slug-row label {
+  color: #9ca3af;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.slug-row input {
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 10px;
+  background: rgba(0,0,0,0.25);
+  color: #e5e7eb;
+  outline: none;
+}
+
+.slug-row input:focus {
+  border-color: #22c55e;
+}
+
 .stream-card .action-row {
   display: flex;
   gap: 12px;
@@ -342,6 +370,7 @@
 
 /* Responsive */
 @media (max-width: 768px) {
+  .slug-row { grid-template-columns: 1fr; gap: 8px; }
   .stream-hero h1 { font-size: 24px; }
   .results-grid { grid-template-columns: 1fr; }
 }
@@ -366,6 +395,10 @@
         <span class="card-badge">● Free</span>
       </div>
       <textarea id="urls" rows="5" placeholder="Paste YouTube URLs here (one per line)&#10;Example:&#10;https://www.youtube.com/watch?v=dQw4w9WgXcQ&#10;https://youtu.be/9bZkp7q19f0"></textarea>
+      <div class="slug-row">
+        <label for="customSlug">Custom slug</label>
+        <input id="customSlug" type="text" placeholder="optional-stream-name">
+      </div>
       <div class="action-row">
         <button class="btn-generate" onclick="generate()">⚡ Generate Streams</button>
         <button class="btn-clear" onclick="clearAll()">🗑 Clear</button>
@@ -434,6 +467,7 @@ async function generate() {
   const textarea = document.getElementById("urls");
   const rawUrls = textarea.value;
   const urls = rawUrls.split("\n").map(u => u.trim()).filter(u => u.length > 0);
+  const baseSlug = document.getElementById("customSlug").value.trim();
 
   if (urls.length === 0) {
     alert("Please paste at least one YouTube URL");
@@ -457,12 +491,15 @@ async function generate() {
     statusText.textContent = `Processing ${i + 1}/${urls.length}: ${urls[i].substring(0, 50)}...`;
 
     try {
+      const payload = { url: urls[i] };
+      if (baseSlug) payload.slug = urls.length > 1 ? `${baseSlug}-${i + 1}` : baseSlug;
       const res = await fetch("/ytplayer/add", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: urls[i] })
+        body: JSON.stringify(payload)
       });
       const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Generate failed");
 
       if (data.video) videoLinks.push(data.video);
       if (data.audio) audioLinks.push(data.audio);
@@ -513,6 +550,7 @@ function openFirstAudio() {
 
 function clearAll() {
   document.getElementById("urls").value = "";
+  document.getElementById("customSlug").value = "";
   document.getElementById("video_output").value = "";
   document.getElementById("audio_output").value = "";
   document.getElementById("resultsGrid").style.display = "none";

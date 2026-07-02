@@ -738,7 +738,7 @@ async function loadStreams() {
         actions += '<button type="button" data-share-stream="' + escapeHtml(item.video) + '">Share</button>';
       }
       if (item.can_edit) {
-        actions += '<button type="button" data-edit-stream="' + escapeHtml(item.id) + '" data-source="' + escapeHtml(item.source) + '">Edit Source</button>';
+        actions += '<button type="button" data-edit-stream="' + escapeHtml(item.id) + '" data-source="' + escapeHtml(item.source) + '" data-slug="' + escapeHtml(item.id) + '">Edit</button>';
       }
       if (item.can_delete) {
         actions += '<button type="button" class="danger" data-delete-stream="' + escapeHtml(item.id) + '">Delete</button>';
@@ -913,11 +913,17 @@ document.getElementById("streamList").addEventListener("click", async function(e
   if (editBtn) {
     var nextSource = prompt("Update source URL", editBtn.getAttribute("data-source") || "");
     if (!nextSource) return;
-    await fetch("/api/ytplayer/update", {
+    var nextSlug = prompt("Custom slug", editBtn.getAttribute("data-slug") || editBtn.getAttribute("data-edit-stream") || "");
+    if (nextSlug === null) return;
+    var res = await fetch("/api/ytplayer/update", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: editBtn.getAttribute("data-edit-stream"), source: nextSource })
+      body: JSON.stringify({ id: editBtn.getAttribute("data-edit-stream"), source: nextSource, slug: nextSlug.trim() })
     });
+    if (!res.ok) {
+      var data = await res.json().catch(function() { return {}; });
+      alert(data.error || "Stream update failed");
+    }
     loadStreams();
     return;
   }

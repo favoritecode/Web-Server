@@ -38,7 +38,7 @@ def save_videos(videos):
 
 def current_owner_key():
     user = session.get("user") or {}
-    raw = user.get("email") or user.get("sub") or user.get("name") or "anonymous"
+    raw = (user.get("email") or user.get("sub") or user.get("name") or "anonymous").strip().lower()
     return "".join(ch if ch.isalnum() or ch in "_.-" else "_" for ch in raw).strip("._")[:120] or "anonymous"
 
 
@@ -107,16 +107,27 @@ def init_routes(app):
     # ➕ add url
     @app.route("/ytplayer/add", methods=["POST"])
     def add_video():
-        data = request.get_json()
-        url = data.get("url")
+        data = request.get_json() or {}
+        url = (data.get("url") or "").strip()
+        slug = (data.get("slug") or "").strip()
+        if not url:
+            return jsonify({"error": "URL is required"}), 400
 
         videos = load_videos()
 
-        video_id = str(int(time.time())) + "-" + uuid.uuid4().hex[:8]
+        if slug:
+            if not re.fullmatch(r"[A-Za-z0-9_-]{3,80}", slug):
+                return jsonify({"error": "Slug can use letters, numbers, dash and underscore only"}), 400
+            if slug in videos:
+                return jsonify({"error": "Slug already exists"}), 409
+            video_id = slug
+        else:
+            video_id = str(int(time.time())) + "-" + uuid.uuid4().hex[:8]
         videos[video_id] = {
             "url": url,
             "owner": current_owner_key(),
             "title": url,
+            "slug": video_id,
             "created_at": int(time.time()),
         }
 

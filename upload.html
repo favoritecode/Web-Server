@@ -407,9 +407,11 @@ async function loadFiles(path) {
     const menuMarkup = (item) => {
       const download = item.can_download ? `<button type="button" data-download-drive="${escapeHtml(item.path)}">Download</button>` : "";
       const share = item.can_share ? `<button type="button" data-share-drive="${escapeHtml(item.path)}" data-share-type="${escapeHtml(item.type)}">Share</button>` : "";
+      const move = item.can_move ? `<button type="button" data-move-drive="${escapeHtml(item.path)}">Move</button>` : "";
+      const rename = item.can_rename ? `<button type="button" data-rename-drive="${escapeHtml(item.path)}" data-current-name="${escapeHtml(item.name)}">Rename</button>` : "";
       const remove = item.can_delete ? `<button type="button" class="danger" data-delete-drive="${escapeHtml(item.path)}">Delete</button>` : "";
-      if (!download && !share && !remove) return "";
-      return `<button class="file-menu-button" type="button" data-menu-button aria-label="File options">&#8942;</button><div class="file-menu">${download}${share}${remove}</div>`;
+      if (!download && !share && !move && !rename && !remove) return "";
+      return `<button class="file-menu-button" type="button" data-menu-button aria-label="File options">&#8942;</button><div class="file-menu">${download}${share}${move}${rename}${remove}</div>`;
     };
 
     data.items.forEach(item => {
@@ -522,6 +524,45 @@ fileGrid.addEventListener('click', async (event) => {
     return;
   }
 
+  const renameButton = event.target.closest('[data-rename-drive]');
+  if (renameButton) {
+    event.preventDefault();
+    event.stopPropagation();
+    const nextName = prompt('New name', renameButton.getAttribute('data-current-name') || '');
+    if (!nextName) return;
+    const res = await fetch('/api/drive/rename', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: renameButton.getAttribute('data-rename-drive'), newName: nextName })
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      alert(data.error || 'Rename failed');
+    }
+    loadFiles(currentPath);
+    return;
+  }
+
+  const moveButton = event.target.closest('[data-move-drive]');
+  if (moveButton) {
+    event.preventDefault();
+    event.stopPropagation();
+    const itemPath = moveButton.getAttribute('data-move-drive') || '';
+    const defaultDestination = itemPath.split('/').slice(0, -1).join('/') || currentPath || '';
+    const destination = prompt('Move to folder path', defaultDestination);
+    if (destination === null) return;
+    const res = await fetch('/api/drive/move', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: moveButton.getAttribute('data-move-drive'), destination })
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      alert(data.error || 'Move failed');
+    }
+    loadFiles(currentPath);
+    return;
+  }
   const deleteButton = event.target.closest('[data-delete-drive]');
   if (deleteButton) {
     event.preventDefault();

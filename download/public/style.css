@@ -88,6 +88,7 @@ body {
   gap: 12px;
   margin-top: 16px;
   flex-wrap: wrap;
+  align-items: center;
 }
 
 /* Buttons */
@@ -117,7 +118,9 @@ button:disabled {
 #downloadBtn {
   background: linear-gradient(135deg, #7c3aed, #6366f1);
   color: #fff;
-  flex: 1;
+  flex: 1 1 220px;
+  justify-content: center;
+  min-height: 48px;
 }
 
 #downloadBtn:hover:not(:disabled) {
