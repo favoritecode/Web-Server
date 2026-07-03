@@ -2,6 +2,7 @@ from flask import send_from_directory, request, jsonify
 import os
 import re
 import tempfile
+import shutil
 
 import pytesseract
 from PIL import Image, ImageEnhance, ImageFilter, ImageOps, UnidentifiedImageError
@@ -10,11 +11,53 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff"}
 MAX_OCR_BYTES = 25 * 1024 * 1024
 DEFAULT_TESSERACT = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+TESSERACT_CHECKED_PATHS = []
 
-if os.environ.get("TESSERACT_CMD"):
-    pytesseract.pytesseract.tesseract_cmd = os.environ["TESSERACT_CMD"]
-elif os.path.exists(DEFAULT_TESSERACT):
-    pytesseract.pytesseract.tesseract_cmd = DEFAULT_TESSERACT
+
+def candidate_tesseract_paths():
+    candidates = []
+    for key in ("TESSERACT_CMD", "TESSERACT_PATH", "TESSERACT_EXE"):
+        value = (os.environ.get(key) or "").strip().strip('"')
+        if value:
+            candidates.append(value)
+    found = shutil.which("tesseract")
+    if found:
+        candidates.append(found)
+    program_files = [
+        os.environ.get("ProgramFiles"),
+        os.environ.get("ProgramFiles(x86)"),
+        os.environ.get("LOCALAPPDATA"),
+    ]
+    for root in [p for p in program_files if p]:
+        candidates.append(os.path.join(root, "Tesseract-OCR", "tesseract.exe"))
+    candidates.extend([
+        DEFAULT_TESSERACT,
+        r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe",
+        r"C:\Tesseract-OCR\tesseract.exe",
+        r"D:\Tesseract-OCR\tesseract.exe",
+        r"E:\Tesseract-OCR\tesseract.exe",
+    ])
+    unique = []
+    for item in candidates:
+        if item and item not in unique:
+            unique.append(item)
+    return unique
+
+
+def configure_tesseract():
+    global TESSERACT_CHECKED_PATHS
+    TESSERACT_CHECKED_PATHS = candidate_tesseract_paths()
+    for candidate in TESSERACT_CHECKED_PATHS:
+        if os.path.isfile(candidate):
+            pytesseract.pytesseract.tesseract_cmd = candidate
+            tessdata = os.path.join(os.path.dirname(candidate), "tessdata")
+            if os.path.isdir(tessdata) and not os.environ.get("TESSDATA_PREFIX"):
+                os.environ["TESSDATA_PREFIX"] = tessdata
+            return candidate
+    return None
+
+
+configure_tesseract()
 
 
 def clean_text(value):
@@ -122,6 +165,9 @@ def init_routes(app):
         if content_length > MAX_OCR_BYTES:
             return jsonify({"error": "Image is too large. Maximum size is 25 MB."}), 413
 
+        tesseract_path = configure_tesseract()
+        if not tesseract_path:
+            return jsonify({"error": "Tesseract OCR was not found on this server. Checked: " + "; ".join(TESSERACT_CHECKED_PATHS[:8])}), 503
         lang, warnings = safe_lang(request.form.get("lang", "eng"))
 
         try:

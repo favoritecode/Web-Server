@@ -43,6 +43,25 @@
 .feature span { color:#8ea1bd; font-size:12px; line-height:1.5; }
 @media (max-width: 920px) { .converter-shell { grid-template-columns:1fr; } .converter-tabs { grid-template-columns:repeat(2,minmax(0,1fr)); } .controls-grid, .advanced { grid-template-columns:1fr 1fr; } .feature-grid { grid-template-columns:1fr 1fr; } }
 @media (max-width: 560px) { .converter-main { width:min(100% - 24px,1180px); margin-top:28px; } .converter-hero { padding:22px; } .converter-hero h1 { font-size:28px; } .converter-tabs, .controls-grid, .advanced, .feature-grid { grid-template-columns:1fr; } }
+
+/* Long filename containment fix */
+.drop-zone, .converter-panel, .converter-shell { min-width: 0; }
+.drop-zone { overflow: hidden; }
+.file-pill {
+  display: block;
+  width: min(100%, 620px);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  overflow-wrap: normal;
+}
+@media (max-width: 560px) {
+  .file-pill { width: 100%; }
+  .convert-row { align-items: stretch; }
+  .convert-btn { width: 100%; }
+  .status { width: 100%; min-width: 0; overflow-wrap: anywhere; }
+}
 </style>
 </head>
 <body>

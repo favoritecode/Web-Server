@@ -189,7 +189,8 @@ def convert_document(input_path, source_ext, target, temp_dir):
         return convert_text_document(input_path, source_ext, target, temp_dir)
     soffice = find_soffice()
     if not soffice:
-        raise ConverterError("This document type needs LibreOffice on the server. TXT, HTML, MD, CSV, JSON, RTF and DOCX text conversions work without it.", 503)
+        checked = "; ".join(SOFFICE_CHECKED_PATHS[:8])
+        raise ConverterError("This document type needs LibreOffice on the server. Install LibreOffice or set SOFFICE_PATH/LIBREOFFICE_PATH. Checked: " + checked, 503)
     out_dir = Path(temp_dir) / "doc-out"
     out_dir.mkdir(exist_ok=True)
     target_filter = "html" if target == "html" else target
@@ -362,16 +363,43 @@ def require_ffmpeg():
     raise ConverterError("FFmpeg is not installed on this server.", 503)
 
 
+SOFFICE_CHECKED_PATHS = []
+
+
 def find_soffice():
-    found = shutil.which("soffice") or shutil.which("libreoffice")
-    if found:
-        return found
-    for path in (
-        r"C:\Program Files\LibreOffice\program\soffice.exe",
-        r"C:\Program Files (x86)\LibreOffice\program\soffice.exe",
+    global SOFFICE_CHECKED_PATHS
+    candidates = []
+    for key in ("SOFFICE_PATH", "LIBREOFFICE_PATH", "LIBREOFFICE_CMD"):
+        value = (os.environ.get(key) or "").strip().strip('"')
+        if value:
+            candidates.append(value)
+    for name in ("soffice", "libreoffice"):
+        found = shutil.which(name)
+        if found:
+            candidates.append(found)
+    for root in (
+        os.environ.get("ProgramFiles"),
+        os.environ.get("ProgramFiles(x86)"),
+        r"C:\Program Files",
+        r"C:\Program Files (x86)",
+        r"D:\Program Files",
+        r"E:\Program Files",
     ):
-        if Path(path).exists():
-            return path
+        if root:
+            candidates.append(str(Path(root) / "LibreOffice" / "program" / "soffice.exe"))
+    candidates.extend([
+        r"C:\LibreOffice\program\soffice.exe",
+        r"D:\LibreOffice\program\soffice.exe",
+        r"E:\LibreOffice\program\soffice.exe",
+    ])
+    unique = []
+    for item in candidates:
+        if item and item not in unique:
+            unique.append(item)
+    SOFFICE_CHECKED_PATHS = unique
+    for item in unique:
+        if Path(item).exists():
+            return item
     return None
 
 
