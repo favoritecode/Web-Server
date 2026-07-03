@@ -19,6 +19,7 @@ const OFFLINE_BACKEND_PLAYLIST = "/offline/index.m3u8";
 const AUTH_PATHS = ["/login", "/logout", "/login/callback"];
 const LONG_RUNNING_PATHS = [
   "/api/analytics/",
+  "/ocr/extract",
   "/download/api",
   "/download/proxy",
   "/download/server-download",
