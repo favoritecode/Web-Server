@@ -366,17 +366,20 @@ def require_ffmpeg():
 SOFFICE_CHECKED_PATHS = []
 
 
+def normalize_candidate_path(value):
+    value = (value or "").strip().strip('"').replace("/", "\\")
+    if value and Path(value).is_dir():
+        value = str(Path(value) / "soffice.exe")
+    return value
+
+
 def find_soffice():
     global SOFFICE_CHECKED_PATHS
     candidates = []
     for key in ("SOFFICE_PATH", "LIBREOFFICE_PATH", "LIBREOFFICE_CMD"):
-        value = (os.environ.get(key) or "").strip().strip('"')
+        value = normalize_candidate_path(os.environ.get(key))
         if value:
             candidates.append(value)
-    for name in ("soffice", "libreoffice"):
-        found = shutil.which(name)
-        if found:
-            candidates.append(found)
     for root in (
         os.environ.get("ProgramFiles"),
         os.environ.get("ProgramFiles(x86)"),
@@ -386,26 +389,40 @@ def find_soffice():
         r"E:\Program Files",
     ):
         if root:
-            candidates.append(str(Path(root) / "LibreOffice" / "program" / "soffice.exe"))
+            program_dir = Path(root) / "LibreOffice" / "program"
+            candidates.append(str(program_dir / "soffice.exe"))
+            candidates.append(str(program_dir / "soffice.com"))
     candidates.extend([
         r"C:\LibreOffice\program\soffice.exe",
         r"D:\LibreOffice\program\soffice.exe",
         r"E:\LibreOffice\program\soffice.exe",
     ])
+    for name in ("soffice.exe", "soffice", "libreoffice"):
+        found = shutil.which(name)
+        if found:
+            candidates.append(found)
     unique = []
+    seen = set()
     for item in candidates:
-        if item and item not in unique:
+        item = normalize_candidate_path(item)
+        key = item.lower()
+        if item and key not in seen:
             unique.append(item)
+            seen.add(key)
     SOFFICE_CHECKED_PATHS = unique
     for item in unique:
-        if Path(item).exists():
+        if Path(item).is_file():
             return item
     return None
 
 
 def run_command(args, timeout=900):
+    env = os.environ.copy()
+    if args and str(args[0]).lower().endswith(("soffice.exe", "soffice.com")):
+        program_dir = str(Path(args[0]).parent)
+        env["PATH"] = program_dir + os.pathsep + env.get("PATH", "")
     try:
-        result = subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=timeout)
+        result = subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=timeout, env=env)
     except subprocess.TimeoutExpired:
         raise ConverterError("Conversion timed out")
     if result.returncode != 0:
