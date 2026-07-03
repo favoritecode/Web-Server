@@ -200,7 +200,10 @@
   color: #60a5fa;
 }
 
-.file-card { position: relative; }
+.file-card { position: relative; overflow: visible; }
+.file-grid, #fileGrid { overflow: visible; }
+.file-card.menu-open { z-index: 10000; }
+.file-card.menu-open .file-menu { z-index: 10001; }
 .file-menu-button {
   position: absolute;
   top: 9px;
@@ -480,9 +483,14 @@ fileGrid.addEventListener('click', async (event) => {
     event.stopPropagation();
     const menu = menuButton.parentElement.querySelector('.file-menu');
     document.querySelectorAll('.file-menu.open').forEach((openMenu) => {
-      if (openMenu !== menu) openMenu.classList.remove('open');
+      if (openMenu !== menu) {
+        openMenu.classList.remove('open');
+        const card = openMenu.closest('.file-card');
+        if (card) card.classList.remove('menu-open');
+      }
     });
-    menu.classList.toggle('open');
+    const isOpen = menu.classList.toggle('open');
+    menuButton.parentElement.classList.toggle('menu-open', isOpen);
     return;
   }
 
@@ -590,7 +598,11 @@ fileGrid.addEventListener('click', async (event) => {
 
 document.addEventListener('click', (event) => {
   if (!event.target.closest('.file-card')) {
-    document.querySelectorAll('.file-menu.open').forEach((menu) => menu.classList.remove('open'));
+    document.querySelectorAll('.file-menu.open').forEach((menu) => {
+      menu.classList.remove('open');
+      const card = menu.closest('.file-card');
+      if (card) card.classList.remove('menu-open');
+    });
   }
 });
 

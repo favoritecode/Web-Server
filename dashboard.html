@@ -261,6 +261,7 @@
 .upload-menu button:hover { background: rgba(59,130,246,0.14); }
 .preview-card {
   position: relative;
+  overflow: visible;
   cursor: pointer;
   transition: border-color 0.2s ease, background 0.2s ease, transform 0.2s ease;
 }
@@ -317,6 +318,7 @@
 .stream-row {
   padding: 14px 52px 14px 14px;
   position: relative;
+  overflow: visible;
 }
 .stream-menu-button {
   position: absolute;
@@ -374,6 +376,9 @@
   color: #8ea1bd;
   margin-top: 5px;
 }
+.file-preview-grid, .stream-list { overflow: visible; }
+.preview-card.menu-open, .stream-row.menu-open { z-index: 10000; }
+.preview-card.menu-open .file-menu, .stream-row.menu-open .stream-menu { z-index: 10001; }
 .card-actions {
   display: flex;
   flex-wrap: wrap;
@@ -799,10 +804,10 @@ dashboardUploadZone.addEventListener("drop", async function(event) {
 document.addEventListener("click", function(event) {
   if (!event.target.closest(".upload-picker")) uploadMenu.classList.remove("open");
   if (!event.target.closest(".stream-row")) {
-    document.querySelectorAll(".stream-menu.open").forEach(function(menu) { menu.classList.remove("open"); });
+    document.querySelectorAll(".stream-menu.open").forEach(function(menu) { menu.classList.remove("open"); var row = menu.closest(".stream-row"); if (row) row.classList.remove("menu-open"); });
   }
   if (!event.target.closest(".preview-card")) {
-    document.querySelectorAll(".file-menu.open").forEach(function(menu) { menu.classList.remove("open"); });
+    document.querySelectorAll(".file-menu.open").forEach(function(menu) { menu.classList.remove("open"); var card = menu.closest(".preview-card"); if (card) card.classList.remove("menu-open"); });
   }
 });
 document.getElementById("filePreview").addEventListener("click", async function(event) {
@@ -812,9 +817,10 @@ document.getElementById("filePreview").addEventListener("click", async function(
     event.stopPropagation();
     var menu = menuButton.parentElement.querySelector(".file-menu");
     document.querySelectorAll(".file-menu.open").forEach(function(openMenu) {
-      if (openMenu !== menu) openMenu.classList.remove("open");
+      if (openMenu !== menu) { openMenu.classList.remove("open"); var holder = openMenu.closest(".preview-card") || openMenu.closest(".stream-row"); if (holder) holder.classList.remove("menu-open"); }
     });
-    menu.classList.toggle("open");
+    var isOpen = menu.classList.toggle("open");
+    menuButton.parentElement.classList.toggle("menu-open", isOpen);
     return;
   }
   var downloadBtn = event.target.closest("[data-download-file]");
@@ -889,9 +895,10 @@ document.getElementById("streamList").addEventListener("click", async function(e
     event.stopPropagation();
     var menu = menuButton.parentElement.querySelector(".stream-menu");
     document.querySelectorAll(".stream-menu.open").forEach(function(openMenu) {
-      if (openMenu !== menu) openMenu.classList.remove("open");
+      if (openMenu !== menu) { openMenu.classList.remove("open"); var holder = openMenu.closest(".preview-card") || openMenu.closest(".stream-row"); if (holder) holder.classList.remove("menu-open"); }
     });
-    menu.classList.toggle("open");
+    var isOpen = menu.classList.toggle("open");
+    menuButton.parentElement.classList.toggle("menu-open", isOpen);
     return;
   }
   var shareBtn = event.target.closest("[data-share-stream]");
