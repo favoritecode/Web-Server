@@ -3,6 +3,7 @@ import os
 import re
 import tempfile
 import shutil
+import subprocess
 
 import pytesseract
 from PIL import Image, ImageEnhance, ImageFilter, ImageOps, UnidentifiedImageError
@@ -14,50 +15,71 @@ DEFAULT_TESSERACT = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
 TESSERACT_CHECKED_PATHS = []
 
 
+def normalize_tesseract_candidate(value):
+    value = (value or "").strip().strip('"').replace("/", "\\")
+    if value and os.path.isdir(value):
+        value = os.path.join(value, "tesseract.exe")
+    return value
+
+
 def candidate_tesseract_paths():
     candidates = []
     for key in ("TESSERACT_CMD", "TESSERACT_PATH", "TESSERACT_EXE"):
-        value = (os.environ.get(key) or "").strip().strip('"')
+        value = normalize_tesseract_candidate(os.environ.get(key))
         if value:
             candidates.append(value)
+
     found = shutil.which("tesseract")
     if found:
         candidates.append(found)
-    program_files = [
+
+    for root in (
         os.environ.get("ProgramFiles"),
         os.environ.get("ProgramFiles(x86)"),
         os.environ.get("LOCALAPPDATA"),
-    ]
-    for root in [p for p in program_files if p]:
-        candidates.append(os.path.join(root, "Tesseract-OCR", "tesseract.exe"))
-    candidates.extend([
-        DEFAULT_TESSERACT,
-        r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe",
-        r"C:\Tesseract-OCR\tesseract.exe",
-        r"D:\Tesseract-OCR\tesseract.exe",
-        r"E:\Tesseract-OCR\tesseract.exe",
-    ])
+        r"C:\Program Files",
+        r"C:\Program Files (x86)",
+        "C:\\",
+        "D:\\",
+        "E:\\",
+    ):
+        if root:
+            candidates.append(os.path.join(root, "Tesseract-OCR", "tesseract.exe"))
+
     unique = []
+    seen = set()
     for item in candidates:
-        if item and item not in unique:
+        item = normalize_tesseract_candidate(item)
+        key = item.lower()
+        if item and key not in seen:
             unique.append(item)
+            seen.add(key)
     return unique
+
+
+def tesseract_runs(candidate):
+    if not candidate:
+        return False
+    if os.path.sep in candidate and not os.path.isfile(candidate):
+        return False
+    env = os.environ.copy()
+    if os.path.sep in candidate:
+        env["PATH"] = os.path.dirname(candidate) + os.pathsep + env.get("PATH", "")
+    try:
+        result = subprocess.run([candidate, "--version"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=8, env=env)
+    except Exception:
+        return False
+    return result.returncode == 0
 
 
 def configure_tesseract():
     global TESSERACT_CHECKED_PATHS
     TESSERACT_CHECKED_PATHS = candidate_tesseract_paths()
     for candidate in TESSERACT_CHECKED_PATHS:
-        if os.path.isfile(candidate):
+        if tesseract_runs(candidate):
             pytesseract.pytesseract.tesseract_cmd = candidate
-            tessdata = os.path.join(os.path.dirname(candidate), "tessdata")
-            if os.path.isdir(tessdata) and not os.environ.get("TESSDATA_PREFIX"):
-                os.environ["TESSDATA_PREFIX"] = tessdata
             return candidate
     return None
-
-
-configure_tesseract()
 
 
 def clean_text(value):
@@ -185,7 +207,8 @@ def init_routes(app):
         except UnidentifiedImageError:
             return jsonify({"error": "Could not read this image file"}), 400
         except pytesseract.TesseractNotFoundError:
-            return jsonify({"error": "Tesseract OCR is not installed on this server."}), 503
+            configure_tesseract()
+            return jsonify({"error": "Tesseract OCR was not found on this server. Checked: " + "; ".join(TESSERACT_CHECKED_PATHS[:8])}), 503
         except Exception as exc:
             return jsonify({"error": "OCR Error: " + str(exc)}), 500
 
