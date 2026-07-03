@@ -120,15 +120,6 @@ function formatSize(bytes) {
 }
 
 
-function ocrEndpoints() {
-  const current = location.hostname;
-  const endpoints = [location.origin + "/ocr/extract"];
-  ["khan.favoriteweb.net", "host.favoriteweb.net", "server.favoriteweb.net"].forEach(function(host) {
-    if (host !== current) endpoints.push("https://" + host + "/ocr/extract");
-  });
-  return Array.from(new Set(endpoints));
-}
-
 function buildOcrFormData() {
   const formData = new FormData();
   formData.append("image", selectedFile);
@@ -137,25 +128,15 @@ function buildOcrFormData() {
 }
 
 async function postOcrWithFallback() {
-  const endpoints = ocrEndpoints();
-  let lastError = "OCR failed.";
-  for (let i = 0; i < endpoints.length; i += 1) {
-    const endpoint = endpoints[i];
-    try {
-      const res = await fetch(endpoint, { method: "POST", body: buildOcrFormData() });
-      const data = await res.json().catch(function() { return {}; });
-      if (res.ok && !data.error) {
-        data.endpoint = endpoint;
-        return data;
-      }
-      lastError = data.error || ("OCR failed on " + new URL(endpoint).hostname);
-      if (!/Tesseract OCR was not found|Failed to fetch|OCR failed/i.test(lastError) && res.status !== 503) break;
-    } catch (error) {
-      lastError = "Server error on " + new URL(endpoint).hostname + ": " + error.message;
-    }
+  const res = await fetch("/ocr/extract", { method: "POST", body: buildOcrFormData() });
+  const data = await res.json().catch(function() { return {}; });
+  if (!res.ok || data.error) {
+    throw new Error(data.error || "OCR failed.");
   }
-  throw new Error(lastError);
+  data.endpoint = location.origin + "/ocr/extract";
+  return data;
 }
+
 
 function setStatus(message, isError) {
   statusLine.textContent = message || "";

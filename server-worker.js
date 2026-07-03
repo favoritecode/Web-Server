@@ -12,6 +12,7 @@ const TIMEOUT = 3000;
 const HEALTH_TIMEOUT = 2000;
 const BACKENDS = [PRIMARY, BACKUP, RENDER_BACKUP];
 const STREAM_BACKENDS = [PRIMARY, BACKUP];
+const OCR_BACKENDS = [PRIMARY, BACKUP];
 const OFFLINE_BACKENDS = [PRIMARY, BACKUP];
 const HLS_TIMEOUT = 6500;
 const WORKER_OFFLINE_SEGMENT_PATH = "/__offline/offline.ts";
@@ -82,6 +83,10 @@ function isLongRunningPath(pathname) {
   }
 
   return LONG_RUNNING_PATHS.some((path) => pathname === path || pathname.startsWith(path));
+}
+
+function isOcrPath(pathname) {
+  return pathname === "/ocr" || pathname === "/ocr/" || pathname === "/ocr/extract" || pathname === "/ocr/health";
 }
 
 function isHlsMediaPath(pathname) {
@@ -280,6 +285,9 @@ async function proxyTo(request, target) {
   const response = await fetch(targetUrl.toString(), init);
   const rewritten = rewriteResponse(response, incomingUrl.origin);
 
+  rewritten.headers.set("X-FavoriteWeb-Worker", "server-failover");
+  rewritten.headers.set("X-FavoriteWeb-Target", targetUrl.host);
+
   if (isHlsMediaPath(incomingUrl.pathname)) {
     rewritten.headers.set("Cache-Control", "no-store");
     rewritten.headers.set("Access-Control-Allow-Origin", "*");
@@ -380,7 +388,7 @@ async function proxyLivePlaylist(request, streamName) {
 async function proxyWithFailover(request) {
   let lastResponse = null;
   const url = new URL(request.url);
-  const targets = isHlsMediaPath(url.pathname) ? STREAM_BACKENDS : BACKENDS;
+  const targets = isHlsMediaPath(url.pathname) ? STREAM_BACKENDS : (isOcrPath(url.pathname) ? OCR_BACKENDS : BACKENDS);
 
   for (const target of targets) {
     try {
@@ -397,6 +405,13 @@ async function proxyWithFailover(request) {
 
       lastResponse = response;
     } catch (e) {}
+  }
+
+  if (isOcrPath(url.pathname)) {
+    return new Response(JSON.stringify({ error: "OCR PC servers are unavailable" }), {
+      status: 503,
+      headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*", "X-FavoriteWeb-Worker": "server-failover", "X-FavoriteWeb-Target": "none" }
+    });
   }
 
   return lastResponse || new Response("Server unavailable", { status: 503 });
