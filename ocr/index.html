@@ -33,12 +33,16 @@
 .result-actions button { min-height:34px; border:1px solid rgba(96,165,250,.22); border-radius:999px; background:rgba(59,130,246,.1); color:#bfdbfe; padding:0 12px; font-size:12px; font-weight:750; cursor:pointer; }
 .result-body { flex:1; padding:16px; }
 textarea { width:100%; height:100%; min-height:260px; border:0; outline:none; resize:vertical; background:transparent; color:#e5edff; font:14px/1.7 Consolas, 'Courier New', monospace; }
-.status-line { min-height:22px; margin-top:10px; color:#7dd3fc; font-size:13px; }
+.ocr-summary-card { display:none; margin-top:16px; padding:14px; border:1px solid rgba(96,165,250,.18); border-radius:14px; background:linear-gradient(135deg, rgba(14,165,233,.10), rgba(147,51,234,.10)); box-shadow:inset 0 1px 0 rgba(255,255,255,.05), 0 16px 38px rgba(0,0,0,.16); }
+.ocr-summary-card.show { display:block; }
+.status-line { min-height:22px; color:#7dd3fc; font-size:13px; font-weight:750; overflow-wrap:anywhere; }
 .status-line.error { color:#fecdd3; }
-.ocr-stats { display:flex; flex-wrap:wrap; gap:10px; margin-top:14px; color:#8ea1bd; font-size:12px; }
-.ocr-stats span { padding:7px 10px; border:1px solid rgba(148,163,184,.12); border-radius:999px; background:rgba(255,255,255,.04); }
+.ocr-stats { display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:10px; margin-top:12px; }
+.ocr-stat { min-width:0; padding:10px 12px; border:1px solid rgba(148,163,184,.14); border-radius:12px; background:rgba(15,23,42,.42); }
+.ocr-stat span { display:block; color:#8ea1bd; font-size:10px; font-weight:850; letter-spacing:.07em; text-transform:uppercase; }
+.ocr-stat strong { display:block; margin-top:5px; color:#edf2ff; font-size:14px; line-height:1.3; overflow-wrap:anywhere; }
 @media (max-width: 860px) { .ocr-hero { flex-direction:column; align-items:flex-start; } .ocr-grid { grid-template-columns:1fr; } }
-@media (max-width: 560px) { .ocr-main { width:min(100% - 24px,1120px); margin-top:28px; } .ocr-hero { padding:22px; } .ocr-hero h1 { font-size:28px; } .result-head { flex-direction:column; align-items:flex-start; } }
+@media (max-width: 560px) { .ocr-main { width:min(100% - 24px,1120px); margin-top:28px; } .ocr-hero { padding:22px; } .ocr-hero h1 { font-size:28px; } .result-head { flex-direction:column; align-items:flex-start; } .ocr-stats { grid-template-columns:1fr; } }
 </style>
 </head>
 <body>
@@ -82,11 +86,13 @@ textarea { width:100%; height:100%; min-height:260px; border:0; outline:none; re
         </div>
         <div class="result-body">
           <textarea id="resultText" placeholder="Extracted text will appear here..." readonly></textarea>
-          <div class="status-line" id="statusLine"></div>
-          <div class="ocr-stats" id="statsLine" style="display:none">
-            <span id="detectedLang">Language: -</span>
-            <span id="charCount">Characters: 0</span>
-            <span id="wordCount">Words: 0</span>
+          <div class="ocr-summary-card" id="summaryCard">
+            <div class="status-line" id="statusLine"></div>
+            <div class="ocr-stats" id="statsLine">
+              <div class="ocr-stat"><span>Language</span><strong id="detectedLang">-</strong></div>
+              <div class="ocr-stat"><span>Characters</span><strong id="charCount">0</strong></div>
+              <div class="ocr-stat"><span>Words</span><strong id="wordCount">0</strong></div>
+            </div>
           </div>
         </div>
       </div>
@@ -104,6 +110,7 @@ const previewBox = document.getElementById("previewBox");
 const resultText = document.getElementById("resultText");
 const statusLine = document.getElementById("statusLine");
 const statsLine = document.getElementById("statsLine");
+const summaryCard = document.getElementById("summaryCard");
 const detectedLang = document.getElementById("detectedLang");
 const charCount = document.getElementById("charCount");
 const wordCount = document.getElementById("wordCount");
@@ -141,6 +148,7 @@ async function postOcrWithFallback() {
 function setStatus(message, isError) {
   statusLine.textContent = message || "";
   statusLine.classList.toggle("error", Boolean(isError));
+  summaryCard.classList.toggle("show", Boolean(message));
 }
 
 langSelect.addEventListener("change", function() {
@@ -176,7 +184,7 @@ function handleFile(file) {
   fileInfo.textContent = file.name + " (" + formatSize(file.size) + ")";
   extractBtn.disabled = false;
   resultText.value = "";
-  statsLine.style.display = "none";
+  summaryCard.classList.remove("show");
   setStatus("");
 
   const reader = new FileReader();
@@ -192,7 +200,7 @@ async function extractText() {
   extractBtn.disabled = true;
   extractBtn.textContent = "Processing...";
   resultText.value = "";
-  statsLine.style.display = "none";
+  summaryCard.classList.remove("show");
   setStatus("Processing image with local OCR...");
 
   try {
@@ -200,10 +208,10 @@ async function extractText() {
     const text = data.text || "No text detected";
     resultText.value = text;
     const labels = { eng: "English", ben: "Bangla", both: "English + Bangla" };
-    detectedLang.textContent = "Language: " + (labels[data.lang] || data.lang || "English");
-    charCount.textContent = "Characters: " + text.length;
-    wordCount.textContent = "Words: " + (text.trim() ? text.trim().split(/\s+/).length : 0);
-    statsLine.style.display = "flex";
+    detectedLang.textContent = labels[data.lang] || data.lang || "English";
+    charCount.textContent = text.length;
+    wordCount.textContent = text.trim() ? text.trim().split(/\s+/).length : 0;
+    summaryCard.classList.add("show");
     const usedHost = data.endpoint ? new URL(data.endpoint).hostname : location.hostname;
     setStatus((data.warnings && data.warnings.length) ? data.warnings.join(". ") : "OCR complete via " + usedHost + ".", Boolean(data.warnings && data.warnings.length));
   } catch (error) {
