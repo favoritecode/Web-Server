@@ -119,6 +119,44 @@ function formatSize(bytes) {
   return (value >= 10 ? value.toFixed(1) : value.toFixed(2)).replace(/\.0+$/, "") + " " + units[unit];
 }
 
+
+function ocrEndpoints() {
+  const current = location.hostname;
+  const endpoints = [location.origin + "/ocr/extract"];
+  ["khan.favoriteweb.net", "host.favoriteweb.net", "server.favoriteweb.net"].forEach(function(host) {
+    if (host !== current) endpoints.push("https://" + host + "/ocr/extract");
+  });
+  return Array.from(new Set(endpoints));
+}
+
+function buildOcrFormData() {
+  const formData = new FormData();
+  formData.append("image", selectedFile);
+  formData.append("lang", langSelect.value);
+  return formData;
+}
+
+async function postOcrWithFallback() {
+  const endpoints = ocrEndpoints();
+  let lastError = "OCR failed.";
+  for (let i = 0; i < endpoints.length; i += 1) {
+    const endpoint = endpoints[i];
+    try {
+      const res = await fetch(endpoint, { method: "POST", body: buildOcrFormData() });
+      const data = await res.json().catch(function() { return {}; });
+      if (res.ok && !data.error) {
+        data.endpoint = endpoint;
+        return data;
+      }
+      lastError = data.error || ("OCR failed on " + new URL(endpoint).hostname);
+      if (!/Tesseract OCR was not found|Failed to fetch|OCR failed/i.test(lastError) && res.status !== 503) break;
+    } catch (error) {
+      lastError = "Server error on " + new URL(endpoint).hostname + ": " + error.message;
+    }
+  }
+  throw new Error(lastError);
+}
+
 function setStatus(message, isError) {
   statusLine.textContent = message || "";
   statusLine.classList.toggle("error", Boolean(isError));
@@ -170,9 +208,6 @@ function handleFile(file) {
 
 async function extractText() {
   if (!selectedFile) return;
-  const formData = new FormData();
-  formData.append("image", selectedFile);
-  formData.append("lang", langSelect.value);
   extractBtn.disabled = true;
   extractBtn.textContent = "Processing...";
   resultText.value = "";
@@ -180,13 +215,7 @@ async function extractText() {
   setStatus("Processing image with local OCR...");
 
   try {
-    const res = await fetch("/ocr/extract", { method: "POST", body: formData });
-    const data = await res.json().catch(function() { return {}; });
-    if (!res.ok || data.error) {
-      resultText.value = data.error || "OCR failed.";
-      setStatus(data.error || "OCR failed.", true);
-      return;
-    }
+    const data = await postOcrWithFallback();
     const text = data.text || "No text detected";
     resultText.value = text;
     const labels = { eng: "English", ben: "Bangla", both: "English + Bangla" };
@@ -194,7 +223,8 @@ async function extractText() {
     charCount.textContent = "Characters: " + text.length;
     wordCount.textContent = "Words: " + (text.trim() ? text.trim().split(/\s+/).length : 0);
     statsLine.style.display = "flex";
-    setStatus((data.warnings && data.warnings.length) ? data.warnings.join(". ") : "OCR complete.", Boolean(data.warnings && data.warnings.length));
+    const usedHost = data.endpoint ? new URL(data.endpoint).hostname : location.hostname;
+    setStatus((data.warnings && data.warnings.length) ? data.warnings.join(". ") : "OCR complete via " + usedHost + ".", Boolean(data.warnings && data.warnings.length));
   } catch (error) {
     resultText.value = "Server error: " + error.message;
     setStatus("Server error: " + error.message, true);

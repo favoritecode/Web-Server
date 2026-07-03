@@ -1,4 +1,4 @@
-from flask import send_from_directory, request, jsonify
+from flask import send_from_directory, request, jsonify, make_response
 import os
 import re
 import tempfile
@@ -15,6 +15,18 @@ DEFAULT_TESSERACT = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
 TESSERACT_CHECKED_PATHS = []
 
 
+def with_ocr_cors(response):
+    response.headers["Access-Control-Allow-Origin"] = "*"
+    response.headers["Access-Control-Allow-Methods"] = "POST, OPTIONS, GET"
+    response.headers["Access-Control-Allow-Headers"] = "Content-Type"
+    return response
+
+
+def ocr_response(payload, status=200):
+    return with_ocr_cors(jsonify(payload)), status
+
+
+
 def normalize_tesseract_candidate(value):
     value = (value or "").strip().strip('"').replace("/", "\\")
     if value and os.path.isdir(value):
@@ -23,7 +35,7 @@ def normalize_tesseract_candidate(value):
 
 
 def candidate_tesseract_paths():
-    candidates = []
+    candidates = [DEFAULT_TESSERACT]
     for key in ("TESSERACT_CMD", "TESSERACT_PATH", "TESSERACT_EXE"):
         value = normalize_tesseract_candidate(os.environ.get(key))
         if value:
@@ -80,6 +92,16 @@ def configure_tesseract():
             pytesseract.pytesseract.tesseract_cmd = candidate
             return candidate
     return None
+
+
+def tesseract_status():
+    selected = configure_tesseract()
+    return {
+        "available": bool(selected),
+        "selected": selected,
+        "checked": TESSERACT_CHECKED_PATHS,
+        "which": shutil.which("tesseract"),
+    }
 
 
 def clean_text(value):
@@ -170,26 +192,34 @@ def init_routes(app):
     def ocr_page():
         return send_from_directory(BASE_DIR, "index.html")
 
-    @app.route("/ocr/extract", methods=["POST"])
+    @app.route("/ocr/health")
+    def ocr_health():
+        status = tesseract_status()
+        status["host"] = request.host
+        return ocr_response(status)
+
+    @app.route("/ocr/extract", methods=["POST", "OPTIONS"])
     def ocr_extract():
+        if request.method == "OPTIONS":
+            return with_ocr_cors(make_response("", 204))
         if "image" not in request.files:
-            return jsonify({"error": "No image uploaded"}), 400
+            return ocr_response({"error": "No image uploaded"}, 400)
 
         file = request.files["image"]
         if not file or not file.filename:
-            return jsonify({"error": "No image selected"}), 400
+            return ocr_response({"error": "No image selected"}, 400)
 
         ext = os.path.splitext(file.filename)[1].lower()
         if ext not in ALLOWED_EXTENSIONS:
-            return jsonify({"error": "Unsupported image type"}), 400
+            return ocr_response({"error": "Unsupported image type"}, 400)
 
         content_length = request.content_length or 0
         if content_length > MAX_OCR_BYTES:
-            return jsonify({"error": "Image is too large. Maximum size is 25 MB."}), 413
+            return ocr_response({"error": "Image is too large. Maximum size is 25 MB."}, 413)
 
         tesseract_path = configure_tesseract()
         if not tesseract_path:
-            return jsonify({"error": "Tesseract OCR was not found on this server. Checked: " + "; ".join(TESSERACT_CHECKED_PATHS[:8])}), 503
+            return ocr_response({"error": "Tesseract OCR was not found on this server. Checked: " + "; ".join(TESSERACT_CHECKED_PATHS[:8]), "checked": TESSERACT_CHECKED_PATHS}, 503)
         lang, warnings = safe_lang(request.form.get("lang", "eng"))
 
         try:
@@ -205,14 +235,14 @@ def init_routes(app):
                 except OSError:
                     pass
         except UnidentifiedImageError:
-            return jsonify({"error": "Could not read this image file"}), 400
+            return ocr_response({"error": "Could not read this image file"}, 400)
         except pytesseract.TesseractNotFoundError:
             configure_tesseract()
-            return jsonify({"error": "Tesseract OCR was not found on this server. Checked: " + "; ".join(TESSERACT_CHECKED_PATHS[:8])}), 503
+            return ocr_response({"error": "Tesseract OCR was not found on this server. Checked: " + "; ".join(TESSERACT_CHECKED_PATHS[:8]), "checked": TESSERACT_CHECKED_PATHS}, 503)
         except Exception as exc:
-            return jsonify({"error": "OCR Error: " + str(exc)}), 500
+            return ocr_response({"error": "OCR Error: " + str(exc)}, 500)
 
-        return jsonify({
+        return ocr_response({
             "text": text,
             "lang": request.form.get("lang", "eng"),
             "engine_lang": lang,
