@@ -19,7 +19,7 @@ MAX_CONVERT_BYTES = 1024 * 1024 * 1024
 IMAGE_FORMATS = {"jpg", "jpeg", "png", "webp", "bmp", "tiff", "gif", "ico", "pdf", "eps", "psd", "ai"}
 VIDEO_FORMATS = {"mp4", "mkv", "webm", "mov", "avi", "flv", "m4v", "ogv"}
 AUDIO_FORMATS = {"mp3", "m4a", "aac", "wav", "flac", "ogg", "opus", "wma"}
-DOCUMENT_FORMATS = {"pdf", "docx", "doc", "odt", "rtf", "txt", "html", "md", "csv", "json", "xlsx"}
+DOCUMENT_FORMATS = {"pdf", "eps", "psd", "ai", "docx", "doc", "odt", "rtf", "txt", "html", "md", "csv", "json", "xlsx"}
 TEXT_DOCUMENTS = {"txt", "html", "md", "csv", "json", "rtf", "docx", "odt", "xlsx"}
 
 
@@ -110,7 +110,7 @@ def dispatch_convert(category, input_path, source_ext, target, quality, form, te
 
 def convert_image(input_path, source_ext, target, form, temp_dir):
     design_formats = {"pdf", "eps", "psd", "ai"}
-    if source_ext in {"pdf", "eps", "psd", "ai"} or target in {"eps", "psd", "ai"}:
+    if source_ext in design_formats or target in {"eps", "psd", "ai"}:
         return convert_design_image(input_path, source_ext, target, form, temp_dir)
     try:
         with Image.open(input_path) as img:
@@ -219,6 +219,12 @@ def convert_audio(input_path, target, quality, form, temp_dir):
 
 
 def convert_document(input_path, source_ext, target, temp_dir):
+    design_document_formats = {"pdf", "eps", "psd", "ai"}
+    if source_ext in design_document_formats or target in design_document_formats - {"pdf"}:
+        if source_ext in design_document_formats and target in design_document_formats:
+            return convert_design_image(input_path, source_ext, target, {}, temp_dir)
+        raise ConverterError("PDF/EPS/PSD/AI document conversion only works between those design formats.", 422)
+
     text_targets = {"txt", "html", "md", "csv", "json", "rtf", "doc", "docx", "odt", "pdf", "xlsx"}
     if source_ext in TEXT_DOCUMENTS and target in text_targets:
         return convert_text_document(input_path, source_ext, target, temp_dir)

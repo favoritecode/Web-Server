@@ -1314,11 +1314,20 @@ if __name__ == "__main__":
     # This environment variable is the official Werkzeug way to bypass the check.
     os.environ["WERKZEUG_HOST_CHECK"] = "0"
     
+    port = int(os.environ.get("FAVORITEWEB_APP_PORT", "8010"))
+
     # Try Waitress first (production server, no Host validation)
     try:
         from waitress import serve
-        print("[SERVER] Starting Waitress on 0.0.0.0:8000")
-        serve(app, host="0.0.0.0", port=8000)
+        print(f"[SERVER] Starting Waitress on 0.0.0.0:{port}")
+        serve(
+            app,
+            host="0.0.0.0",
+            port=port,
+            trusted_proxy="*",
+            trusted_proxy_headers="x-forwarded-for x-forwarded-host x-forwarded-proto x-forwarded-port",
+            clear_untrusted_proxy_headers=False,
+        )
     except ImportError:
         # Fallback to Werkzeug dev server
         # Patch out the host check at multiple levels to be safe
@@ -1349,4 +1358,4 @@ if __name__ == "__main__":
         serving.WSGIRequestHandler.make_environ = _patched_make_environ
         
         print("[WARN] Waitress not found, using Werkzeug dev server")
-        app.run(host="0.0.0.0", port=8000, debug=False, use_reloader=False)
+        app.run(host="0.0.0.0", port=port, debug=False, use_reloader=False)

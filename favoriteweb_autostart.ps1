@@ -90,7 +90,7 @@ $LiveIngress
     service: http://127.0.0.1:8080
 
   - hostname: $SelectedBackendHostname
-    service: http://127.0.0.1:8000
+    service: http://127.0.0.1:8010
 
   - service: http_status:404
 "@
