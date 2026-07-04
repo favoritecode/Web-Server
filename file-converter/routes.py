@@ -16,11 +16,11 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent
 MAX_CONVERT_BYTES = 1024 * 1024 * 1024
 
-IMAGE_FORMATS = {"jpg", "jpeg", "png", "webp", "bmp", "tiff", "gif", "ico", "pdf"}
+IMAGE_FORMATS = {"jpg", "jpeg", "png", "webp", "bmp", "tiff", "gif", "ico", "pdf", "eps", "psd", "ai"}
 VIDEO_FORMATS = {"mp4", "mkv", "webm", "mov", "avi", "flv", "m4v", "ogv"}
 AUDIO_FORMATS = {"mp3", "m4a", "aac", "wav", "flac", "ogg", "opus", "wma"}
-DOCUMENT_FORMATS = {"pdf", "docx", "doc", "odt", "rtf", "txt", "html", "md", "csv", "json"}
-TEXT_DOCUMENTS = {"txt", "html", "md", "csv", "json", "rtf", "docx", "odt"}
+DOCUMENT_FORMATS = {"pdf", "docx", "doc", "odt", "rtf", "txt", "html", "md", "csv", "json", "xlsx"}
+TEXT_DOCUMENTS = {"txt", "html", "md", "csv", "json", "rtf", "docx", "odt", "xlsx"}
 
 
 def init_routes(app):
@@ -100,7 +100,7 @@ def dispatch_convert(category, input_path, source_ext, target, quality, form, te
     if category == "document":
         return convert_document(input_path, source_ext, target, temp_dir)
     if category == "image":
-        return convert_image(input_path, target, form, temp_dir)
+        return convert_image(input_path, source_ext, target, form, temp_dir)
     if category == "video":
         return convert_video(input_path, target, quality, form, temp_dir)
     if category == "audio":
@@ -108,7 +108,10 @@ def dispatch_convert(category, input_path, source_ext, target, quality, form, te
     raise ConverterError("Unknown converter type")
 
 
-def convert_image(input_path, target, form, temp_dir):
+def convert_image(input_path, source_ext, target, form, temp_dir):
+    design_formats = {"pdf", "eps", "psd", "ai"}
+    if source_ext in {"pdf", "eps", "psd", "ai"} or target in {"eps", "psd", "ai"}:
+        return convert_design_image(input_path, source_ext, target, form, temp_dir)
     try:
         with Image.open(input_path) as img:
             img = ImageOps.exif_transpose(img)
@@ -138,6 +141,37 @@ def convert_image(input_path, target, form, temp_dir):
             return output
     except UnidentifiedImageError:
         raise ConverterError("Could not read this image file")
+
+
+def convert_design_image(input_path, source_ext, target, form, temp_dir):
+    output = Path(temp_dir) / f"converted.{target}"
+    if source_ext not in {"pdf", "eps", "psd", "ai"} and target == "eps":
+        try:
+            with Image.open(input_path) as img:
+                img = ImageOps.exif_transpose(img).convert("RGB")
+                img.save(output, format="EPS")
+                return output
+        except UnidentifiedImageError:
+            raise ConverterError("Could not read this image file")
+    magick = find_magick()
+    if not magick:
+        raise ConverterError("PDF/EPS/PSD/AI conversion needs ImageMagick and Ghostscript on the server. Install them to enable these formats.", 503)
+    density = str(int(form.get("density") or 220))
+    input_spec = str(input_path)
+    if source_ext == "pdf":
+        input_spec += "[0]"
+    args = [magick, "-density", density, input_spec, "-background", "white", "-alpha", "remove"]
+    if target == "jpg":
+        args += ["-quality", str(int(form.get("imageQuality") or 92))]
+    if target == "ai":
+        # Modern Illustrator files are PDF-compatible; ImageMagick writes PDF data and we keep the requested extension.
+        args += ["pdf:" + str(output)]
+    else:
+        args.append(str(output))
+    run_command(args, timeout=180)
+    if not output.exists():
+        raise ConverterError("Design file conversion failed")
+    return output
 
 
 def convert_video(input_path, target, quality, form, temp_dir):
@@ -185,7 +219,7 @@ def convert_audio(input_path, target, quality, form, temp_dir):
 
 
 def convert_document(input_path, source_ext, target, temp_dir):
-    text_targets = {"txt", "html", "md", "csv", "json", "rtf", "doc", "docx", "odt", "pdf"}
+    text_targets = {"txt", "html", "md", "csv", "json", "rtf", "doc", "docx", "odt", "pdf", "xlsx"}
     if source_ext in TEXT_DOCUMENTS and target in text_targets:
         return convert_text_document(input_path, source_ext, target, temp_dir)
     if source_ext == "pdf" and target in text_targets:
@@ -225,6 +259,7 @@ def libreoffice_filter(target):
         "rtf": "rtf:Rich Text Format",
         "html": "html:HTML (StarWriter)",
         "txt": "txt:Text",
+        "xlsx": "xlsx:Calc MS Excel 2007 XML",
     }.get(target, target)
 
 
@@ -270,6 +305,8 @@ def read_document_text(input_path, source_ext):
         return read_docx_text(input_path)
     if source_ext == "odt":
         return read_odt_text(input_path)
+    if source_ext == "xlsx":
+        return read_xlsx_text(input_path)
     raw = input_path.read_text(encoding="utf-8", errors="ignore")
     if source_ext == "html":
         raw = re.sub(r"<br\s*/?>", "\n", raw, flags=re.I)
@@ -304,6 +341,8 @@ def convert_text_document(input_path, source_ext, target, temp_dir):
         write_docx(output, text)
     elif target == "odt":
         write_odt(output, text)
+    elif target == "xlsx":
+        write_xlsx(output, text)
     elif target == "pdf":
         write_text_pdf(output, text)
     elif target == "rtf":
@@ -353,6 +392,40 @@ def read_odt_text(path):
         raise ConverterError("Could not read ODT text: " + str(exc), 400)
 
 
+def read_xlsx_text(path):
+    try:
+        with zipfile.ZipFile(path) as xlsx:
+            shared = []
+            if "xl/sharedStrings.xml" in xlsx.namelist():
+                shared_root = ET.fromstring(xlsx.read("xl/sharedStrings.xml"))
+                ns = {"a": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
+                for item in shared_root.findall(".//a:si", ns):
+                    shared.append("".join(node.text or "" for node in item.findall(".//a:t", ns)))
+            sheet_names = sorted(name for name in xlsx.namelist() if re.match(r"xl/worksheets/sheet\d+\.xml$", name))
+            rows = []
+            ns = {"a": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
+            for sheet_name in sheet_names:
+                root = ET.fromstring(xlsx.read(sheet_name))
+                for row in root.findall(".//a:row", ns):
+                    values = []
+                    for cell in row.findall("a:c", ns):
+                        cell_type = cell.get("t")
+                        value = ""
+                        if cell_type == "inlineStr":
+                            value = "".join(node.text or "" for node in cell.findall(".//a:t", ns))
+                        else:
+                            value_node = cell.find("a:v", ns)
+                            value = value_node.text if value_node is not None else ""
+                            if cell_type == "s" and value.isdigit() and int(value) < len(shared):
+                                value = shared[int(value)]
+                        values.append(value)
+                    if values:
+                        rows.append(",".join(values))
+            return "\n".join(rows)
+    except Exception as exc:
+        raise ConverterError("Could not read XLSX text: " + str(exc), 400)
+
+
 def write_docx(path, text):
     paragraphs = "".join("<w:p><w:r><w:t>{}</w:t></w:r></w:p>".format(html.escape(line)) for line in (text.splitlines() or [""]))
     content_types = '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>'''
@@ -362,6 +435,33 @@ def write_docx(path, text):
         docx.writestr("[Content_Types].xml", content_types)
         docx.writestr("_rels/.rels", rels)
         docx.writestr("word/document.xml", document)
+
+
+def write_xlsx(path, text):
+    rows = []
+    for line in text.splitlines() or [""]:
+        if "," in line:
+            rows.append([part.strip() for part in next(csv.reader([line]))])
+        else:
+            rows.append([line])
+    sheet_rows = []
+    for r_index, row in enumerate(rows, start=1):
+        cells = []
+        for c_index, value in enumerate(row, start=1):
+            col = chr(ord("A") + min(c_index - 1, 25))
+            cells.append(f'<c r="{col}{r_index}" t="inlineStr"><is><t>{html.escape(value)}</t></is></c>')
+        sheet_rows.append(f'<row r="{r_index}">{"".join(cells)}</row>')
+    content_types = '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>'''
+    rels = '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>'''
+    workbook = '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Sheet1" sheetId="1" r:id="rId1"/></sheets></workbook>'''
+    workbook_rels = '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>'''
+    sheet = f'''<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>{"".join(sheet_rows)}</sheetData></worksheet>'''
+    with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as xlsx:
+        xlsx.writestr("[Content_Types].xml", content_types)
+        xlsx.writestr("_rels/.rels", rels)
+        xlsx.writestr("xl/workbook.xml", workbook)
+        xlsx.writestr("xl/_rels/workbook.xml.rels", workbook_rels)
+        xlsx.writestr("xl/worksheets/sheet1.xml", sheet)
 
 
 def write_odt(path, text):
@@ -423,6 +523,21 @@ def require_ffmpeg():
     if common.exists():
         return str(common)
     raise ConverterError("FFmpeg is not installed on this server.", 503)
+
+
+def find_magick():
+    for name in ("magick", "magick.exe", "convert"):
+        found = shutil.which(name)
+        if found:
+            return found
+    for candidate in (
+        r"C:\Program Files\ImageMagick-7.1.1-Q16-HDRI\magick.exe",
+        r"C:\Program Files\ImageMagick-7.1.2-Q16-HDRI\magick.exe",
+        r"C:\Program Files\ImageMagick-7.0.11-Q16-HDRI\magick.exe",
+    ):
+        if Path(candidate).is_file():
+            return candidate
+    return None
 
 
 SOFFICE_CHECKED_PATHS = []
@@ -491,3 +606,4 @@ def run_command(args, timeout=900):
         detail = (result.stderr or result.stdout or "").strip().splitlines()
         message = detail[-1] if detail else "Conversion command failed"
         raise ConverterError(message[:240], 500)
+
