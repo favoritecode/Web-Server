@@ -408,7 +408,7 @@ async function loadFiles(path) {
     }
 
     const menuMarkup = (item) => {
-      const download = item.can_download ? `<button type="button" data-download-drive="${escapeHtml(item.path)}">Download</button>` : "";
+      const download = item.can_download ? `<button type="button" data-download-drive="${escapeHtml(item.path)}" data-download-url="${escapeHtml(item.download_url || '')}">Download</button>` : "";
       const share = item.can_share ? `<button type="button" data-share-drive="${escapeHtml(item.path)}" data-share-type="${escapeHtml(item.type)}">Share</button>` : "";
       const move = item.can_move ? `<button type="button" data-move-drive="${escapeHtml(item.path)}">Move</button>` : "";
       const rename = item.can_rename ? `<button type="button" data-rename-drive="${escapeHtml(item.path)}" data-current-name="${escapeHtml(item.name)}">Rename</button>` : "";
@@ -430,7 +430,7 @@ async function loadFiles(path) {
         const ext = item.name.split(".").pop().toLowerCase();
         const icon = getFileIcon(ext);
         html += `
-          <div class="file-card" data-open="/drive/open/${encodePath(item.path)}">
+          <div class="file-card" data-open="${escapeHtml(item.open_url || ('/drive/open/' + encodePath(item.path)))}">
             ${menuMarkup(item)}
             <span class="file-icon">${icon}</span>
             <div class="file-name">${escapeHtml(item.name)}</div>
@@ -498,7 +498,7 @@ fileGrid.addEventListener('click', async (event) => {
   if (downloadButton) {
     event.preventDefault();
     event.stopPropagation();
-    window.open('/drive/download/' + encodePath(downloadButton.getAttribute('data-download-drive')) + '?v=' + Date.now(), '_blank');
+    window.open((downloadButton.getAttribute('data-download-url') || ('/drive/download/' + encodePath(downloadButton.getAttribute('data-download-drive')))) + '?v=' + Date.now(), '_blank');
     return;
   }
 
