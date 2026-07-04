@@ -26,6 +26,8 @@ const LONG_RUNNING_PATHS = [
   "/api/drive/files",
   "/drive/open/",
   "/drive/download/",
+  "/drive/media",
+  "/drive/save",
   "/download/api",
   "/download/proxy",
   "/download/server-download",
@@ -95,7 +97,7 @@ function isOcrPath(pathname) {
 }
 
 function isDriveFilePath(pathname) {
-  return pathname === "/api/drive/files" || pathname.startsWith("/drive/open/") || pathname.startsWith("/drive/download/");
+  return pathname === "/api/drive/files" || pathname === "/drive/media" || pathname === "/drive/save" || pathname.startsWith("/drive/open/") || pathname.startsWith("/drive/download/");
 }
 
 function isPcToolPath(pathname) {

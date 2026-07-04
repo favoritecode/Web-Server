@@ -247,6 +247,69 @@
 .file-menu button:hover { background: rgba(59,130,246,.14); }
 .file-menu button.danger { color: #fecdd3; }
 .file-menu button.danger:hover { background: rgba(244,63,94,.12); }
+
+.move-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  display: none;
+  place-items: center;
+  padding: 18px;
+  background: rgba(2,6,23,.72);
+  backdrop-filter: blur(10px);
+  z-index: 20000;
+}
+.move-dialog-backdrop.open { display: grid; }
+.move-dialog {
+  width: min(520px, 100%);
+  border: 1px solid rgba(148,163,184,.18);
+  border-radius: 16px;
+  background: linear-gradient(150deg, rgba(15,23,42,.98), rgba(17,24,39,.95));
+  box-shadow: 0 30px 80px rgba(0,0,0,.45);
+  padding: 18px;
+}
+.move-dialog h3 { margin: 0 0 6px; color: #f8fafc; font-size: 18px; }
+.move-dialog p { margin: 0 0 14px; color: #94a3b8; font-size: 13px; overflow-wrap: anywhere; }
+.move-search {
+  width: 100%;
+  height: 42px;
+  border: 1px solid rgba(148,163,184,.18);
+  border-radius: 10px;
+  background: rgba(15,23,42,.78);
+  color: #e5eefb;
+  padding: 0 12px;
+  outline: none;
+}
+.move-results {
+  margin: 12px 0;
+  max-height: 280px;
+  overflow: auto;
+  display: grid;
+  gap: 7px;
+}
+.move-option {
+  width: 100%;
+  border: 1px solid rgba(148,163,184,.12);
+  border-radius: 10px;
+  background: rgba(255,255,255,.045);
+  color: #dbeafe;
+  cursor: pointer;
+  padding: 10px 12px;
+  text-align: left;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.move-option:hover, .move-option.selected { border-color: rgba(96,165,250,.45); background: rgba(59,130,246,.14); }
+.move-actions { display: flex; justify-content: flex-end; gap: 10px; }
+.move-actions button {
+  border: 0;
+  border-radius: 10px;
+  cursor: pointer;
+  font-weight: 800;
+  padding: 10px 14px;
+}
+.move-cancel { background: rgba(148,163,184,.12); color: #cbd5e1; }
+.move-confirm { background: linear-gradient(135deg, #7c3aed, #2563eb); color: #fff; }
+.move-confirm:disabled { opacity: .45; cursor: not-allowed; }
 /* Empty state */
 .empty-state {
   text-align: center;
@@ -363,6 +426,19 @@
   </div>
 </div>
 
+<div id="moveDialog" class="move-dialog-backdrop" aria-hidden="true">
+  <div class="move-dialog" role="dialog" aria-modal="true" aria-labelledby="moveTitle">
+    <h3 id="moveTitle">Move item</h3>
+    <p id="moveItemName">Select destination folder</p>
+    <input id="moveSearch" class="move-search" type="search" placeholder="Search folder path..." autocomplete="off">
+    <div id="moveResults" class="move-results"></div>
+    <div class="move-actions">
+      <button id="moveCancel" class="move-cancel" type="button">Cancel</button>
+      <button id="moveConfirm" class="move-confirm" type="button" disabled>Move</button>
+    </div>
+  </div>
+</div>
+
 <script>
 // ============ FILE SYSTEM ============
 let currentPath = "";
@@ -371,6 +447,15 @@ let currentUserRole = "user";
 const fileGrid = document.getElementById("fileGrid");
 const currentPathEl = document.getElementById("currentPath");
 const backBtn = document.getElementById("backBtn");
+const moveDialog = document.getElementById("moveDialog");
+const moveSearch = document.getElementById("moveSearch");
+const moveResults = document.getElementById("moveResults");
+const moveConfirm = document.getElementById("moveConfirm");
+const moveCancel = document.getElementById("moveCancel");
+const moveItemName = document.getElementById("moveItemName");
+let pendingMovePath = "";
+let selectedMoveDestination = "";
+let moveSearchTimer = null;
 // ------ Load Files ------
 async function loadFiles(path) {
   try {
@@ -408,7 +493,7 @@ async function loadFiles(path) {
     }
 
     const menuMarkup = (item) => {
-      const download = item.can_download ? `<button type="button" data-download-drive="${escapeHtml(item.path)}">Download</button>` : "";
+      const download = item.can_download ? `<button type="button" data-download-drive="${escapeHtml(item.path)}" data-download-url="${escapeHtml(item.download_url || '')}">Download</button>` : "";
       const share = item.can_share ? `<button type="button" data-share-drive="${escapeHtml(item.path)}" data-share-type="${escapeHtml(item.type)}">Share</button>` : "";
       const move = item.can_move ? `<button type="button" data-move-drive="${escapeHtml(item.path)}">Move</button>` : "";
       const rename = item.can_rename ? `<button type="button" data-rename-drive="${escapeHtml(item.path)}" data-current-name="${escapeHtml(item.name)}">Rename</button>` : "";
@@ -430,7 +515,7 @@ async function loadFiles(path) {
         const ext = item.name.split(".").pop().toLowerCase();
         const icon = getFileIcon(ext);
         html += `
-          <div class="file-card" data-open="/drive/open/${encodePath(item.path)}">
+          <div class="file-card" data-open="${escapeHtml(item.open_url || ('/drive/open/' + encodePath(item.path)))}">
             ${menuMarkup(item)}
             <span class="file-icon">${icon}</span>
             <div class="file-name">${escapeHtml(item.name)}</div>
@@ -467,6 +552,10 @@ function encodePath(path) {
   return encodeURIComponent(path || '').replace(/%2F/g, '/');
 }
 
+function withCacheBust(url) {
+  return url + (url.includes('?') ? '&' : '?') + 'v=' + Date.now();
+}
+
 function escapeHtml(str) {
   if (!str) return "";
   return String(str)
@@ -498,7 +587,7 @@ fileGrid.addEventListener('click', async (event) => {
   if (downloadButton) {
     event.preventDefault();
     event.stopPropagation();
-    window.open('/drive/download/' + encodePath(downloadButton.getAttribute('data-download-drive')) + '?v=' + Date.now(), '_blank');
+    window.open(withCacheBust(downloadButton.getAttribute('data-download-url') || ('/drive/download/' + encodePath(downloadButton.getAttribute('data-download-drive')))), '_blank');
     return;
   }
 
@@ -555,20 +644,7 @@ fileGrid.addEventListener('click', async (event) => {
   if (moveButton) {
     event.preventDefault();
     event.stopPropagation();
-    const itemPath = moveButton.getAttribute('data-move-drive') || '';
-    const defaultDestination = itemPath.split('/').slice(0, -1).join('/') || currentPath || '';
-    const destination = prompt('Move to folder path', defaultDestination);
-    if (destination === null) return;
-    const res = await fetch('/api/drive/move', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ path: moveButton.getAttribute('data-move-drive'), destination })
-    });
-    if (!res.ok) {
-      const data = await res.json().catch(() => ({}));
-      alert(data.error || 'Move failed');
-    }
-    loadFiles(currentPath);
+    openMoveDialog(moveButton.getAttribute('data-move-drive') || '');
     return;
   }
   const deleteButton = event.target.closest('[data-delete-drive]');
@@ -593,7 +669,82 @@ fileGrid.addEventListener('click', async (event) => {
   }
 
   const openCard = event.target.closest('[data-open]');
-  if (openCard) window.open(openCard.getAttribute('data-open') + '?v=' + Date.now(), '_blank');
+  if (openCard) window.open(withCacheBust(openCard.getAttribute('data-open')), '_blank');
+});
+
+async function loadMoveFolders(query = '') {
+  moveResults.innerHTML = '<button class="move-option" type="button" disabled>Loading...</button>';
+  try {
+    const res = await fetch('/api/drive/folders?q=' + encodeURIComponent(query), { cache: 'no-store' });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || 'Failed');
+    const folders = data.folders || [];
+    if (!folders.length) {
+      moveResults.innerHTML = '<button class="move-option" type="button" disabled>No folder found</button>';
+      return;
+    }
+    moveResults.innerHTML = folders.map((folder) => `
+      <button class="move-option" type="button" data-move-destination="${escapeHtml(folder.path || '')}">${escapeHtml(folder.label || '/')}</button>
+    `).join('');
+  } catch (e) {
+    moveResults.innerHTML = '<button class="move-option" type="button" disabled>Failed to load folders</button>';
+  }
+}
+
+function openMoveDialog(itemPath) {
+  pendingMovePath = itemPath || '';
+  selectedMoveDestination = '';
+  moveItemName.textContent = pendingMovePath || 'Move item';
+  moveSearch.value = '';
+  moveConfirm.disabled = true;
+  moveDialog.classList.add('open');
+  moveDialog.setAttribute('aria-hidden', 'false');
+  loadMoveFolders('');
+  setTimeout(() => moveSearch.focus(), 30);
+}
+
+function closeMoveDialog() {
+  moveDialog.classList.remove('open');
+  moveDialog.setAttribute('aria-hidden', 'true');
+  pendingMovePath = '';
+  selectedMoveDestination = '';
+}
+
+moveSearch.addEventListener('input', () => {
+  clearTimeout(moveSearchTimer);
+  moveSearchTimer = setTimeout(() => loadMoveFolders(moveSearch.value), 180);
+});
+
+moveResults.addEventListener('click', (event) => {
+  const option = event.target.closest('[data-move-destination]');
+  if (!option) return;
+  selectedMoveDestination = option.getAttribute('data-move-destination') || '';
+  moveResults.querySelectorAll('.move-option.selected').forEach((node) => node.classList.remove('selected'));
+  option.classList.add('selected');
+  moveConfirm.disabled = false;
+});
+
+moveCancel.addEventListener('click', closeMoveDialog);
+moveDialog.addEventListener('click', (event) => {
+  if (event.target === moveDialog) closeMoveDialog();
+});
+
+moveConfirm.addEventListener('click', async () => {
+  if (!pendingMovePath) return;
+  moveConfirm.disabled = true;
+  const res = await fetch('/api/drive/move', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path: pendingMovePath, destination: selectedMoveDestination })
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    alert(data.error || 'Move failed');
+    moveConfirm.disabled = false;
+    return;
+  }
+  closeMoveDialog();
+  loadFiles(currentPath);
 });
 
 document.addEventListener('click', (event) => {

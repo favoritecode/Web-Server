@@ -1,5 +1,5 @@
 from flask import Flask, send_from_directory, redirect, session, request, jsonify, Response, send_file, after_this_request
-import os, json, re, shutil, time, tempfile, yt_dlp, requests
+import os, json, re, shutil, time, tempfile, base64, yt_dlp, requests
 
 try:
     import favoriteweb_local_secrets as local_secrets
@@ -286,8 +286,10 @@ def drive_item_permissions(rel_path="", item_type="file"):
     is_private = bool(owner_key)
     can_view = (not is_private) or owned or role in {"moderator", "admin"}
     can_download = can_view and not is_root
-    can_share = can_download and (owned or role in {"moderator", "admin"})
+    logged_in = "user" in session
+    can_share = can_download and (((not is_private) and logged_in) or owned or role in {"moderator", "admin"})
     can_owner_manage = owned and not is_root and not is_user_root
+    can_moderator_move = role == "moderator" and can_view and not is_root and not is_user_root
     can_admin_manage = role == "admin" and can_view and not is_root
     return {
         "owned": owned,
@@ -295,7 +297,7 @@ def drive_item_permissions(rel_path="", item_type="file"):
         "can_download": can_download,
         "can_share": can_share,
         "can_rename": can_owner_manage or can_admin_manage,
-        "can_move": can_owner_manage or can_admin_manage,
+        "can_move": can_owner_manage or can_moderator_move or can_admin_manage,
         "can_delete": can_owner_manage or can_admin_manage,
     }
 
@@ -317,6 +319,23 @@ def share_serializer():
 
 def make_share_token(display_path):
     return share_serializer().dumps({"path": drive_display_path(display_path), "ts": int(time.time())})
+
+
+
+def encode_drive_path(display_path):
+    raw = drive_display_path(display_path).encode("utf-8")
+    return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
+
+
+def decode_drive_path_token(value):
+    value = (value or "").strip()
+    if not value:
+        return ""
+    try:
+        padded = value + ("=" * (-len(value) % 4))
+        return drive_display_path(base64.urlsafe_b64decode(padded.encode("ascii")).decode("utf-8"))
+    except Exception:
+        return ""
 
 
 
@@ -692,6 +711,10 @@ def list_drive_files():
                 "type": item_type,
             }
             item.update(perms)
+            if perms.get("can_download"):
+                encoded_path = encode_drive_path(display_path)
+                item["open_url"] = "/drive/media?p=" + encoded_path
+                item["download_url"] = "/drive/save?p=" + encoded_path
             items.append(item)
 
     display_current = drive_display_path(raw_path)
@@ -748,11 +771,17 @@ def move_drive_path(rel_path, dest_path):
         return jsonify({"error": "Invalid path"}), 400
     if not drive_item_permissions(rel_path).get("can_move"):
         return jsonify({"error": "Not allowed"}), 403
+    role = current_user_role()
+    source_owner = drive_owner_key(rel_path)
+    dest_owner = drive_owner_key(dest_path)
+    if role == "moderator" and dest_owner and dest_owner != source_owner:
+        return jsonify({"error": "Moderators cannot move files into another user's folder"}), 403
     source_full = safe_drive_path(rel_path)
     dest_full = safe_drive_path(dest_path)
     if not source_full or not dest_full or not os.path.exists(source_full):
         return jsonify({"error": "Not found"}), 404
-    if not os.path.isdir(dest_full) or not drive_item_permissions(dest_path).get("can_download"):
+    dest_allowed = dest_path == "" or drive_item_permissions(dest_path).get("can_download")
+    if not os.path.isdir(dest_full) or not dest_allowed:
         return jsonify({"error": "Destination folder not found"}), 404
     target_full = os.path.abspath(os.path.join(dest_full, os.path.basename(source_full)))
     try:
@@ -766,6 +795,57 @@ def move_drive_path(rel_path, dest_path):
         return jsonify({"error": "Destination already has this name"}), 409
     shutil.move(source_full, target_full)
     return jsonify({"status": "ok"})
+
+
+def visible_drive_folder_rows(query="", limit=80):
+    role = current_user_role()
+    user_key = current_user_key()
+    query = (query or "").strip().lower()
+    rows = []
+
+    def can_include(display_path):
+        if display_path == "":
+            return True
+        owner = drive_owner_key(display_path)
+        if owner and owner != user_key and role not in {"moderator", "admin"}:
+            return False
+        perms = drive_item_permissions(display_path, "folder")
+        return bool(perms.get("can_download"))
+
+    def add(display_path, name):
+        label = "/" if not display_path else display_path
+        if query and query not in label.lower() and query not in (name or "").lower():
+            return
+        rows.append({"name": name or "/", "path": display_path, "label": label})
+
+    add("", "Root")
+    root_abs = os.path.abspath(FILE_ROOT)
+    for current, dirs, _ in os.walk(FILE_ROOT):
+        rel = os.path.relpath(current, FILE_ROOT)
+        internal = "" if rel == "." else rel.replace("\\", "/")
+        display_path = drive_display_path(internal)
+
+        if internal == "_users" and role not in {"moderator", "admin"}:
+            dirs[:] = [name for name in dirs if name == user_key]
+        elif internal.startswith("_users"):
+            owner = drive_owner_key(display_path)
+            if owner and owner != user_key and role not in {"moderator", "admin"}:
+                dirs[:] = []
+                continue
+
+        if display_path and can_include(display_path):
+            add(display_path, os.path.basename(current))
+        if len(rows) >= limit:
+            break
+    return rows[:limit]
+
+
+@app.route("/api/drive/folders")
+def drive_folders():
+    blocked = active_user_required_json()
+    if blocked:
+        return blocked
+    return jsonify({"folders": visible_drive_folder_rows(request.args.get("q") or "")})
 
 
 @app.route("/api/drive/delete", methods=["POST"])
@@ -879,35 +959,52 @@ def download_own_file(filename):
     if not file_path or not os.path.exists(file_path):
         return "Not Found", 404
     return send_path_download(file_path, os.path.basename(file_path) or "download")
-@app.route("/drive/open/<path:filename>")
-def drive_open_file(filename):
-    if drive_owner_key(filename):
+def drive_file_response(display_path, download=False):
+    display_path = drive_display_path(display_path)
+    if drive_owner_key(display_path):
         blocked = active_user_required_redirect()
         if blocked:
             return blocked
-    if not can_view_drive_path(filename):
+    if not can_view_drive_path(display_path):
         return "Not Found", 404
-    file_path = safe_drive_path(filename)
-    if not file_path or not os.path.exists(file_path) or os.path.isdir(file_path):
+    file_path = safe_drive_path(display_path)
+    if not file_path or not os.path.exists(file_path):
+        return "Not Found", 404
+    if download:
+        return send_path_download(file_path, os.path.basename(file_path) or "download")
+    if os.path.isdir(file_path):
         return "Not Found", 404
     real_root = os.path.dirname(file_path)
     real_name = os.path.basename(file_path)
     mime, _ = mimetypes.guess_type(file_path)
-    return send_from_directory(real_root, real_name, as_attachment=not (mime and (mime.startswith("image") or mime.startswith("video") or mime.startswith("audio") or mime == "application/pdf")))
+    inline = mime and (mime.startswith("image") or mime.startswith("video") or mime.startswith("audio") or mime == "application/pdf")
+    return send_from_directory(real_root, real_name, as_attachment=not inline)
+
+
+@app.route("/drive/media")
+def drive_media_file():
+    display_path = decode_drive_path_token(request.args.get("p") or "")
+    if not display_path:
+        return "Not Found", 404
+    return drive_file_response(display_path, download=False)
+
+
+@app.route("/drive/save")
+def drive_save_file():
+    display_path = decode_drive_path_token(request.args.get("p") or "")
+    if not display_path:
+        return "Not Found", 404
+    return drive_file_response(display_path, download=True)
+
+
+@app.route("/drive/open/<path:filename>")
+def drive_open_file(filename):
+    return drive_file_response(filename, download=False)
 
 
 @app.route("/drive/download/<path:filename>")
 def drive_download_file(filename):
-    if drive_owner_key(filename):
-        blocked = active_user_required_redirect()
-        if blocked:
-            return blocked
-    if not can_view_drive_path(filename):
-        return "Not Found", 404
-    file_path = safe_drive_path(filename)
-    if not file_path or not os.path.exists(file_path):
-        return "Not Found", 404
-    return send_path_download(file_path, os.path.basename(file_path) or "download")
+    return drive_file_response(filename, download=True)
 @app.route("/open/<path:filename>")
 def open_file(filename):
     blocked = active_user_required_redirect()
