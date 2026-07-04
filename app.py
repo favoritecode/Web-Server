@@ -289,6 +289,7 @@ def drive_item_permissions(rel_path="", item_type="file"):
     logged_in = "user" in session
     can_share = can_download and (((not is_private) and logged_in) or owned or role in {"moderator", "admin"})
     can_owner_manage = owned and not is_root and not is_user_root
+    can_moderator_rename = role == "moderator" and can_view and not is_root and not is_user_root
     can_moderator_move = role == "moderator" and can_view and not is_root and not is_user_root
     can_admin_manage = role == "admin" and can_view and not is_root
     return {
@@ -296,7 +297,7 @@ def drive_item_permissions(rel_path="", item_type="file"):
         "owner": owner_key,
         "can_download": can_download,
         "can_share": can_share,
-        "can_rename": can_owner_manage or can_admin_manage,
+        "can_rename": can_owner_manage or can_moderator_rename or can_admin_manage,
         "can_move": can_owner_manage or can_moderator_move or can_admin_manage,
         "can_delete": can_owner_manage or can_admin_manage,
     }

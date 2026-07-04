@@ -185,22 +185,84 @@ def convert_audio(input_path, target, quality, form, temp_dir):
 
 
 def convert_document(input_path, source_ext, target, temp_dir):
-    if source_ext in TEXT_DOCUMENTS and target in {"txt", "html", "md", "csv", "json", "rtf", "doc", "docx", "odt", "pdf"}:
+    text_targets = {"txt", "html", "md", "csv", "json", "rtf", "doc", "docx", "odt", "pdf"}
+    if source_ext in TEXT_DOCUMENTS and target in text_targets:
         return convert_text_document(input_path, source_ext, target, temp_dir)
+    if source_ext == "pdf" and target in text_targets:
+        text = extract_pdf_text(input_path, temp_dir)
+        if text:
+            text_path = Path(temp_dir) / "pdf-text.txt"
+            text_path.write_text(text, encoding="utf-8")
+            return convert_text_document(text_path, "txt", target, temp_dir)
+        raise ConverterError("PDF to editable document needs selectable text. Scanned/image PDFs need OCR first, then convert the OCR text.", 422)
     soffice = find_soffice()
     if not soffice:
         checked = "; ".join(SOFFICE_CHECKED_PATHS[:8])
         raise ConverterError("This document type needs LibreOffice on the server. Install LibreOffice or set SOFFICE_PATH/LIBREOFFICE_PATH. Checked: " + checked, 503)
     out_dir = Path(temp_dir) / "doc-out"
     out_dir.mkdir(exist_ok=True)
-    target_filter = "html" if target == "html" else target
-    run_command([soffice, "--headless", "--convert-to", target_filter, "--outdir", str(out_dir), str(input_path)], timeout=120)
+    target_filter = libreoffice_filter(target)
+    try:
+        run_command([soffice, "--headless", "--convert-to", target_filter, "--outdir", str(out_dir), str(input_path)], timeout=120)
+    except ConverterError as exc:
+        if "no export filter" in str(exc).lower():
+            raise ConverterError(f"LibreOffice cannot export {source_ext.upper()} to {target.upper()} on this server. Try PDF/TXT/HTML or convert through an editable document format first.", 422)
+        raise
     candidates = list(out_dir.glob(f"*.{target}"))
     if not candidates and target == "html":
         candidates = list(out_dir.glob("*.htm"))
     if not candidates:
         raise ConverterError("Document conversion failed")
     return candidates[0]
+
+
+def libreoffice_filter(target):
+    return {
+        "pdf": "pdf:writer_pdf_Export",
+        "docx": "docx:Office Open XML Text",
+        "doc": "doc:MS Word 97",
+        "odt": "odt:writer8",
+        "rtf": "rtf:Rich Text Format",
+        "html": "html:HTML (StarWriter)",
+        "txt": "txt:Text",
+    }.get(target, target)
+
+
+def extract_pdf_text(input_path, temp_dir):
+    text = extract_pdf_text_with_python(input_path)
+    if text:
+        return text
+    pdftotext = shutil.which("pdftotext")
+    if pdftotext:
+        output = Path(temp_dir) / "pdf-text.txt"
+        try:
+            run_command([pdftotext, "-layout", "-enc", "UTF-8", str(input_path), str(output)], timeout=120)
+            if output.exists():
+                return output.read_text(encoding="utf-8", errors="ignore").strip()
+        except ConverterError:
+            pass
+    return ""
+
+
+def extract_pdf_text_with_python(input_path):
+    reader_cls = None
+    for module_name in ("pypdf", "PyPDF2"):
+        try:
+            module = __import__(module_name)
+            reader_cls = getattr(module, "PdfReader")
+            break
+        except Exception:
+            continue
+    if not reader_cls:
+        return ""
+    try:
+        reader = reader_cls(str(input_path))
+        pages = []
+        for page in reader.pages:
+            pages.append(page.extract_text() or "")
+        return "\n\n".join(page.strip() for page in pages if page.strip()).strip()
+    except Exception:
+        return ""
 
 
 def read_document_text(input_path, source_ext):
