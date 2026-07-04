@@ -13,6 +13,7 @@ const HEALTH_TIMEOUT = 2000;
 const BACKENDS = [PRIMARY, BACKUP, RENDER_BACKUP];
 const STREAM_BACKENDS = [PRIMARY, BACKUP];
 const OCR_BACKENDS = [PRIMARY, BACKUP];
+const PC_TOOL_BACKENDS = [PRIMARY, BACKUP];
 const OFFLINE_BACKENDS = [PRIMARY, BACKUP];
 const HLS_TIMEOUT = 6500;
 const WORKER_OFFLINE_SEGMENT_PATH = "/__offline/offline.ts";
@@ -21,6 +22,7 @@ const AUTH_PATHS = ["/login", "/logout", "/login/callback"];
 const LONG_RUNNING_PATHS = [
   "/api/analytics/",
   "/ocr/extract",
+  "/file-converter/convert",
   "/download/api",
   "/download/proxy",
   "/download/server-download",
@@ -87,6 +89,34 @@ function isLongRunningPath(pathname) {
 
 function isOcrPath(pathname) {
   return pathname === "/ocr" || pathname === "/ocr/" || pathname === "/ocr/extract" || pathname === "/ocr/health";
+}
+
+function isPcToolPath(pathname) {
+  return isOcrPath(pathname) || pathname === "/file-converter/convert";
+}
+
+function isAdminUserUpdatePath(pathname) {
+  return pathname === "/api/admin/users/update";
+}
+
+async function mirrorAdminUserUpdate(request, servedTargetHost) {
+  const incomingUrl = new URL(request.url);
+
+  await Promise.allSettled(
+    PC_TOOL_BACKENDS.filter((target) => new URL(target).host !== servedTargetHost).map(async (target) => {
+      const targetUrl = new URL(target);
+      targetUrl.pathname = incomingUrl.pathname;
+      targetUrl.search = incomingUrl.search;
+
+      await fetch(targetUrl.toString(), {
+        method: request.method,
+        headers: buildHeaders(request, incomingUrl.host, targetUrl.host),
+        body: request.clone().body,
+        redirect: "manual",
+        signal: AbortSignal.timeout(TIMEOUT)
+      });
+    })
+  );
 }
 
 function isHlsMediaPath(pathname) {
@@ -388,7 +418,7 @@ async function proxyLivePlaylist(request, streamName) {
 async function proxyWithFailover(request) {
   let lastResponse = null;
   const url = new URL(request.url);
-  const targets = isHlsMediaPath(url.pathname) ? STREAM_BACKENDS : (isOcrPath(url.pathname) ? OCR_BACKENDS : BACKENDS);
+  const targets = isHlsMediaPath(url.pathname) ? STREAM_BACKENDS : (isPcToolPath(url.pathname) ? PC_TOOL_BACKENDS : BACKENDS);
 
   for (const target of targets) {
     try {
@@ -403,12 +433,16 @@ async function proxyWithFailover(request) {
         return response;
       }
 
+      if (isPcToolPath(url.pathname) && (response.headers.get("Content-Type") || "").includes("application/json")) {
+        return response;
+      }
+
       lastResponse = response;
     } catch (e) {}
   }
 
-  if (isOcrPath(url.pathname)) {
-    return new Response(JSON.stringify({ error: "OCR PC servers are unavailable" }), {
+  if (isPcToolPath(url.pathname)) {
+    return new Response(JSON.stringify({ error: isOcrPath(url.pathname) ? "OCR PC servers are unavailable" : "File converter PC servers are unavailable" }), {
       status: 503,
       headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*", "X-FavoriteWeb-Worker": "server-failover", "X-FavoriteWeb-Target": "none" }
     });
@@ -444,7 +478,7 @@ async function proxyAuthWithFailover(request) {
 }
 
 export default {
-  async fetch(request) {
+  async fetch(request, env, ctx) {
     const url = new URL(request.url);
     const streamName = getStreamNameFromPlaylistPath(url.pathname);
 
@@ -458,6 +492,18 @@ export default {
 
     if (isAuthPath(url.pathname)) {
       return proxyAuthWithFailover(request);
+    }
+
+    if (isAdminUserUpdatePath(url.pathname) && request.method === "POST") {
+      const mirrorRequest = request.clone();
+      const response = await proxyWithFailover(request);
+      const servedTargetHost = response.headers.get("X-FavoriteWeb-Target") || "";
+
+      if (response.ok && servedTargetHost && ctx && ctx.waitUntil) {
+        ctx.waitUntil(mirrorAdminUserUpdate(mirrorRequest, servedTargetHost));
+      }
+
+      return response;
     }
 
     return proxyWithFailover(request);

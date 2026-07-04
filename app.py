@@ -286,7 +286,7 @@ def drive_item_permissions(rel_path="", item_type="file"):
     is_private = bool(owner_key)
     can_view = (not is_private) or owned or role in {"moderator", "admin"}
     can_download = can_view and not is_root
-    can_share = can_download
+    can_share = can_download and (owned or role in {"moderator", "admin"})
     can_owner_manage = owned and not is_root and not is_user_root
     can_admin_manage = role == "admin" and can_view and not is_root
     return {
@@ -452,9 +452,6 @@ def upload_page():
 
 @app.route("/drive")
 def drive_page():
-    blocked = active_user_required_redirect()
-    if blocked:
-        return blocked
     return send_from_directory(BASE_DIR, "upload.html")
 
 @app.route("/dashboard")
@@ -639,10 +636,6 @@ def delete_file_item():
 
 @app.route("/api/drive/files")
 def list_drive_files():
-    blocked = active_user_required_json()
-    if blocked:
-        return blocked
-
     raw_path = (request.args.get("path", "") or "").replace("\\", "/").strip("/")
     full_path = safe_drive_path(raw_path)
     if not full_path:
@@ -667,7 +660,7 @@ def list_drive_files():
                 if role in {"moderator", "admin"}:
                     for user_dir in os.listdir(users_root):
                         entries.append((user_dir, "Users/" + user_dir, os.path.join(users_root, user_dir)))
-                else:
+                elif "user" in session:
                     own_root = os.path.join(users_root, user_key)
                     if os.path.isdir(own_root):
                         for name in os.listdir(own_root):
@@ -677,7 +670,7 @@ def list_drive_files():
             if role in {"moderator", "admin"} and os.path.isdir(users_root):
                 for user_dir in os.listdir(users_root):
                     entries.append((user_dir, "Users/" + user_dir, os.path.join(users_root, user_dir)))
-            else:
+            elif "user" in session:
                 own_root = os.path.join(users_root, user_key)
                 if os.path.isdir(own_root):
                     for name in os.listdir(own_root):
@@ -888,9 +881,10 @@ def download_own_file(filename):
     return send_path_download(file_path, os.path.basename(file_path) or "download")
 @app.route("/drive/open/<path:filename>")
 def drive_open_file(filename):
-    blocked = active_user_required_redirect()
-    if blocked:
-        return blocked
+    if drive_owner_key(filename):
+        blocked = active_user_required_redirect()
+        if blocked:
+            return blocked
     if not can_view_drive_path(filename):
         return "Not Found", 404
     file_path = safe_drive_path(filename)
@@ -904,9 +898,10 @@ def drive_open_file(filename):
 
 @app.route("/drive/download/<path:filename>")
 def drive_download_file(filename):
-    blocked = active_user_required_redirect()
-    if blocked:
-        return blocked
+    if drive_owner_key(filename):
+        blocked = active_user_required_redirect()
+        if blocked:
+            return blocked
     if not can_view_drive_path(filename):
         return "Not Found", 404
     file_path = safe_drive_path(filename)
