@@ -692,10 +692,6 @@ def list_drive_files():
                 "type": item_type,
             }
             item.update(perms)
-            if perms.get("can_download"):
-                token = make_share_token(display_path)
-                item["open_url"] = "/drive/view/" + token
-                item["download_url"] = "/drive/get/" + token
             items.append(item)
 
     display_current = drive_display_path(raw_path)
@@ -883,60 +879,35 @@ def download_own_file(filename):
     if not file_path or not os.path.exists(file_path):
         return "Not Found", 404
     return send_path_download(file_path, os.path.basename(file_path) or "download")
-def drive_file_response(display_path, download=False):
-    display_path = drive_display_path(display_path)
-    if drive_owner_key(display_path):
+@app.route("/drive/open/<path:filename>")
+def drive_open_file(filename):
+    if drive_owner_key(filename):
         blocked = active_user_required_redirect()
         if blocked:
             return blocked
-    if not can_view_drive_path(display_path):
+    if not can_view_drive_path(filename):
         return "Not Found", 404
-    file_path = safe_drive_path(display_path)
-    if not file_path or not os.path.exists(file_path):
-        return "Not Found", 404
-    if download:
-        return send_path_download(file_path, os.path.basename(file_path) or "download")
-    if os.path.isdir(file_path):
+    file_path = safe_drive_path(filename)
+    if not file_path or not os.path.exists(file_path) or os.path.isdir(file_path):
         return "Not Found", 404
     real_root = os.path.dirname(file_path)
     real_name = os.path.basename(file_path)
     mime, _ = mimetypes.guess_type(file_path)
-    inline = mime and (mime.startswith("image") or mime.startswith("video") or mime.startswith("audio") or mime == "application/pdf")
-    return send_from_directory(real_root, real_name, as_attachment=not inline)
-
-
-def drive_token_path(token):
-    try:
-        data = share_serializer().loads(token)
-    except BadSignature:
-        return ""
-    return drive_display_path(data.get("path") or "")
-
-
-@app.route("/drive/view/<token>")
-def drive_view_token(token):
-    display_path = drive_token_path(token)
-    if not display_path:
-        return "Not Found", 404
-    return drive_file_response(display_path, download=False)
-
-
-@app.route("/drive/get/<token>")
-def drive_get_token(token):
-    display_path = drive_token_path(token)
-    if not display_path:
-        return "Not Found", 404
-    return drive_file_response(display_path, download=True)
-
-
-@app.route("/drive/open/<path:filename>")
-def drive_open_file(filename):
-    return drive_file_response(filename, download=False)
+    return send_from_directory(real_root, real_name, as_attachment=not (mime and (mime.startswith("image") or mime.startswith("video") or mime.startswith("audio") or mime == "application/pdf")))
 
 
 @app.route("/drive/download/<path:filename>")
 def drive_download_file(filename):
-    return drive_file_response(filename, download=True)
+    if drive_owner_key(filename):
+        blocked = active_user_required_redirect()
+        if blocked:
+            return blocked
+    if not can_view_drive_path(filename):
+        return "Not Found", 404
+    file_path = safe_drive_path(filename)
+    if not file_path or not os.path.exists(file_path):
+        return "Not Found", 404
+    return send_path_download(file_path, os.path.basename(file_path) or "download")
 @app.route("/open/<path:filename>")
 def open_file(filename):
     blocked = active_user_required_redirect()
