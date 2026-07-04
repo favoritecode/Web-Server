@@ -56,7 +56,8 @@ def init_routes(app):
             output_path = dispatch_convert(category, input_path, source_ext, target, quality, request.form, temp_dir)
             if not output_path or not output_path.exists():
                 return jsonify({"error": "Conversion failed"}), 500
-            download_name = f"{Path(safe_name).stem or 'converted'}.{target}"
+            output_ext = output_path.suffix.lstrip(".") or target
+            download_name = f"{Path(safe_name).stem or 'converted'}.{output_ext}"
 
             @after_this_request
             def cleanup(response):
@@ -144,6 +145,9 @@ def convert_image(input_path, source_ext, target, form, temp_dir):
 
 
 def convert_design_image(input_path, source_ext, target, form, temp_dir):
+    if source_ext == "pdf" and target == "eps":
+        return convert_pdf_to_eps(input_path, temp_dir)
+
     output = Path(temp_dir) / f"converted.{target}"
     if source_ext not in {"pdf", "eps", "psd", "ai"} and target == "eps":
         try:
@@ -173,6 +177,46 @@ def convert_design_image(input_path, source_ext, target, form, temp_dir):
         raise ConverterError("Design file conversion failed")
     return output
 
+
+def convert_pdf_to_eps(input_path, temp_dir):
+    page_count = pdf_page_count(input_path) or 1
+    gs = find_ghostscript()
+    output = Path(temp_dir) / "converted.eps"
+    if gs:
+        run_command([
+            gs,
+            "-dNOPAUSE",
+            "-dBATCH",
+            "-dSAFER",
+            "-sDEVICE=eps2write",
+            f"-sOutputFile={output}",
+            str(input_path),
+        ], timeout=180)
+        if not output.exists():
+            raise ConverterError("PDF to EPS conversion failed")
+        return output
+
+    if page_count > 1:
+        raise ConverterError("Multi-page PDF to one EPS needs Ghostscript on the server.", 503)
+
+    magick = find_magick()
+    if not magick:
+        raise ConverterError("PDF to EPS needs Ghostscript or ImageMagick on the server.", 503)
+    run_command([magick, "-density", "220", f"{input_path}[0]", "-background", "white", "-alpha", "remove", str(output)], timeout=180)
+    if not output.exists():
+        raise ConverterError("PDF to EPS conversion failed")
+    return output
+
+
+def pdf_page_count(path):
+    for module_name in ("pypdf", "PyPDF2"):
+        try:
+            module = __import__(module_name)
+            reader = module.PdfReader(str(path))
+            return len(reader.pages)
+        except Exception:
+            continue
+    return 0
 
 def convert_video(input_path, target, quality, form, temp_dir):
     if target in AUDIO_FORMATS:
@@ -529,6 +573,21 @@ def require_ffmpeg():
     if common.exists():
         return str(common)
     raise ConverterError("FFmpeg is not installed on this server.", 503)
+
+
+def find_ghostscript():
+    for name in ("gswin64c", "gswin32c", "gs"):
+        found = shutil.which(name)
+        if found:
+            return found
+    for candidate in (
+        r"C:\Program Files\gs\gs10.05.1\bin\gswin64c.exe",
+        r"C:\Program Files\gs\gs10.04.0\bin\gswin64c.exe",
+        r"C:\Program Files\gs\gs10.03.1\bin\gswin64c.exe",
+    ):
+        if Path(candidate).is_file():
+            return candidate
+    return None
 
 
 def find_magick():
