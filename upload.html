@@ -498,7 +498,7 @@ fileGrid.addEventListener('click', async (event) => {
   if (downloadButton) {
     event.preventDefault();
     event.stopPropagation();
-    window.open('/drive/download/' + encodePath(downloadButton.getAttribute('data-download-drive')), '_blank');
+    window.open('/drive/download/' + encodePath(downloadButton.getAttribute('data-download-drive')) + '?v=' + Date.now(), '_blank');
     return;
   }
 
@@ -593,7 +593,7 @@ fileGrid.addEventListener('click', async (event) => {
   }
 
   const openCard = event.target.closest('[data-open]');
-  if (openCard) window.open(openCard.getAttribute('data-open'), '_blank');
+  if (openCard) window.open(openCard.getAttribute('data-open') + '?v=' + Date.now(), '_blank');
 });
 
 document.addEventListener('click', (event) => {

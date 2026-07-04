@@ -23,6 +23,9 @@ const LONG_RUNNING_PATHS = [
   "/api/analytics/",
   "/ocr/extract",
   "/file-converter/convert",
+  "/api/drive/files",
+  "/drive/open/",
+  "/drive/download/",
   "/download/api",
   "/download/proxy",
   "/download/server-download",
@@ -91,8 +94,12 @@ function isOcrPath(pathname) {
   return pathname === "/ocr" || pathname === "/ocr/" || pathname === "/ocr/extract" || pathname === "/ocr/health";
 }
 
+function isDriveFilePath(pathname) {
+  return pathname === "/api/drive/files" || pathname.startsWith("/drive/open/") || pathname.startsWith("/drive/download/");
+}
+
 function isPcToolPath(pathname) {
-  return isOcrPath(pathname) || pathname === "/file-converter/convert";
+  return isOcrPath(pathname) || pathname === "/file-converter/convert" || isDriveFilePath(pathname);
 }
 
 function isAdminUserUpdatePath(pathname) {
@@ -323,6 +330,10 @@ async function proxyTo(request, target) {
     rewritten.headers.set("Access-Control-Allow-Origin", "*");
   }
 
+  if (isDriveFilePath(incomingUrl.pathname)) {
+    rewritten.headers.set("Cache-Control", "no-store");
+  }
+
   return rewritten;
 }
 
@@ -442,7 +453,7 @@ async function proxyWithFailover(request) {
   }
 
   if (isPcToolPath(url.pathname)) {
-    return new Response(JSON.stringify({ error: isOcrPath(url.pathname) ? "OCR PC servers are unavailable" : "File converter PC servers are unavailable" }), {
+    return new Response(JSON.stringify({ error: isOcrPath(url.pathname) ? "OCR PC servers are unavailable" : (isDriveFilePath(url.pathname) ? "Drive PC servers are unavailable" : "File converter PC servers are unavailable") }), {
       status: 503,
       headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*", "X-FavoriteWeb-Worker": "server-failover", "X-FavoriteWeb-Target": "none" }
     });
