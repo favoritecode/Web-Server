@@ -181,27 +181,74 @@ def convert_design_image(input_path, source_ext, target, form, temp_dir):
 def convert_pdf_to_eps(input_path, temp_dir):
     page_count = pdf_page_count(input_path) or 1
     gs = find_ghostscript()
-    output = Path(temp_dir) / "converted.eps"
     if gs:
+        if page_count <= 1:
+            output = Path(temp_dir) / "converted.eps"
+            run_command([
+                gs,
+                "-dNOPAUSE",
+                "-dBATCH",
+                "-dSAFER",
+                "-sDEVICE=eps2write",
+                f"-sOutputFile={output}",
+                str(input_path),
+            ], timeout=180)
+            if not output.exists():
+                raise ConverterError("PDF to EPS conversion failed")
+            return output
+
+        package_dir = Path(temp_dir) / "pdf-eps-package"
+        eps_dir = package_dir / "eps-pages"
+        eps_dir.mkdir(parents=True, exist_ok=True)
+        eps_files = []
+        for page in range(1, page_count + 1):
+            output = eps_dir / f"page-{page:03d}.eps"
+            run_command([
+                gs,
+                "-dNOPAUSE",
+                "-dBATCH",
+                "-dSAFER",
+                "-sDEVICE=eps2write",
+                f"-dFirstPage={page}",
+                f"-dLastPage={page}",
+                f"-sOutputFile={output}",
+                str(input_path),
+            ], timeout=180)
+            if output.exists():
+                eps_files.append(output)
+        if not eps_files:
+            raise ConverterError("PDF to EPS conversion failed")
+
+        combined_ps = package_dir / "combined-pages.ps"
         run_command([
             gs,
             "-dNOPAUSE",
             "-dBATCH",
             "-dSAFER",
-            "-sDEVICE=eps2write",
-            f"-sOutputFile={output}",
+            "-sDEVICE=ps2write",
+            f"-sOutputFile={combined_ps}",
             str(input_path),
         ], timeout=180)
-        if not output.exists():
-            raise ConverterError("PDF to EPS conversion failed")
-        return output
+        readme = package_dir / "README.txt"
+        readme.write_text(
+            "EPS is a single-page format in most software. This package keeps every PDF page as its own EPS file.\n"
+            "Use eps-pages/page-001.eps, page-002.eps, etc. The combined-pages.ps file is included for apps that can open multi-page PostScript.\n",
+            encoding="utf-8",
+        )
+        zip_output = Path(temp_dir) / "converted-eps-pages.zip"
+        with zipfile.ZipFile(zip_output, "w", zipfile.ZIP_DEFLATED) as archive:
+            for item in sorted(package_dir.rglob("*")):
+                if item.is_file():
+                    archive.write(item, item.relative_to(package_dir))
+        return zip_output
 
     if page_count > 1:
-        raise ConverterError("Multi-page PDF to one EPS needs Ghostscript on the server.", 503)
+        raise ConverterError("Multi-page PDF to EPS needs Ghostscript on the server.", 503)
 
     magick = find_magick()
     if not magick:
         raise ConverterError("PDF to EPS needs Ghostscript or ImageMagick on the server.", 503)
+    output = Path(temp_dir) / "converted.eps"
     run_command([magick, "-density", "220", f"{input_path}[0]", "-background", "white", "-alpha", "remove", str(output)], timeout=180)
     if not output.exists():
         raise ConverterError("PDF to EPS conversion failed")
@@ -229,10 +276,19 @@ def convert_video(input_path, target, quality, form, temp_dir):
     resolution = (form.get("resolution") or "source").strip().lower()
     if resolution in {"2160", "1440", "1080", "720", "480", "360"}:
         args += ["-vf", f"scale=-2:{resolution}"]
+
     if target == "webm":
-        args += ["-c:v", "libvpx-vp9", "-crf", crf, "-b:v", "0", "-c:a", "libopus"]
+        args += ["-c:v", "libvpx-vp9", "-crf", crf, "-b:v", "0", "-c:a", "libopus", "-b:a", audio_bitrate(quality)]
+    elif target == "avi":
+        args += ["-c:v", "mpeg4", "-q:v", {"small": "7", "balanced": "5", "high": "3"}.get(quality, "5"), "-c:a", "libmp3lame", "-b:a", audio_bitrate(quality)]
+    elif target == "flv":
+        args += ["-c:v", "flv", "-c:a", "libmp3lame", "-b:a", audio_bitrate(quality)]
+    elif target == "ogv":
+        args += ["-c:v", "libtheora", "-q:v", {"small": "5", "balanced": "7", "high": "9"}.get(quality, "7"), "-c:a", "libvorbis", "-b:a", audio_bitrate(quality)]
     else:
         args += ["-c:v", "libx264", "-preset", preset, "-crf", crf, "-c:a", "aac", "-b:a", audio_bitrate(quality)]
+        if target in {"mp4", "m4v", "mov"}:
+            args += ["-movflags", "+faststart"]
     args.append(str(output))
     run_command(args)
     return output
@@ -255,8 +311,10 @@ def convert_audio(input_path, target, quality, form, temp_dir):
         args += ["-c:a", "flac"]
     elif target == "wav":
         args += ["-c:a", "pcm_s16le"]
+    elif target == "wma":
+        args += ["-c:a", "wmav2", "-b:a", bitrate]
     else:
-        args += ["-b:a", bitrate]
+        args += ["-c:a", "aac", "-b:a", bitrate]
     args.append(str(output))
     run_command(args)
     return output
@@ -581,6 +639,7 @@ def find_ghostscript():
         if found:
             return found
     for candidate in (
+        r"C:\Program Files\gs\gs10.07.1\bin\gswin64c.exe",
         r"C:\Program Files\gs\gs10.05.1\bin\gswin64c.exe",
         r"C:\Program Files\gs\gs10.04.0\bin\gswin64c.exe",
         r"C:\Program Files\gs\gs10.03.1\bin\gswin64c.exe",
