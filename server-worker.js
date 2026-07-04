@@ -147,6 +147,24 @@ function shouldTryNextHlsBackend(response) {
   return [401, 403, 404, 410].includes(response.status);
 }
 
+async function shouldTryNextDriveBackend(response) {
+  if ([401, 403, 404, 410].includes(response.status)) {
+    return true;
+  }
+
+  const contentType = response.headers.get("Content-Type") || "";
+  if (!contentType.includes("application/json")) {
+    return false;
+  }
+
+  try {
+    const text = await response.clone().text();
+    return /authentication error|login required|not allowed/i.test(text);
+  } catch (e) {
+    return false;
+  }
+}
+
 function base64ToBytes(base64) {
   const binary = atob(base64);
   const bytes = new Uint8Array(binary.length);
@@ -436,6 +454,11 @@ async function proxyWithFailover(request) {
       const response = await proxyTo(request.clone(), target);
 
       if (isHlsMediaPath(url.pathname) && shouldTryNextHlsBackend(response)) {
+        lastResponse = response;
+        continue;
+      }
+
+      if (isDriveFilePath(url.pathname) && await shouldTryNextDriveBackend(response)) {
         lastResponse = response;
         continue;
       }
