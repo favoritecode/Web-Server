@@ -934,6 +934,20 @@ def drive_public_share(token):
 
 @app.route("/download/<path:filename>")
 def download_own_file(filename):
+    download_reserved = (filename or "").split("/", 1)[0]
+    if download_reserved in {"api", "proxy", "server-download", "job-status", "job-file", "merged-url"}:
+        from download import route as download_routes
+        if download_reserved == "proxy":
+            return download_routes.proxy_download()
+        if download_reserved == "server-download":
+            return download_routes.server_download()
+        if download_reserved == "job-status" and "/" in filename:
+            return download_routes.download_job_status(filename.split("/", 1)[1])
+        if download_reserved == "job-file" and "/" in filename:
+            return download_routes.download_job_file(filename.split("/", 1)[1])
+        if download_reserved == "api":
+            return download_routes.api()
+
     download_public_dir = os.path.join(BASE_DIR, "download", "public")
     public_file = os.path.abspath(os.path.join(download_public_dir, filename))
     try:
