@@ -452,6 +452,14 @@ def shared_file_response(display_path, download=False):
 def html_escape(value):
     return str(value or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
 
+
+def no_store_json(payload, status=200):
+    response = jsonify(payload)
+    response.status_code = status
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    return response
 def public_origin():
     public_host = (
         request.headers.get("X-Public-Host")
@@ -736,16 +744,20 @@ def delete_file_item():
 
 @app.route("/api/drive/files")
 def list_drive_files():
+    record = user_record_from_session(create=True)
+    if record and record.get("status") == "suspended":
+        return no_store_json({"error": "account suspended"}, 403)
     raw_path = (request.args.get("path", "") or "").replace("\\", "/").strip("/")
     full_path = safe_drive_path(raw_path)
     if not full_path:
-        return jsonify({"error": "invalid path"}), 400
+        return no_store_json({"error": "invalid path"}, 400)
 
-    role = current_user_role()
+    role = (record or {}).get("role") or current_user_role()
+    if role not in {"user", "moderator", "admin"}:
+        role = "user"
     user_key = current_user_key()
     if raw_path.startswith("Users/") and drive_owner_key(raw_path) not in {"", user_key} and role not in {"moderator", "admin"}:
-        return jsonify({"error": "Not allowed"}), 403
-
+        return no_store_json({"error": "Not allowed"}, 403)
     items = []
     if os.path.exists(full_path):
         entries = []
@@ -801,7 +813,7 @@ def list_drive_files():
     display_current = drive_display_path(raw_path)
     if raw_path == "Users" and role not in {"moderator", "admin"}:
         display_current = ""
-    return jsonify({"current": display_current, "items": items})
+    return no_store_json({"current": display_current, "items": items, "role": role})
 
 
 

@@ -459,7 +459,7 @@ let moveSearchTimer = null;
 // ------ Load Files ------
 async function loadFiles(path) {
   try {
-    const res = await fetch("/api/drive/files?path=" + encodeURIComponent(path));
+    const res = await fetch("/api/drive/files?path=" + encodeURIComponent(path), { cache: "no-store", credentials: "same-origin" });
     if (!res.ok) throw new Error("Failed");
     const data = await res.json();
 
@@ -763,6 +763,7 @@ async function initDrive() {
     if (res.ok) {
       const user = await res.json();
       currentUserRole = user.role || 'user';
+      if (user.status === 'suspended') { location.href = '/suspended'; return; }
     }
   } catch (e) {}
   const params = new URLSearchParams(location.search);
