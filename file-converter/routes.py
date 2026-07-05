@@ -1,5 +1,11 @@
 from flask import after_this_request, jsonify, request, send_file, send_from_directory
 from PIL import Image, ImageDraw, ImageFont, ImageOps, UnidentifiedImageError
+
+try:
+    import pillow_heif
+    pillow_heif.register_heif_opener()
+except Exception:
+    pillow_heif = None
 import csv
 import html
 import json
@@ -16,7 +22,7 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent
 MAX_CONVERT_BYTES = 1024 * 1024 * 1024
 
-IMAGE_FORMATS = {"jpg", "jpeg", "png", "webp", "bmp", "tiff", "gif", "ico", "pdf", "eps", "psd", "ai"}
+IMAGE_FORMATS = {"jpg", "jpeg", "png", "webp", "bmp", "tiff", "gif", "ico", "heic", "heif", "pdf", "eps", "psd", "ai"}
 VIDEO_FORMATS = {"mp4", "mkv", "webm", "mov", "avi", "flv", "m4v", "ogv"}
 AUDIO_FORMATS = {"mp3", "m4a", "aac", "wav", "flac", "ogg", "opus", "wma"}
 DOCUMENT_FORMATS = {"pdf", "eps", "psd", "ai", "docx", "doc", "odt", "rtf", "txt", "html", "md", "csv", "json", "xlsx"}
@@ -116,7 +122,7 @@ def convert_image(input_path, source_ext, target, form, temp_dir):
     try:
         with Image.open(input_path) as img:
             img = ImageOps.exif_transpose(img)
-            if target in {"jpg", "jpeg", "pdf"} and img.mode in {"RGBA", "P"}:
+            if target in {"jpg", "jpeg", "pdf", "heic", "heif"} and img.mode in {"RGBA", "P"}:
                 bg = Image.new("RGB", img.size, "white")
                 if img.mode == "P":
                     img = img.convert("RGBA")
@@ -135,10 +141,13 @@ def convert_image(input_path, source_ext, target, form, temp_dir):
             out_ext = "jpg" if target == "jpeg" else target
             output = Path(temp_dir) / f"converted.{out_ext}"
             save_kwargs = {}
-            if target in {"jpg", "jpeg", "webp"}:
+            if target in {"jpg", "jpeg", "webp", "heic", "heif"}:
                 save_kwargs["quality"] = int(form.get("imageQuality") or 92)
                 save_kwargs["optimize"] = True
-            img.save(output, format=("JPEG" if target in {"jpg", "jpeg"} else target.upper()), **save_kwargs)
+            save_format = "JPEG" if target in {"jpg", "jpeg"} else ("HEIF" if target in {"heic", "heif"} else target.upper())
+            if target in {"heic", "heif"} and pillow_heif is None:
+                raise ConverterError("HEIC/HEIF output needs pillow-heif on the server.", 503)
+            img.save(output, format=save_format, **save_kwargs)
             return output
     except UnidentifiedImageError:
         raise ConverterError("Could not read this image file")
