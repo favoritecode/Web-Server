@@ -102,6 +102,12 @@ function Update-CodeFromGit {
             & $git -C $Root checkout --quiet origin/main -- $rel 2>$null
         }
         Write-Log "Applied latest tracked code files from origin/main. Runtime data files were left untouched."
+        if ((Test-Path -LiteralPath $Python) -and (Test-Path -LiteralPath (Join-Path $Root "requirements.txt"))) {
+            Write-Log "Installing Python requirements."
+            & $Python -m pip install -r (Join-Path $Root "requirements.txt") --quiet 2>&1 | ForEach-Object { Write-Log "pip: $_" }
+        } else {
+            Write-Log "Skipped Python requirements install. Missing Python or requirements.txt."
+        }
     } catch {
         Write-Log "Git update failed: $($_.Exception.Message)"
     }
