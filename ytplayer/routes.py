@@ -4,11 +4,13 @@ import yt_dlp
 import requests
 import time
 import uuid
+import re
 from flask import request, jsonify, send_from_directory, Response, session
 
 BASE_DIR = os.path.dirname(__file__)
 PROJECT_DIR = os.path.dirname(BASE_DIR)
 DATA_FILE = os.path.join(BASE_DIR, "videos.json")
+LOCAL_DATA_FILE = os.path.join(BASE_DIR, "videos.local.json")
 COOKIES_FILE = os.path.join(PROJECT_DIR, "cookies.txt")
 LOCAL_COOKIES_FILE = os.path.join(BASE_DIR, "cookies.txt")
 
@@ -23,18 +25,32 @@ UPSTREAM_HEADERS = {
 }
 
 
-def load_videos():
-    if not os.path.exists(DATA_FILE):
+def read_json_file(path):
+    try:
+        with open(path, "r", encoding="utf-8-sig") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except Exception:
         return {}
-    with open(DATA_FILE, "r") as f:
-        return json.load(f)
+
+
+def atomic_write_json(path, data):
+    tmp_path = path + ".tmp"
+    with open(tmp_path, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)
+    os.replace(tmp_path, path)
+
+
+def load_videos():
+    videos = read_json_file(DATA_FILE)
+    local_videos = read_json_file(LOCAL_DATA_FILE)
+    videos.update(local_videos)
+    return videos
 
 
 def save_videos(videos):
-    with open(DATA_FILE, "w") as f:
-        json.dump(videos, f, indent=2)
-
-
+    atomic_write_json(DATA_FILE, videos)
+    atomic_write_json(LOCAL_DATA_FILE, videos)
 
 def current_owner_key():
     user = session.get("user") or {}

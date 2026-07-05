@@ -55,3 +55,4 @@ ocr/uploads/
 server-worker.before-*.js
 users.json
 users.overrides.json
+ytplayer/videos.local.json

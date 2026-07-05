@@ -46,6 +46,8 @@ DEFAULT_ADMIN_EMAIL = "info.favoriteweb@gmail.com"
 DEFAULT_USER_QUOTA_BYTES = 2 * 1024 * 1024 * 1024
 USER_DB_PATH = os.path.join(BASE_DIR, "users.json")
 USER_OVERRIDES_PATH = os.path.join(BASE_DIR, "users.overrides.json")
+STREAM_DATA_FILE = os.path.join(BASE_DIR, "ytplayer", "videos.json")
+STREAM_LOCAL_DATA_FILE = os.path.join(BASE_DIR, "ytplayer", "videos.local.json")
 
 
 def env_enabled(name):
@@ -148,6 +150,17 @@ def load_user_db():
 def save_user_db(data):
     atomic_write_json(USER_DB_PATH, data)
 
+def load_stream_data():
+    streams = read_json_file(STREAM_DATA_FILE, {})
+    local_streams = read_json_file(STREAM_LOCAL_DATA_FILE, {})
+    streams.update(local_streams)
+    return streams
+
+
+def save_stream_data(streams):
+    atomic_write_json(STREAM_DATA_FILE, streams)
+    atomic_write_json(STREAM_LOCAL_DATA_FILE, streams)
+
 def dir_size(path):
     total = 0
     if not os.path.exists(path):
@@ -235,7 +248,7 @@ def active_user_required_redirect():
         return redirect("/login")
     record = user_record_from_session(create=True)
     if record and record.get("status") == "suspended":
-        return redirect("/logout")
+        return redirect("/suspended")
     return None
 
 
@@ -515,8 +528,10 @@ def callback():
     token = google.authorize_access_token()
     resp = google.get("https://www.googleapis.com/oauth2/v3/userinfo")
     session["user"] = resp.json()
-    user_record_from_session(create=True)
+    record = user_record_from_session(create=True)
     session.permanent = True
+    if record and record.get("status") == "suspended":
+        return redirect("/suspended")
     return redirect("/drive")
 
 # =====================
@@ -555,6 +570,11 @@ def settings_page():
         return blocked
     return send_from_directory(BASE_DIR, "account.html")
 
+@app.route("/suspended")
+def suspended_page():
+    user = session.get("user") or {}
+    email = html_escape(user.get("email") or "your account")
+    return Response(f'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Account Suspended - FavoriteWeb</title><link rel="stylesheet" href="/shared.css"><style>.suspend-main{{min-height:calc(100vh - 120px);display:grid;place-items:center;padding:32px 16px}}.suspend-card{{width:min(560px,100%);padding:28px;border:1px solid rgba(248,113,113,.24);border-radius:18px;background:linear-gradient(135deg,rgba(15,23,42,.92),rgba(30,41,59,.72));box-shadow:0 22px 70px rgba(0,0,0,.32);text-align:center}}.suspend-card h1{{color:#fff;font-size:30px;margin-bottom:10px}}.suspend-card p{{color:#b6c5dc;line-height:1.7;margin:8px 0}}.suspend-email{{display:inline-block;margin:12px 0 4px;padding:8px 12px;border-radius:999px;background:rgba(248,113,113,.12);color:#fecdd3;overflow-wrap:anywhere}}.suspend-actions{{display:flex;justify-content:center;gap:10px;flex-wrap:wrap;margin-top:18px}}.suspend-actions a{{min-height:42px;padding:0 16px;border-radius:999px;display:inline-flex;align-items:center;text-decoration:none;font-weight:800}}.primary-action{{background:linear-gradient(135deg,#9333ea,#0ea5e9);color:#fff}}.ghost-action{{border:1px solid rgba(148,163,184,.2);color:#e5eefb}}</style></head><body><div class="main-content"><main class="suspend-main"><section class="suspend-card"><h1>Account Suspended</h1><p>Your FavoriteWeb account is currently suspended.</p><span class="suspend-email">{email}</span><p>Please contact the admin to review and solve this issue.</p><p>Admin: info.favoriteweb@gmail.com</p><div class="suspend-actions"><a class="primary-action" href="mailto:info.favoriteweb@gmail.com">Contact Admin</a><a class="ghost-action" href="/logout">Logout</a></div></section></main></div><script src="/shared.js"></script></body></html>''', mimetype="text/html")
 @app.route("/admin")
 def admin_page():
     blocked = admin_required_redirect()
@@ -1164,12 +1184,7 @@ def ytplayer_history():
     if blocked:
         return blocked
 
-    data_path = os.path.join(BASE_DIR, "ytplayer", "videos.json")
-    try:
-        with open(data_path, "r", encoding="utf-8") as f:
-            videos = json.load(f)
-    except Exception:
-        videos = {}
+    videos = load_stream_data()
 
     base = public_origin()
     owner = current_user_key()
@@ -1217,12 +1232,7 @@ def ytplayer_update():
     if not stream_id or not source:
         return jsonify({"error": "Invalid stream"}), 400
 
-    data_path = os.path.join(BASE_DIR, "ytplayer", "videos.json")
-    try:
-        with open(data_path, "r", encoding="utf-8") as f:
-            videos = json.load(f)
-    except Exception:
-        videos = {}
+    videos = load_stream_data()
 
     record = videos.get(stream_id)
     if not isinstance(record, dict):
@@ -1241,8 +1251,7 @@ def ytplayer_update():
     if new_stream_id != stream_id:
         videos.pop(stream_id, None)
     videos[new_stream_id] = record
-    with open(data_path, "w", encoding="utf-8") as f:
-        json.dump(videos, f, indent=2)
+    save_stream_data(videos)
     return jsonify({"status": "ok"})
 
 
@@ -1256,12 +1265,7 @@ def ytplayer_delete():
     if not stream_id:
         return jsonify({"error": "Invalid stream"}), 400
 
-    data_path = os.path.join(BASE_DIR, "ytplayer", "videos.json")
-    try:
-        with open(data_path, "r", encoding="utf-8") as f:
-            videos = json.load(f)
-    except Exception:
-        videos = {}
+    videos = load_stream_data()
 
     record = videos.get(stream_id)
     if not isinstance(record, dict):
@@ -1269,8 +1273,7 @@ def ytplayer_delete():
     if record.get("owner") != current_user_key() and not is_current_admin():
         return jsonify({"error": "Not allowed"}), 403
     videos.pop(stream_id, None)
-    with open(data_path, "w", encoding="utf-8") as f:
-        json.dump(videos, f, indent=2)
+    save_stream_data(videos)
     return jsonify({"status": "ok"})
 
 @app.route("/api/admin/users")
