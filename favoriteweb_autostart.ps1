@@ -49,6 +49,63 @@ if (-not $PcConfig) {
 $TunnelId = $PcConfig.TunnelId
 $BackendHostname = $PcConfig.BackendHostname
 
+
+function Find-GitExe {
+    $cmd = Get-Command git.exe -ErrorAction SilentlyContinue
+    if ($cmd -and $cmd.Source) { return $cmd.Source }
+    foreach ($candidate in @(
+        "C:\Program Files\Git\cmd\git.exe",
+        "C:\Program Files\Git\bin\git.exe",
+        "C:\Program Files (x86)\Git\cmd\git.exe"
+    )) {
+        if (Test-Path -LiteralPath $candidate) { return $candidate }
+    }
+    return $null
+}
+
+function Update-CodeFromGit {
+    $git = Find-GitExe
+    if (-not $git) {
+        Write-Log "Skipped git update. git.exe was not found."
+        return
+    }
+    if (-not (Test-Path -LiteralPath (Join-Path $Root ".git"))) {
+        Write-Log "Skipped git update. .git folder was not found in $Root."
+        return
+    }
+
+    $codePaths = @(
+        "app.py",
+        "upload.html",
+        "dashboard.html",
+        "admin.html",
+        "account.html",
+        "index.html",
+        "shared.css",
+        "shared.js",
+        "requirements.txt",
+        "render.yaml",
+        "server-worker.js",
+        "ytplayer/routes.py",
+        "ytplayer/index.html",
+        "download/route.py",
+        "file-converter/routes.py",
+        "file-converter/index.html",
+        "ocr/routes.py",
+        "ocr/index.html"
+    )
+
+    try {
+        Write-Log "Checking GitHub for code updates."
+        & $git -C $Root fetch --quiet origin main 2>&1 | ForEach-Object { Write-Log "git fetch: $_" }
+        foreach ($rel in $codePaths) {
+            & $git -C $Root checkout --quiet origin/main -- $rel 2>$null
+        }
+        Write-Log "Applied latest tracked code files from origin/main. Runtime data files were left untouched."
+    } catch {
+        Write-Log "Git update failed: $($_.Exception.Message)"
+    }
+}
 function Update-CloudflaredConfig {
     param(
         [string]$SelectedTunnelId,
@@ -125,6 +182,7 @@ function Stop-Executable {
 }
 
 Set-Location $Root
+Update-CodeFromGit
 Write-Log "Starting FavoriteWeb services on $ComputerName"
 
 # Keep only one copy of each FavoriteWeb service.
