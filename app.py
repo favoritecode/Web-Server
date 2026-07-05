@@ -45,6 +45,7 @@ if not os.path.exists(FILE_ROOT):
 DEFAULT_ADMIN_EMAIL = "info.favoriteweb@gmail.com"
 DEFAULT_USER_QUOTA_BYTES = 2 * 1024 * 1024 * 1024
 USER_DB_PATH = os.path.join(BASE_DIR, "users.json")
+USER_OVERRIDES_PATH = os.path.join(BASE_DIR, "users.overrides.json")
 
 
 def env_enabled(name):
@@ -71,22 +72,81 @@ def user_key_from_email(email):
     return safe[:120] or "user"
 
 
-def load_user_db():
+def read_json_file(path, default):
     try:
-        with open(USER_DB_PATH, "r", encoding="utf-8") as f:
+        with open(path, "r", encoding="utf-8-sig") as f:
             data = json.load(f)
+        return data if isinstance(data, dict) else default
     except Exception:
-        data = {"users": {}}
-    if not isinstance(data, dict):
-        data = {"users": {}}
+        return default
+
+
+def atomic_write_json(path, data):
+    tmp_path = path + ".tmp"
+    with open(tmp_path, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)
+    os.replace(tmp_path, path)
+
+
+def load_user_overrides():
+    data = read_json_file(USER_OVERRIDES_PATH, {"users": {}})
     data.setdefault("users", {})
     return data
 
 
-def save_user_db(data):
-    with open(USER_DB_PATH, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2, ensure_ascii=False)
+def save_user_overrides(data):
+    data.setdefault("users", {})
+    atomic_write_json(USER_OVERRIDES_PATH, data)
 
+
+def apply_user_overrides(data):
+    users = data.setdefault("users", {})
+    overrides = load_user_overrides().get("users", {})
+    for email, override in overrides.items():
+        email = normalize_email(email)
+        if not email or not isinstance(override, dict):
+            continue
+        record = users.get(email) or {"email": email, "name": email, "created_at": int(time.time())}
+        override_ts = int(override.get("updated_at") or 0)
+        record_ts = int(record.get("role_updated_at") or 0)
+        if override_ts >= record_ts:
+            if override.get("role") in {"user", "moderator", "admin"}:
+                record["role"] = override["role"]
+            if override.get("status") in {"active", "suspended"}:
+                record["status"] = override["status"]
+            if "quota_bytes" in override:
+                try:
+                    record["quota_bytes"] = max(0, int(override.get("quota_bytes") or 0))
+                except (TypeError, ValueError):
+                    pass
+            record["role_updated_at"] = max(record_ts, override_ts)
+        users[email] = record
+    return data
+
+
+def save_user_override(email, record):
+    email = normalize_email(email)
+    if not email:
+        return
+    data = load_user_overrides()
+    data.setdefault("users", {})[email] = {
+        "email": email,
+        "role": record.get("role") or "user",
+        "status": record.get("status") or "active",
+        "quota_bytes": int(record.get("quota_bytes") or DEFAULT_USER_QUOTA_BYTES),
+        "updated_at": int(record.get("role_updated_at") or time.time()),
+    }
+    save_user_overrides(data)
+
+
+def load_user_db():
+    data = read_json_file(USER_DB_PATH, {"users": {}})
+    data.setdefault("users", {})
+    return apply_user_overrides(data)
+
+
+def save_user_db(data):
+    atomic_write_json(USER_DB_PATH, data)
 
 def dir_size(path):
     total = 0
@@ -1271,7 +1331,9 @@ def admin_update_user():
         if quota < 0:
             return jsonify({"error": "invalid quota"}), 400
         record["quota_bytes"] = quota
+    record["role_updated_at"] = int(time.time())
     users[email] = record
+    save_user_override(email, record)
     save_user_db(data)
     return jsonify({"status": "ok"})
 @app.route("/logout")
