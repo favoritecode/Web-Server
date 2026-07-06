@@ -19,10 +19,10 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 from itsdangerous import BadSignature, URLSafeSerializer
 
 app = Flask(__name__)
-# Keep the local PC backends on the same signing key. The ignored
-# favoriteweb_local_secrets.py file may be missing on PC2 after a git-only
-# update, so the fallback must stay stable for server.favoriteweb.net failover.
-app.secret_key = secret_value("FLASK_SECRET_KEY", "favoriteweb_secret")
+# Keep the local PC backends on the same signing key. Do not read
+# FLASK_SECRET_KEY from favoriteweb_local_secrets.py here, because that
+# ignored per-PC file can drift and break server.favoriteweb.net failover.
+app.secret_key = os.environ.get("FLASK_SECRET_KEY") or "favoriteweb_secret"
 app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
 
 # Session cookie settings for cross-domain support
