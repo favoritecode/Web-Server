@@ -18,6 +18,9 @@ const OFFLINE_BACKENDS = [PRIMARY, BACKUP];
 const HLS_TIMEOUT = 6500;
 const WORKER_OFFLINE_SEGMENT_PATH = "/__offline/offline.ts";
 const OFFLINE_BACKEND_PLAYLIST = "/offline/index.m3u8";
+const STICKY_BACKEND_COOKIE = "fw_backend";
+const STICKY_BACKEND_MAX_AGE = 7 * 24 * 60 * 60;
+const RENDER_STICKY_MAX_AGE = 5 * 60;
 const AUTH_PATHS = ["/login", "/logout", "/login/callback"];
 const LONG_RUNNING_PATHS = [
   "/api/analytics/",
@@ -106,6 +109,50 @@ function isPcToolPath(pathname) {
 
 function isAdminUserUpdatePath(pathname) {
   return pathname === "/api/admin/users/update";
+}
+
+function parseCookies(header) {
+  const cookies = {};
+  (header || "").split(";").forEach((part) => {
+    const index = part.indexOf("=");
+    if (index === -1) {
+      return;
+    }
+    const name = part.slice(0, index).trim();
+    const value = part.slice(index + 1).trim();
+    if (name) {
+      try {
+        cookies[name] = decodeURIComponent(value);
+      } catch (e) {
+        cookies[name] = value;
+      }
+    }
+  });
+  return cookies;
+}
+
+function targetHost(target) {
+  return new URL(target).host;
+}
+
+function stickyTarget(request, targets) {
+  const cookies = parseCookies(request.headers.get("Cookie") || "");
+  const stickyHost = cookies[STICKY_BACKEND_COOKIE] || "";
+  return targets.find((target) => targetHost(target) === stickyHost) || null;
+}
+
+function orderedTargets(request, targets) {
+  const sticky = stickyTarget(request, targets);
+  if (!sticky) {
+    return targets;
+  }
+  return [sticky, ...targets.filter((target) => target !== sticky)];
+}
+
+function stickyBackendCookie(target) {
+  const host = targetHost(target);
+  const maxAge = host === targetHost(RENDER_BACKUP) ? RENDER_STICKY_MAX_AGE : STICKY_BACKEND_MAX_AGE;
+  return `${STICKY_BACKEND_COOKIE}=${encodeURIComponent(host)}; Path=/; Max-Age=${maxAge}; Secure; HttpOnly; SameSite=Lax`;
 }
 
 async function mirrorAdminUserUpdate(request, servedTargetHost) {
@@ -345,6 +392,10 @@ async function proxyTo(request, target) {
   rewritten.headers.set("X-FavoriteWeb-Worker", "server-failover");
   rewritten.headers.set("X-FavoriteWeb-Target", targetUrl.host);
 
+  if (!isHlsMediaPath(incomingUrl.pathname)) {
+    rewritten.headers.append("Set-Cookie", stickyBackendCookie(target));
+  }
+
   if (isHlsMediaPath(incomingUrl.pathname)) {
     rewritten.headers.set("Cache-Control", "no-store");
     rewritten.headers.set("Access-Control-Allow-Origin", "*");
@@ -449,7 +500,8 @@ async function proxyLivePlaylist(request, streamName) {
 async function proxyWithFailover(request) {
   let lastResponse = null;
   const url = new URL(request.url);
-  const targets = isHlsMediaPath(url.pathname) ? STREAM_BACKENDS : (isPcToolPath(url.pathname) ? PC_TOOL_BACKENDS : BACKENDS);
+  const baseTargets = isHlsMediaPath(url.pathname) ? STREAM_BACKENDS : (isPcToolPath(url.pathname) ? PC_TOOL_BACKENDS : BACKENDS);
+  const targets = orderedTargets(request, baseTargets);
 
   for (const target of targets) {
     try {
@@ -490,7 +542,7 @@ async function proxyWithFailover(request) {
 async function proxyAuthWithFailover(request) {
   const url = new URL(request.url);
 
-  for (const target of BACKENDS) {
+  for (const target of orderedTargets(request, BACKENDS)) {
     if (!(await isHealthyBackend(target, url.host))) {
       continue;
     }

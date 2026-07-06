@@ -1,5 +1,6 @@
 from flask import Flask, send_from_directory, redirect, session, request, jsonify, Response, send_file, after_this_request
 import os, json, re, shutil, time, tempfile, base64, yt_dlp, requests
+from datetime import timedelta
 
 try:
     import favoriteweb_local_secrets as local_secrets
@@ -29,6 +30,7 @@ app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
 # This allows the Worker to proxy requests without cookie issues
 app.config["SESSION_COOKIE_DOMAIN"] = False  # Don't set Domain attribute
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=30)
 
 CANONICAL_PUBLIC_HOST = "server.favoriteweb.net"
 BACKEND_PUBLIC_HOSTS = {"khan.favoriteweb.net", "host.favoriteweb.net"}
@@ -65,6 +67,24 @@ def redirect_backend_hosts_to_public_domain():
     if request.query_string:
         target += "?" + request.query_string.decode("utf-8", errors="ignore")
     return redirect(target, code=308)
+
+
+@app.before_request
+def normalize_current_session_user():
+    user = session.get("user")
+    if not isinstance(user, dict):
+        if user is not None:
+            session.pop("user", None)
+        return None
+    stable = stable_session_user(user)
+    if not stable:
+        session.pop("user", None)
+        return None
+    if user != stable:
+        session["user"] = stable
+    return None
+
+
 # Inject user session into all templates
 @app.context_processor
 def inject_user():
@@ -110,6 +130,48 @@ def normalize_email(email=""):
 def user_key_from_email(email):
     safe = re.sub(r"[^A-Za-z0-9_.-]+", "_", normalize_email(email)).strip("._")
     return safe[:120] or "user"
+
+
+def merge_user_record(base, incoming):
+    merged = dict(base or {})
+    for key, value in (incoming or {}).items():
+        if value not in (None, ""):
+            merged[key] = value
+    return merged
+
+
+def normalize_user_db(data):
+    users = data.setdefault("users", {})
+    normalized = {}
+    changed = False
+    for key, record in list(users.items()):
+        if not isinstance(record, dict):
+            changed = True
+            continue
+        email = normalize_email(record.get("email") or key)
+        if not email:
+            changed = True
+            continue
+        record["email"] = email
+        normalized[email] = merge_user_record(normalized.get(email), record)
+        if email != key:
+            changed = True
+    if changed or normalized.keys() != users.keys():
+        data["users"] = normalized
+    return data
+
+
+def stable_session_user(profile):
+    profile = profile or {}
+    email = normalize_email(profile.get("email"))
+    if not email:
+        return None
+    return {
+        "email": email,
+        "name": profile.get("name") or profile.get("given_name") or email,
+        "picture": profile.get("picture") or "",
+        "sub": profile.get("sub") or "",
+    }
 
 
 def read_json_file(path, default):
@@ -181,7 +243,7 @@ def save_user_override(email, record):
 
 def load_user_db():
     data = read_json_file(USER_DB_PATH, {"users": {}})
-    data.setdefault("users", {})
+    data = normalize_user_db(data)
     return apply_user_overrides(data)
 
 
@@ -212,7 +274,7 @@ def dir_size(path):
     return total
 
 
-def user_record_from_session(create=True):
+def user_record_from_session(create=True, touch_seen=True):
     user = session.get("user") or {}
     email = normalize_email(user.get("email"))
     if not email:
@@ -221,6 +283,7 @@ def user_record_from_session(create=True):
     users = data.setdefault("users", {})
     record = users.get(email)
     now = int(time.time())
+    dirty = False
     if not record and create:
         record = {
             "email": email,
@@ -232,17 +295,36 @@ def user_record_from_session(create=True):
             "created_at": now,
         }
         users[email] = record
+        dirty = True
     if record:
-        record["name"] = user.get("name") or record.get("name") or email
-        record["picture"] = user.get("picture") or record.get("picture") or ""
-        record["last_seen"] = now
+        next_name = user.get("name") or record.get("name") or email
+        next_picture = user.get("picture") or record.get("picture") or ""
+        if record.get("name") != next_name:
+            record["name"] = next_name
+            dirty = True
+        if record.get("picture") != next_picture:
+            record["picture"] = next_picture
+            dirty = True
+        if touch_seen and now - int(record.get("last_seen") or 0) >= 300:
+            record["last_seen"] = now
+            dirty = True
         if email == DEFAULT_ADMIN_EMAIL:
-            record["role"] = "admin"
+            if record.get("role") != "admin":
+                record["role"] = "admin"
+                dirty = True
+            if record.get("status") != "active":
+                record["status"] = "active"
+                dirty = True
+        if "quota_bytes" not in record:
+            record["quota_bytes"] = DEFAULT_USER_QUOTA_BYTES
+            dirty = True
+        if "status" not in record:
             record["status"] = "active"
-        record.setdefault("quota_bytes", DEFAULT_USER_QUOTA_BYTES)
-        record.setdefault("status", "active")
-        record.setdefault("role", "user")
-        if create:
+            dirty = True
+        if "role" not in record:
+            record["role"] = "user"
+            dirty = True
+        if create and dirty:
             save_user_db(data)
     return record
 
@@ -571,9 +653,13 @@ def callback():
     # The Worker proxies the request but keeps the original Host header
     # So request.host should be server.favoriteweb.net
     # The redirect_uri must match what was sent to Google
-    token = google.authorize_access_token()
+    google.authorize_access_token()
     resp = google.get("https://www.googleapis.com/oauth2/v3/userinfo")
-    session["user"] = resp.json()
+    user = stable_session_user(resp.json())
+    if not user:
+        session.pop("user", None)
+        return "Google login did not return an email address.", 400
+    session["user"] = user
     record = user_record_from_session(create=True)
     session.permanent = True
     if record and record.get("status") == "suspended":
@@ -1204,18 +1290,20 @@ def download(filename):
 def api_user():
     user = session.get("user")
     if user:
-        record = user_record_from_session(create=True) or {}
+        record = user_record_from_session(create=True, touch_seen=False) or {}
         used = current_user_storage_used()
         quota = int(record.get("quota_bytes") or DEFAULT_USER_QUOTA_BYTES)
+        role = record.get("role") or "user"
+        is_active = record.get("status", "active") == "active"
         return no_store_json({
             "logged_in": True,
-            "name": user.get("name"),
-            "email": user.get("email"),
-            "picture": user.get("picture"),
-            "role": record.get("role", "user"),
+            "name": record.get("name") or user.get("name") or record.get("email"),
+            "email": record.get("email") or user.get("email"),
+            "picture": record.get("picture") or user.get("picture") or "",
+            "role": role,
             "status": record.get("status", "active"),
-            "is_admin": current_user_role() == "admin",
-            "is_moderator": current_user_role() in {"moderator", "admin"},
+            "is_admin": is_active and role == "admin",
+            "is_moderator": is_active and role in {"moderator", "admin"},
             "used_bytes": used,
             "quota_bytes": quota,
             "backup_mode": is_backup_runtime(),
