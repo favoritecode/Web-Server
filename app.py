@@ -19,7 +19,10 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 from itsdangerous import BadSignature, URLSafeSerializer
 
 app = Flask(__name__)
-app.secret_key = secret_value("FLASK_SECRET_KEY", "change-me-in-env")
+# Keep the local PC backends on the same signing key. The ignored
+# favoriteweb_local_secrets.py file may be missing on PC2 after a git-only
+# update, so the fallback must stay stable for server.favoriteweb.net failover.
+app.secret_key = secret_value("FLASK_SECRET_KEY", "favoriteweb_secret")
 app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
 
 # Session cookie settings for cross-domain support
@@ -1204,7 +1207,7 @@ def api_user():
         record = user_record_from_session(create=True) or {}
         used = current_user_storage_used()
         quota = int(record.get("quota_bytes") or DEFAULT_USER_QUOTA_BYTES)
-        return jsonify({
+        return no_store_json({
             "logged_in": True,
             "name": user.get("name"),
             "email": user.get("email"),
@@ -1218,7 +1221,7 @@ def api_user():
             "backup_mode": is_backup_runtime(),
             "uploads_enabled": uploads_enabled(),
         })
-    return jsonify({"logged_in": False})
+    return no_store_json({"logged_in": False})
 
 # =====================
 # LOGOUT

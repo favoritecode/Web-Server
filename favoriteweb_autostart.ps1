@@ -8,6 +8,7 @@ $Cloudflared = Join-Path $Root "cloudflared.exe"
 $MediaMtx = Join-Path $Root "mediamtx\mediamtx.exe"
 $MediaMtxConfig = Join-Path $Root "mediamtx-live.yml"
 $LogFile = Join-Path $Root "favoriteweb_autostart.log"
+$env:FLASK_SECRET_KEY = "favoriteweb_secret"
 
 function Write-Log {
     param([string]$Message)

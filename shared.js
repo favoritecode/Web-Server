@@ -206,7 +206,7 @@ function initNavbarInteractions() {
 async function initSharedLayout() {
   let user = { logged_in: false };
   try {
-    const res = await fetch("/api/user", { cache: "no-store" });
+    const res = await fetch("/api/user", { cache: "no-store", credentials: "same-origin" });
     if (res.ok) user = await res.json();
   } catch (e) {}
 
