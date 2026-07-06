@@ -99,6 +99,11 @@ function Update-CodeFromGit {
     try {
         Write-Log "Checking GitHub for code updates."
         & $git -C $Root fetch --quiet origin main 2>&1 | ForEach-Object { Write-Log "git fetch: $_" }
+        $aheadCount = (& $git -C $Root rev-list --count origin/main..HEAD 2>$null)
+        if ($aheadCount -and [int]$aheadCount -gt 0) {
+            Write-Log "Skipped code checkout because this PC has $aheadCount local commit(s) not pushed to origin/main."
+            return
+        }
         foreach ($rel in $codePaths) {
             & $git -C $Root checkout --quiet origin/main -- $rel 2>$null
         }
