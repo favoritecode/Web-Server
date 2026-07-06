@@ -27,6 +27,41 @@ app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
 app.config["SESSION_COOKIE_DOMAIN"] = False  # Don't set Domain attribute
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 
+CANONICAL_PUBLIC_HOST = "server.favoriteweb.net"
+BACKEND_PUBLIC_HOSTS = {"khan.favoriteweb.net", "host.favoriteweb.net"}
+
+
+@app.before_request
+def redirect_backend_hosts_to_public_domain():
+    host = (request.host or "").split(":", 1)[0].lower()
+    if host not in BACKEND_PUBLIC_HOSTS:
+        return None
+    if request.headers.get("X-Public-Host"):
+        return None
+    path = request.path or "/"
+    internal_prefixes = (
+        "/__server_health",
+        "/api/",
+        "/live",
+        "/offline",
+        "/hls",
+        "/ytplayer/stream/",
+        "/ytplayer/play/",
+        "/drive/media",
+        "/drive/save",
+        "/download/proxy",
+        "/download/server-download",
+        "/download/job-file/",
+        "/download/job-status/",
+    )
+    if path.startswith(internal_prefixes):
+        return None
+    if request.method not in {"GET", "HEAD"}:
+        return None
+    target = "https://" + CANONICAL_PUBLIC_HOST + path
+    if request.query_string:
+        target += "?" + request.query_string.decode("utf-8", errors="ignore")
+    return redirect(target, code=308)
 # Inject user session into all templates
 @app.context_processor
 def inject_user():
