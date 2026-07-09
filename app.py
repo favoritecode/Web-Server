@@ -1510,6 +1510,12 @@ if converter_backend_path.exists():
     converter_spec.loader.exec_module(converter_module)
     converter_module.init_routes(app)
 
+remove_bg_backend_path = Path(BASE_DIR) / "remove-bg" / "routes.py"
+if remove_bg_backend_path.exists():
+    remove_bg_spec = importlib.util.spec_from_file_location("favoriteweb_remove_bg", remove_bg_backend_path)
+    remove_bg_module = importlib.util.module_from_spec(remove_bg_spec)
+    remove_bg_spec.loader.exec_module(remove_bg_module)
+    remove_bg_module.init_routes(app)
 from shofikul.routes import init_routes as shofikul_routes
 shofikul_routes(app)
 

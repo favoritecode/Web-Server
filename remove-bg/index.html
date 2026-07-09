@@ -1,0 +1,544 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Remove Background - FavoriteWeb</title>
+<link rel="stylesheet" href="/shared.css">
+<style>
+:root { color-scheme: dark; }
+.remove-bg-main {
+  width: min(1240px, calc(100% - 28px));
+  margin: 34px auto 80px;
+}
+.tool-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 22px;
+  align-items: end;
+  padding: 28px;
+  border: 1px solid rgba(148,163,184,.15);
+  border-radius: 18px;
+  background: linear-gradient(135deg, rgba(15,23,42,.86), rgba(20,28,48,.62));
+  box-shadow: 0 24px 70px rgba(0,0,0,.32), inset 0 1px 0 rgba(255,255,255,.05);
+  backdrop-filter: blur(18px);
+}
+.tool-hero h1 {
+  margin: 0 0 8px;
+  color: #f8fbff;
+  font-size: clamp(30px, 4vw, 48px);
+  letter-spacing: 0;
+}
+.tool-hero p {
+  margin: 0;
+  color: #9fb0c9;
+  line-height: 1.65;
+  max-width: 720px;
+}
+.status-pill {
+  min-height: 38px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 14px;
+  border-radius: 999px;
+  background: rgba(34,197,94,.12);
+  border: 1px solid rgba(34,197,94,.18);
+  color: #86efac;
+  font-weight: 800;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.workspace {
+  display: grid;
+  grid-template-columns: 320px minmax(0, 1fr);
+  gap: 20px;
+  margin-top: 20px;
+}
+.panel {
+  border: 1px solid rgba(148,163,184,.15);
+  border-radius: 16px;
+  background: rgba(13,18,34,.72);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.04);
+  backdrop-filter: blur(16px);
+}
+.side-panel {
+  padding: 18px;
+  align-self: start;
+  position: sticky;
+  top: 92px;
+}
+.upload-zone {
+  min-height: 180px;
+  display: grid;
+  place-items: center;
+  gap: 12px;
+  text-align: center;
+  padding: 22px;
+  border: 1px dashed rgba(125,211,252,.35);
+  border-radius: 14px;
+  background: rgba(56,189,248,.06);
+  cursor: pointer;
+  transition: border-color .2s ease, background .2s ease, transform .2s ease;
+}
+.upload-zone.drag-over {
+  border-color: rgba(168,85,247,.7);
+  background: rgba(168,85,247,.1);
+  transform: translateY(-1px);
+}
+.upload-zone strong { color: #f8fbff; font-size: 16px; }
+.upload-zone span { color: #94a3b8; font-size: 13px; line-height: 1.5; }
+.file-input { display: none; }
+.progress-wrap {
+  display: none;
+  margin-top: 14px;
+  border: 1px solid rgba(148,163,184,.12);
+  border-radius: 12px;
+  padding: 12px;
+  background: rgba(255,255,255,.035);
+}
+.progress-wrap.show { display: block; }
+.progress-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  color: #cbd5e1;
+  font-size: 12px;
+  margin-bottom: 9px;
+}
+.progress-bar {
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(148,163,184,.18);
+  overflow: hidden;
+}
+.progress-bar span {
+  display: block;
+  width: 0%;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #22c55e, #38bdf8, #a855f7);
+  transition: width .25s ease;
+}
+.controls {
+  display: grid;
+  gap: 14px;
+  margin-top: 18px;
+}
+.control-group {
+  display: grid;
+  gap: 9px;
+}
+.control-group label {
+  color: #94a3b8;
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+}
+.segmented {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+button, .tool-button {
+  min-height: 42px;
+  border: 1px solid rgba(148,163,184,.16);
+  border-radius: 11px;
+  background: rgba(255,255,255,.06);
+  color: #e5eefb;
+  font-weight: 800;
+  cursor: pointer;
+  transition: transform .18s ease, border-color .18s ease, background .18s ease, opacity .18s ease;
+}
+button:hover, .tool-button:hover { transform: translateY(-1px); border-color: rgba(56,189,248,.34); }
+button.active { background: linear-gradient(135deg, rgba(147,51,234,.9), rgba(14,165,233,.86)); border-color: transparent; }
+button:disabled { cursor: not-allowed; opacity: .46; transform: none; }
+.range-row {
+  display: grid;
+  grid-template-columns: 1fr 48px;
+  gap: 10px;
+  align-items: center;
+}
+input[type="range"] { width: 100%; accent-color: #38bdf8; }
+.size-value { color: #dbeafe; font-weight: 800; font-size: 13px; text-align: right; }
+.action-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
+.download-btn {
+  width: 100%;
+  margin-top: 8px;
+  border: 0;
+  background: linear-gradient(135deg, #9333ea, #0ea5e9);
+  box-shadow: 0 16px 40px rgba(59,130,246,.24);
+}
+.editor-panel {
+  min-height: 620px;
+  padding: 16px;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 14px;
+}
+.editor-toolbar {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  color: #94a3b8;
+  font-size: 13px;
+}
+.editor-toolbar strong { color: #e5eefb; }
+.canvas-shell {
+  min-height: 520px;
+  border: 1px solid rgba(148,163,184,.12);
+  border-radius: 14px;
+  overflow: auto;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background-color: #0b1120;
+  background-image:
+    linear-gradient(45deg, rgba(148,163,184,.18) 25%, transparent 25%),
+    linear-gradient(-45deg, rgba(148,163,184,.18) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, rgba(148,163,184,.18) 75%),
+    linear-gradient(-45deg, transparent 75%, rgba(148,163,184,.18) 75%);
+  background-size: 22px 22px;
+  background-position: 0 0, 0 11px, 11px -11px, -11px 0;
+}
+#editCanvas {
+  max-width: 100%;
+  height: auto;
+  border-radius: 8px;
+  box-shadow: 0 20px 70px rgba(0,0,0,.38);
+  cursor: crosshair;
+  background: transparent;
+  display: none;
+  touch-action: none;
+}
+.empty-state {
+  color: #94a3b8;
+  text-align: center;
+  max-width: 360px;
+  line-height: 1.7;
+}
+.toast {
+  min-height: 22px;
+  color: #7dd3fc;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.toast.error { color: #fca5a5; }
+@media (max-width: 920px) {
+  .tool-hero { grid-template-columns: 1fr; align-items: start; }
+  .workspace { grid-template-columns: 1fr; }
+  .side-panel { position: static; }
+  .editor-panel { min-height: 520px; }
+  .canvas-shell { min-height: 420px; }
+}
+@media (max-width: 520px) {
+  .remove-bg-main { width: min(100% - 18px, 1240px); margin-top: 18px; }
+  .tool-hero, .side-panel, .editor-panel { padding: 14px; border-radius: 14px; }
+  .action-grid { grid-template-columns: 1fr; }
+  .canvas-shell { padding: 10px; min-height: 340px; }
+}
+</style>
+</head>
+<body>
+<div class="main-content">
+  <main class="remove-bg-main">
+    <section class="tool-hero">
+      <div>
+        <h1>Remove Background</h1>
+        <p>Upload an image, remove the background automatically, then fine-tune the mask with restore and remove brushes before downloading a transparent PNG.</p>
+      </div>
+      <span class="status-pill">PC failover ready</span>
+    </section>
+
+    <section class="workspace">
+      <aside class="panel side-panel">
+        <label class="upload-zone" id="dropZone" for="fileInput">
+          <strong>Upload image</strong>
+          <span>Drop a JPG, PNG, WEBP, or HEIC image here, or click to choose a file.</span>
+        </label>
+        <input class="file-input" id="fileInput" type="file" accept="image/*,.heic,.heif">
+
+        <div class="progress-wrap" id="progressWrap">
+          <div class="progress-top"><span id="progressLabel">Processing</span><span id="progressPercent">0%</span></div>
+          <div class="progress-bar"><span id="progressFill"></span></div>
+        </div>
+
+        <div class="controls">
+          <div class="control-group">
+            <label>Brush mode</label>
+            <div class="segmented">
+              <button type="button" id="removeMode" class="active">Remove</button>
+              <button type="button" id="restoreMode">Restore</button>
+            </div>
+          </div>
+
+          <div class="control-group">
+            <label>Brush size</label>
+            <div class="range-row">
+              <input id="brushSize" type="range" min="8" max="180" value="42">
+              <span class="size-value" id="brushSizeValue">42</span>
+            </div>
+          </div>
+
+          <div class="action-grid">
+            <button type="button" id="undoBtn" disabled>Undo</button>
+            <button type="button" id="resetBtn" disabled>Reset</button>
+          </div>
+          <button type="button" class="download-btn" id="downloadBtn" disabled>Download PNG</button>
+          <div class="toast" id="toast"></div>
+        </div>
+      </aside>
+
+      <section class="panel editor-panel">
+        <div class="editor-toolbar">
+          <span><strong id="fileName">No image selected</strong></span>
+          <span id="imageInfo">Transparent PNG output</span>
+        </div>
+        <div class="canvas-shell" id="canvasShell">
+          <canvas id="editCanvas"></canvas>
+          <div class="empty-state" id="emptyState">Your editable transparent preview will appear here after upload.</div>
+        </div>
+      </section>
+    </section>
+  </main>
+</div>
+<script>
+const fileInput = document.getElementById("fileInput");
+const dropZone = document.getElementById("dropZone");
+const progressWrap = document.getElementById("progressWrap");
+const progressFill = document.getElementById("progressFill");
+const progressPercent = document.getElementById("progressPercent");
+const progressLabel = document.getElementById("progressLabel");
+const toast = document.getElementById("toast");
+const canvas = document.getElementById("editCanvas");
+const ctx = canvas.getContext("2d", { willReadFrequently: true });
+const emptyState = document.getElementById("emptyState");
+const fileName = document.getElementById("fileName");
+const imageInfo = document.getElementById("imageInfo");
+const removeMode = document.getElementById("removeMode");
+const restoreMode = document.getElementById("restoreMode");
+const brushSize = document.getElementById("brushSize");
+const brushSizeValue = document.getElementById("brushSizeValue");
+const undoBtn = document.getElementById("undoBtn");
+const resetBtn = document.getElementById("resetBtn");
+const downloadBtn = document.getElementById("downloadBtn");
+
+let originalImage = null;
+let originalFileName = "favoriteweb-remove-bg.png";
+let alphaCanvas = document.createElement("canvas");
+let alphaCtx = alphaCanvas.getContext("2d", { willReadFrequently: true });
+let originalAlpha = null;
+let mode = "remove";
+let drawing = false;
+let undoStack = [];
+let progressTimer = null;
+
+function setToast(message, error = false) {
+  toast.textContent = message || "";
+  toast.classList.toggle("error", error);
+}
+
+function setProgress(show, percent = 0, label = "Processing") {
+  progressWrap.classList.toggle("show", show);
+  progressFill.style.width = `${percent}%`;
+  progressPercent.textContent = `${Math.round(percent)}%`;
+  progressLabel.textContent = label;
+}
+
+function startProgress() {
+  clearInterval(progressTimer);
+  let value = 8;
+  setProgress(true, value, "Uploading");
+  progressTimer = setInterval(() => {
+    value = Math.min(92, value + Math.max(1, (96 - value) * 0.08));
+    setProgress(true, value, value > 55 ? "Removing background" : "Processing");
+  }, 260);
+}
+
+function stopProgress(done = true) {
+  clearInterval(progressTimer);
+  setProgress(done, done ? 100 : 0, done ? "Complete" : "Processing");
+  if (done) setTimeout(() => setProgress(false, 0), 900);
+}
+
+function setMode(next) {
+  mode = next;
+  removeMode.classList.toggle("active", mode === "remove");
+  restoreMode.classList.toggle("active", mode === "restore");
+}
+
+function enableEditor(enabled) {
+  undoBtn.disabled = !enabled || undoStack.length === 0;
+  resetBtn.disabled = !enabled;
+  downloadBtn.disabled = !enabled;
+}
+
+function loadImageFromBlob(blob) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(blob);
+    const img = new Image();
+    img.onload = () => { URL.revokeObjectURL(url); resolve(img); };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("Could not load image")); };
+    img.src = url;
+  });
+}
+
+function snapshot() {
+  if (!alphaCanvas.width || !alphaCanvas.height) return;
+  undoStack.push(alphaCtx.getImageData(0, 0, alphaCanvas.width, alphaCanvas.height));
+  if (undoStack.length > 15) undoStack.shift();
+  enableEditor(true);
+}
+
+function render() {
+  if (!originalImage || !alphaCanvas.width) return;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.save();
+  ctx.drawImage(originalImage, 0, 0, canvas.width, canvas.height);
+  ctx.globalCompositeOperation = "destination-in";
+  ctx.drawImage(alphaCanvas, 0, 0, canvas.width, canvas.height);
+  ctx.restore();
+}
+
+function initCanvas(original, result) {
+  originalImage = original;
+  canvas.width = original.naturalWidth || original.width;
+  canvas.height = original.naturalHeight || original.height;
+  alphaCanvas.width = canvas.width;
+  alphaCanvas.height = canvas.height;
+  alphaCtx.clearRect(0, 0, alphaCanvas.width, alphaCanvas.height);
+  alphaCtx.drawImage(result, 0, 0, alphaCanvas.width, alphaCanvas.height);
+  originalAlpha = alphaCtx.getImageData(0, 0, alphaCanvas.width, alphaCanvas.height);
+  undoStack = [];
+  canvas.style.display = "block";
+  emptyState.style.display = "none";
+  imageInfo.textContent = `${canvas.width} x ${canvas.height}px`;
+  render();
+  enableEditor(true);
+}
+
+async function processFile(file) {
+  if (!file || !file.type.startsWith("image") && !/\.(heic|heif)$/i.test(file.name)) {
+    setToast("Please choose a valid image file.", true);
+    return;
+  }
+  originalFileName = file.name.replace(/\.[^.]+$/, "") + "-no-bg.png";
+  fileName.textContent = file.name;
+  setToast("Preparing image...");
+  startProgress();
+  try {
+    const form = new FormData();
+    form.append("image", file);
+    const [original, response] = await Promise.all([
+      loadImageFromBlob(file),
+      fetch("/remove-bg/process", { method: "POST", body: form, cache: "no-store" })
+    ]);
+    if (!response.ok) {
+      let message = "Could not remove background.";
+      try { message = (await response.json()).error || message; } catch (e) {}
+      throw new Error(message);
+    }
+    const resultBlob = await response.blob();
+    const result = await loadImageFromBlob(resultBlob);
+    initCanvas(original, result);
+    stopProgress(true);
+    const engine = response.headers.get("X-FavoriteWeb-RemoveBg-Engine") || "auto";
+    setToast(engine === "fallback" ? "Auto fallback used. Use the brush to fine-tune edges." : "Background removed. Fine-tune if needed.");
+  } catch (error) {
+    clearInterval(progressTimer);
+    setProgress(false, 0);
+    setToast(error.message || "Processing failed.", true);
+  }
+}
+
+function pointerPoint(event) {
+  const rect = canvas.getBoundingClientRect();
+  return {
+    x: (event.clientX - rect.left) * (canvas.width / rect.width),
+    y: (event.clientY - rect.top) * (canvas.height / rect.height)
+  };
+}
+
+function paintAt(point) {
+  const size = Number(brushSize.value);
+  alphaCtx.save();
+  alphaCtx.beginPath();
+  alphaCtx.arc(point.x, point.y, size / 2, 0, Math.PI * 2);
+  if (mode === "remove") {
+    alphaCtx.globalCompositeOperation = "destination-out";
+    alphaCtx.fillStyle = "rgba(0,0,0,1)";
+  } else {
+    alphaCtx.globalCompositeOperation = "source-over";
+    alphaCtx.fillStyle = "rgba(255,255,255,1)";
+  }
+  alphaCtx.fill();
+  alphaCtx.restore();
+  render();
+}
+
+canvas.addEventListener("pointerdown", (event) => {
+  if (!originalImage) return;
+  drawing = true;
+  canvas.setPointerCapture(event.pointerId);
+  snapshot();
+  paintAt(pointerPoint(event));
+});
+canvas.addEventListener("pointermove", (event) => {
+  if (!drawing) return;
+  paintAt(pointerPoint(event));
+});
+canvas.addEventListener("pointerup", () => { drawing = false; enableEditor(true); });
+canvas.addEventListener("pointercancel", () => { drawing = false; enableEditor(true); });
+
+fileInput.addEventListener("change", () => processFile(fileInput.files[0]));
+["dragenter", "dragover"].forEach((eventName) => dropZone.addEventListener(eventName, (event) => {
+  event.preventDefault();
+  dropZone.classList.add("drag-over");
+}));
+["dragleave", "drop"].forEach((eventName) => dropZone.addEventListener(eventName, (event) => {
+  event.preventDefault();
+  dropZone.classList.remove("drag-over");
+}));
+dropZone.addEventListener("drop", (event) => processFile(event.dataTransfer.files[0]));
+removeMode.addEventListener("click", () => setMode("remove"));
+restoreMode.addEventListener("click", () => setMode("restore"));
+brushSize.addEventListener("input", () => { brushSizeValue.textContent = brushSize.value; });
+undoBtn.addEventListener("click", () => {
+  const previous = undoStack.pop();
+  if (!previous) return;
+  alphaCtx.putImageData(previous, 0, 0);
+  render();
+  enableEditor(true);
+});
+resetBtn.addEventListener("click", () => {
+  if (!originalAlpha) return;
+  snapshot();
+  alphaCtx.putImageData(originalAlpha, 0, 0);
+  render();
+});
+downloadBtn.addEventListener("click", () => {
+  if (!originalImage) return;
+  const out = document.createElement("canvas");
+  out.width = canvas.width;
+  out.height = canvas.height;
+  const outCtx = out.getContext("2d");
+  outCtx.drawImage(originalImage, 0, 0, out.width, out.height);
+  outCtx.globalCompositeOperation = "destination-in";
+  outCtx.drawImage(alphaCanvas, 0, 0, out.width, out.height);
+  out.toBlob((blob) => {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = originalFileName;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }, "image/png");
+});
+</script>
+<script src="/shared.js"></script>
+</body>
+</html>

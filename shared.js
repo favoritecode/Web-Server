@@ -8,6 +8,7 @@ const NAV_ITEMS = [
   { href: "/ocr", label: "OCR" },
   { href: "/analytics", label: "Web Analyzer" },
   { href: "/file-converter", label: "File Converter" },
+  { href: "/remove-bg", label: "Remove BG" },
 ];
 
 function getCurrentPage() {
