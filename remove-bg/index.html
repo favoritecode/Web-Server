@@ -227,6 +227,23 @@ input[type="range"] { width: 100%; accent-color: #38bdf8; }
   font-size: 13px;
 }
 .editor-toolbar strong { color: #e5eefb; }
+.editor-toolbar > span {
+  min-width: 0;
+}
+#fileName {
+  display: -webkit-box;
+  max-width: min(100%, 720px);
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  line-height: 1.35;
+}
+#imageInfo {
+  flex: 0 0 auto;
+  max-width: 100%;
+}
 .canvas-shell {
   min-height: 520px;
   border: 1px solid rgba(148,163,184,.12);
