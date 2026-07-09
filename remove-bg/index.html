@@ -163,6 +163,47 @@ button:disabled { cursor: not-allowed; opacity: .46; transform: none; }
 input[type="range"] { width: 100%; accent-color: #38bdf8; }
 .size-value { color: #dbeafe; font-weight: 800; font-size: 13px; text-align: right; }
 .action-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
+.zoom-row {
+  display: grid;
+  grid-template-columns: 42px minmax(64px, 1fr) 42px 58px;
+  gap: 8px;
+  align-items: center;
+}
+.zoom-value {
+  min-height: 42px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(148,163,184,.14);
+  border-radius: 11px;
+  background: rgba(255,255,255,.04);
+  color: #dbeafe;
+  font-weight: 900;
+  font-size: 13px;
+}
+#canvasStage {
+  position: relative;
+  display: none;
+  width: max-content;
+  max-width: none;
+}
+#canvasStage.active { display: inline-block; }
+.brush-preview {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 42px;
+  height: 42px;
+  border: 2px solid rgba(248,250,252,.95);
+  border-radius: 999px;
+  box-shadow: 0 0 0 1px rgba(15,23,42,.85), 0 0 18px rgba(56,189,248,.32);
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+  display: none;
+  z-index: 4;
+}
+.brush-preview.remove { border-color: rgba(248,113,113,.96); box-shadow: 0 0 0 1px rgba(15,23,42,.85), 0 0 18px rgba(248,113,113,.34); }
+.brush-preview.restore { border-color: rgba(34,197,94,.96); box-shadow: 0 0 0 1px rgba(15,23,42,.85), 0 0 18px rgba(34,197,94,.34); }
 .download-btn {
   width: 100%;
   margin-top: 8px;
@@ -204,13 +245,13 @@ input[type="range"] { width: 100%; accent-color: #38bdf8; }
   background-position: 0 0, 0 11px, 11px -11px, -11px 0;
 }
 #editCanvas {
-  max-width: 100%;
+  max-width: none;
   height: auto;
   border-radius: 8px;
   box-shadow: 0 20px 70px rgba(0,0,0,.38);
   cursor: crosshair;
   background: transparent;
-  display: none;
+  display: block;
   touch-action: none;
 }
 .empty-state {
@@ -278,7 +319,18 @@ input[type="range"] { width: 100%; accent-color: #38bdf8; }
             <label>Brush size</label>
             <div class="range-row">
               <input id="brushSize" type="range" min="8" max="180" value="42">
-              <span class="size-value" id="brushSizeValue">42</span>
+              <span class="size-value" id="brushSizeValue">42px</span>
+            </div>
+          </div>
+
+
+          <div class="control-group">
+            <label>Zoom</label>
+            <div class="zoom-row">
+              <button type="button" id="zoomOutBtn" disabled>-</button>
+              <span class="zoom-value" id="zoomValue">100%</span>
+              <button type="button" id="zoomInBtn" disabled>+</button>
+              <button type="button" id="zoomFitBtn" disabled>Fit</button>
             </div>
           </div>
 
@@ -297,7 +349,10 @@ input[type="range"] { width: 100%; accent-color: #38bdf8; }
           <span id="imageInfo">Transparent PNG output</span>
         </div>
         <div class="canvas-shell" id="canvasShell">
-          <canvas id="editCanvas"></canvas>
+          <div id="canvasStage">
+            <canvas id="editCanvas"></canvas>
+            <div class="brush-preview" id="brushPreview"></div>
+          </div>
           <div class="empty-state" id="emptyState">Your editable transparent preview will appear here after upload.</div>
         </div>
       </section>
@@ -313,6 +368,9 @@ const progressPercent = document.getElementById("progressPercent");
 const progressLabel = document.getElementById("progressLabel");
 const toast = document.getElementById("toast");
 const canvas = document.getElementById("editCanvas");
+const canvasShell = document.getElementById("canvasShell");
+const canvasStage = document.getElementById("canvasStage");
+const brushPreview = document.getElementById("brushPreview");
 const ctx = canvas.getContext("2d", { willReadFrequently: true });
 const emptyState = document.getElementById("emptyState");
 const fileName = document.getElementById("fileName");
@@ -324,6 +382,10 @@ const brushSizeValue = document.getElementById("brushSizeValue");
 const undoBtn = document.getElementById("undoBtn");
 const resetBtn = document.getElementById("resetBtn");
 const downloadBtn = document.getElementById("downloadBtn");
+const zoomOutBtn = document.getElementById("zoomOutBtn");
+const zoomInBtn = document.getElementById("zoomInBtn");
+const zoomFitBtn = document.getElementById("zoomFitBtn");
+const zoomValue = document.getElementById("zoomValue");
 
 let originalImage = null;
 let originalFileName = "favoriteweb-remove-bg.png";
@@ -334,6 +396,10 @@ let mode = "remove";
 let drawing = false;
 let undoStack = [];
 let progressTimer = null;
+let zoomLevel = 1;
+let baseDisplayWidth = 0;
+const MIN_ZOOM = 0.35;
+const MAX_ZOOM = 6;
 
 function setToast(message, error = false) {
   toast.textContent = message || "";
@@ -367,14 +433,75 @@ function setMode(next) {
   mode = next;
   removeMode.classList.toggle("active", mode === "remove");
   restoreMode.classList.toggle("active", mode === "restore");
+  updateBrushPreviewSize();
 }
 
 function enableEditor(enabled) {
   undoBtn.disabled = !enabled || undoStack.length === 0;
   resetBtn.disabled = !enabled;
   downloadBtn.disabled = !enabled;
+  zoomOutBtn.disabled = !enabled || zoomLevel <= MIN_ZOOM;
+  zoomInBtn.disabled = !enabled || zoomLevel >= MAX_ZOOM;
+  zoomFitBtn.disabled = !enabled;
 }
 
+
+function updateZoomLabel() {
+  zoomValue.textContent = `${Math.round(zoomLevel * 100)}%`;
+}
+
+function canvasCssScale() {
+  const rect = canvas.getBoundingClientRect();
+  return canvas.width ? rect.width / canvas.width : 1;
+}
+
+function updateBrushPreviewSize() {
+  if (!brushPreview || !originalImage) return;
+  const displaySize = Math.max(8, Number(brushSize.value) * canvasCssScale());
+  brushPreview.style.width = `${displaySize}px`;
+  brushPreview.style.height = `${displaySize}px`;
+  brushPreview.classList.toggle("remove", mode === "remove");
+  brushPreview.classList.toggle("restore", mode === "restore");
+}
+
+function fitZoomToCanvas() {
+  if (!canvas.width) return;
+  const shellWidth = Math.max(260, canvasShell.clientWidth - 42);
+  baseDisplayWidth = Math.max(120, Math.min(canvas.width, shellWidth));
+  zoomLevel = 1;
+  applyZoom();
+}
+
+function applyZoom() {
+  if (!baseDisplayWidth) return;
+  const displayWidth = Math.max(80, Math.round(baseDisplayWidth * zoomLevel));
+  canvas.style.width = `${displayWidth}px`;
+  canvas.style.height = "auto";
+  canvasStage.style.width = `${displayWidth}px`;
+  updateZoomLabel();
+  updateBrushPreviewSize();
+  enableEditor(Boolean(originalImage));
+}
+
+function changeZoom(multiplier) {
+  zoomLevel = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, Number((zoomLevel * multiplier).toFixed(2))));
+  applyZoom();
+}
+
+function moveBrushPreview(event) {
+  if (!originalImage || !brushPreview) return;
+  const rect = canvas.getBoundingClientRect();
+  const x = event.clientX - rect.left;
+  const y = event.clientY - rect.top;
+  if (x < 0 || y < 0 || x > rect.width || y > rect.height) {
+    if (!drawing) brushPreview.style.display = "none";
+    return;
+  }
+  brushPreview.style.left = `${x}px`;
+  brushPreview.style.top = `${y}px`;
+  brushPreview.style.display = "block";
+  updateBrushPreviewSize();
+}
 function loadImageFromBlob(blob) {
   return new Promise((resolve, reject) => {
     const url = URL.createObjectURL(blob);
@@ -412,10 +539,11 @@ function initCanvas(original, result) {
   alphaCtx.drawImage(result, 0, 0, alphaCanvas.width, alphaCanvas.height);
   originalAlpha = alphaCtx.getImageData(0, 0, alphaCanvas.width, alphaCanvas.height);
   undoStack = [];
-  canvas.style.display = "block";
+  canvasStage.classList.add("active");
   emptyState.style.display = "none";
   imageInfo.textContent = `${canvas.width} x ${canvas.height}px`;
   render();
+  fitZoomToCanvas();
   enableEditor(true);
 }
 
@@ -480,17 +608,21 @@ function paintAt(point) {
 
 canvas.addEventListener("pointerdown", (event) => {
   if (!originalImage) return;
+  moveBrushPreview(event);
   drawing = true;
   canvas.setPointerCapture(event.pointerId);
   snapshot();
   paintAt(pointerPoint(event));
 });
 canvas.addEventListener("pointermove", (event) => {
+  moveBrushPreview(event);
   if (!drawing) return;
   paintAt(pointerPoint(event));
 });
 canvas.addEventListener("pointerup", () => { drawing = false; enableEditor(true); });
 canvas.addEventListener("pointercancel", () => { drawing = false; enableEditor(true); });
+canvas.addEventListener("pointerenter", moveBrushPreview);
+canvas.addEventListener("pointerleave", () => { if (!drawing) brushPreview.style.display = "none"; });
 
 fileInput.addEventListener("change", () => processFile(fileInput.files[0]));
 ["dragenter", "dragover"].forEach((eventName) => dropZone.addEventListener(eventName, (event) => {
@@ -504,7 +636,11 @@ fileInput.addEventListener("change", () => processFile(fileInput.files[0]));
 dropZone.addEventListener("drop", (event) => processFile(event.dataTransfer.files[0]));
 removeMode.addEventListener("click", () => setMode("remove"));
 restoreMode.addEventListener("click", () => setMode("restore"));
-brushSize.addEventListener("input", () => { brushSizeValue.textContent = brushSize.value; });
+brushSize.addEventListener("input", () => { brushSizeValue.textContent = `${brushSize.value}px`; updateBrushPreviewSize(); });
+zoomOutBtn.addEventListener("click", () => changeZoom(0.8));
+zoomInBtn.addEventListener("click", () => changeZoom(1.25));
+zoomFitBtn.addEventListener("click", fitZoomToCanvas);
+window.addEventListener("resize", () => { if (originalImage && zoomLevel === 1) fitZoomToCanvas(); });
 undoBtn.addEventListener("click", () => {
   const previous = undoStack.pop();
   if (!previous) return;
