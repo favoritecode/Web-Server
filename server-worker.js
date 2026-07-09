@@ -21,6 +21,10 @@ const OFFLINE_BACKEND_PLAYLIST = "/offline/index.m3u8";
 const STICKY_BACKEND_COOKIE = "fw_backend";
 const STICKY_BACKEND_MAX_AGE = 7 * 24 * 60 * 60;
 const RENDER_STICKY_MAX_AGE = 5 * 60;
+const STATIC_CACHE_MAX_AGE = 5 * 60;
+const HLS_SEGMENT_CACHE_MAX_AGE = 20;
+const FAILED_BACKEND_COOLDOWN_MS = 20 * 1000;
+const backendCooldownUntil = new Map();
 const AUTH_PATHS = ["/login", "/logout", "/login/callback"];
 const LONG_RUNNING_PATHS = [
   "/api/analytics/",
@@ -111,6 +115,14 @@ function isAdminUserUpdatePath(pathname) {
   return pathname === "/api/admin/users/update";
 }
 
+function isStaticAssetPath(pathname) {
+  return pathname.startsWith("/assets/") || pathname === "/shared.css" || pathname === "/shared.js" || pathname === "/favicon.ico";
+}
+
+function isHlsSegmentPath(pathname) {
+  return /^\/live[0-9A-Za-z_-]*\/.*\.(ts|m4s|aac|mp4)$/i.test(pathname) || /^\/offline\/.*\.(ts|m4s|aac|mp4)$/i.test(pathname);
+}
+
 function parseCookies(header) {
   const cookies = {};
   (header || "").split(";").forEach((part) => {
@@ -155,6 +167,60 @@ function stickyBackendCookie(target) {
   return `${STICKY_BACKEND_COOKIE}=${encodeURIComponent(host)}; Path=/; Max-Age=${maxAge}; Secure; HttpOnly; SameSite=Lax`;
 }
 
+function isBackendCoolingDown(target) {
+  const host = targetHost(target);
+  const until = backendCooldownUntil.get(host) || 0;
+  if (until <= Date.now()) {
+    backendCooldownUntil.delete(host);
+    return false;
+  }
+  return true;
+}
+
+function markBackendUnhealthy(target) {
+  backendCooldownUntil.set(targetHost(target), Date.now() + FAILED_BACKEND_COOLDOWN_MS);
+}
+
+function markBackendHealthy(target) {
+  backendCooldownUntil.delete(targetHost(target));
+}
+
+function availableTargets(request, targets) {
+  const ordered = orderedTargets(request, targets);
+  const available = ordered.filter((target) => !isBackendCoolingDown(target));
+  return available.length ? available : ordered;
+}
+
+async function cacheFirst(request, ctx, maxAge, fetcher) {
+  if (request.method !== "GET" && request.method !== "HEAD") {
+    return fetcher();
+  }
+
+  const cache = caches.default;
+  const cacheKey = new Request(request.url, { method: "GET" });
+  const cached = await cache.match(cacheKey);
+  if (cached) {
+    const headers = new Headers(cached.headers);
+    headers.set("X-FavoriteWeb-Cache", "hit");
+    return new Response(cached.body, { status: cached.status, statusText: cached.statusText, headers });
+  }
+
+  const response = await fetcher();
+  if (!response || !response.ok) {
+    return response;
+  }
+
+  const headers = new Headers(response.headers);
+  headers.delete("Set-Cookie");
+  headers.delete("set-cookie");
+  headers.set("Cache-Control", `public, max-age=${maxAge}`);
+  const cacheable = new Response(response.body, { status: response.status, statusText: response.statusText, headers });
+  if (ctx && ctx.waitUntil) {
+    ctx.waitUntil(cache.put(cacheKey, cacheable.clone()));
+  }
+  cacheable.headers.set("X-FavoriteWeb-Cache", "miss");
+  return cacheable;
+}
 async function mirrorAdminUserUpdate(request, servedTargetHost) {
   const incomingUrl = new URL(request.url);
 
@@ -310,6 +376,10 @@ async function hasJsonUserEndpoint(target, publicHost) {
 }
 
 async function isHealthyBackend(target, publicHost) {
+  if (isBackendCoolingDown(target)) {
+    return false;
+  }
+
   try {
     const response = await fetch(`${target}/__server_health`, {
       method: "GET",
@@ -322,13 +392,20 @@ async function isHealthyBackend(target, publicHost) {
     });
 
     if (response.status === 204 && response.headers.get("X-FavoriteWeb-Backend") === "ok") {
+      markBackendHealthy(target);
       return true;
     }
   } catch (e) {}
 
   // Backward-compatible check for a backend that has not received the new
   // health route yet. Cloudflare error pages will not pass this JSON test.
-  return hasJsonUserEndpoint(target, publicHost);
+  if (await hasJsonUserEndpoint(target, publicHost)) {
+    markBackendHealthy(target);
+    return true;
+  }
+
+  markBackendUnhealthy(target);
+  return false;
 }
 
 async function pickHealthyBackend(publicHost) {
@@ -392,7 +469,7 @@ async function proxyTo(request, target) {
   rewritten.headers.set("X-FavoriteWeb-Worker", "server-failover");
   rewritten.headers.set("X-FavoriteWeb-Target", targetUrl.host);
 
-  if (!isHlsMediaPath(incomingUrl.pathname)) {
+  if (!isHlsMediaPath(incomingUrl.pathname) && !isStaticAssetPath(incomingUrl.pathname)) {
     rewritten.headers.append("Set-Cookie", stickyBackendCookie(target));
   }
 
@@ -469,7 +546,7 @@ async function fetchHlsPlaylist(request, target, backendPath, publicPrefix) {
 async function proxyLivePlaylist(request, streamName) {
   const incomingUrl = new URL(request.url);
 
-  for (const target of STREAM_BACKENDS) {
+  for (const target of availableTargets(request, STREAM_BACKENDS)) {
     try {
       const live = await fetchHlsPlaylist(
         request,
@@ -478,20 +555,24 @@ async function proxyLivePlaylist(request, streamName) {
         livePublicPrefix(streamName)
       );
       if (live) {
+        markBackendHealthy(target);
         return live;
       }
     } catch (e) {
-      // Try the next backend, then fall back to the offline slate.
+      markBackendUnhealthy(target);
     }
   }
 
-  for (const target of OFFLINE_BACKENDS) {
+  for (const target of availableTargets(request, OFFLINE_BACKENDS)) {
     try {
       const offline = await fetchHlsPlaylist(request, target, OFFLINE_BACKEND_PLAYLIST, "/offline");
       if (offline) {
+        markBackendHealthy(target);
         return offline;
       }
-    } catch (e) {}
+    } catch (e) {
+      markBackendUnhealthy(target);
+    }
   }
 
   return workerOfflinePlaylist(incomingUrl.origin);
@@ -501,7 +582,7 @@ async function proxyWithFailover(request) {
   let lastResponse = null;
   const url = new URL(request.url);
   const baseTargets = isHlsMediaPath(url.pathname) ? STREAM_BACKENDS : (isPcToolPath(url.pathname) ? PC_TOOL_BACKENDS : BACKENDS);
-  const targets = orderedTargets(request, baseTargets);
+  const targets = availableTargets(request, baseTargets);
 
   for (const target of targets) {
     try {
@@ -518,6 +599,7 @@ async function proxyWithFailover(request) {
       }
 
       if (response.status < 500) {
+        markBackendHealthy(target);
         return response;
       }
 
@@ -525,8 +607,11 @@ async function proxyWithFailover(request) {
         return response;
       }
 
+      markBackendUnhealthy(target);
       lastResponse = response;
-    } catch (e) {}
+    } catch (e) {
+      markBackendUnhealthy(target);
+    }
   }
 
   if (isPcToolPath(url.pathname)) {
@@ -542,7 +627,7 @@ async function proxyWithFailover(request) {
 async function proxyAuthWithFailover(request) {
   const url = new URL(request.url);
 
-  for (const target of orderedTargets(request, BACKENDS)) {
+  for (const target of availableTargets(request, BACKENDS)) {
     if (!(await isHealthyBackend(target, url.host))) {
       continue;
     }
@@ -551,6 +636,7 @@ async function proxyAuthWithFailover(request) {
       const response = await proxyTo(request.clone(), target);
 
       if (response.status >= 500) {
+        markBackendUnhealthy(target);
         continue;
       }
 
@@ -558,8 +644,11 @@ async function proxyAuthWithFailover(request) {
         continue;
       }
 
+      markBackendHealthy(target);
       return response;
-    } catch (e) {}
+    } catch (e) {
+      markBackendUnhealthy(target);
+    }
   }
 
   return new Response("Login server unavailable", { status: 503 });
@@ -572,6 +661,14 @@ export default {
 
     if (url.pathname === WORKER_OFFLINE_SEGMENT_PATH) {
       return workerOfflineSegment();
+    }
+
+    if (isStaticAssetPath(url.pathname)) {
+      return cacheFirst(request, ctx, STATIC_CACHE_MAX_AGE, () => proxyWithFailover(request));
+    }
+
+    if (isHlsSegmentPath(url.pathname)) {
+      return cacheFirst(request, ctx, HLS_SEGMENT_CACHE_MAX_AGE, () => proxyWithFailover(request));
     }
 
     if (streamName) {
