@@ -3,6 +3,7 @@ from pathlib import Path
 from PIL import Image, ImageFilter, ImageStat
 import io
 import os
+from concurrent.futures import ThreadPoolExecutor, TimeoutError
 
 try:
     import pillow_heif
@@ -12,7 +13,9 @@ except Exception:
 
 BASE_DIR = Path(__file__).resolve().parent
 MAX_UPLOAD_BYTES = 32 * 1024 * 1024
+REMBG_TIMEOUT_SECONDS = 70
 _REMBG_SESSION = None
+_REMBG_EXECUTOR = ThreadPoolExecutor(max_workers=1)
 
 
 def _load_image(data):
@@ -36,6 +39,14 @@ def _rembg_remove(data):
         _REMBG_SESSION = new_session("u2net")
     result = remove(data, session=_REMBG_SESSION)
     return _save_png(_load_image(result))
+
+
+def _auto_remove_with_timeout(data):
+    future = _REMBG_EXECUTOR.submit(_rembg_remove, data)
+    try:
+        return future.result(timeout=REMBG_TIMEOUT_SECONDS), "rembg-u2net"
+    except TimeoutError:
+        return _fallback_remove(data), "fallback-timeout"
 
 
 def _corner_background_color(image):
@@ -99,8 +110,7 @@ def init_routes(app):
 
         try:
             try:
-                output = _rembg_remove(data)
-                engine = "rembg-u2net"
+                output, engine = _auto_remove_with_timeout(data)
             except Exception:
                 output = _fallback_remove(data)
                 engine = "fallback"

@@ -436,7 +436,8 @@ function startProgress() {
   setProgress(true, value, "Uploading");
   progressTimer = setInterval(() => {
     value = Math.min(92, value + Math.max(1, (96 - value) * 0.08));
-    setProgress(true, value, value > 55 ? "Removing background" : "Processing");
+    const label = value > 88 ? "Finalizing on PC server" : (value > 55 ? "Removing background" : "Processing");
+    setProgress(true, value, label);
   }, 260);
 }
 
@@ -590,7 +591,7 @@ async function processFile(file) {
     initCanvas(original, result);
     stopProgress(true);
     const engine = response.headers.get("X-FavoriteWeb-RemoveBg-Engine") || "auto";
-    setToast(engine === "fallback" ? "Auto fallback used. Use the brush to fine-tune edges." : "Background removed. Fine-tune if needed.");
+    setToast(engine === "fallback-timeout" ? "PC model is still warming up. Fallback result is ready; try again in a minute for cleaner auto cut." : (engine === "fallback" ? "Auto fallback used. Use the brush to fine-tune edges." : "Background removed. Fine-tune if needed."));
   } catch (error) {
     clearInterval(progressTimer);
     setProgress(false, 0);
