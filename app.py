@@ -1516,6 +1516,12 @@ if remove_bg_backend_path.exists():
     remove_bg_module = importlib.util.module_from_spec(remove_bg_spec)
     remove_bg_spec.loader.exec_module(remove_bg_module)
     remove_bg_module.init_routes(app)
+article_generate_backend_path = Path(BASE_DIR) / "Article Generate" / "routes.py"
+if article_generate_backend_path.exists():
+    article_generate_spec = importlib.util.spec_from_file_location("favoriteweb_article_generate", article_generate_backend_path)
+    article_generate_module = importlib.util.module_from_spec(article_generate_spec)
+    article_generate_spec.loader.exec_module(article_generate_module)
+    article_generate_module.init_routes(app)
 from shofikul.routes import init_routes as shofikul_routes
 shofikul_routes(app)
 

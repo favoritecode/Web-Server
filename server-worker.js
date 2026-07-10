@@ -31,6 +31,7 @@ const LONG_RUNNING_PATHS = [
   "/ocr/extract",
   "/file-converter/convert",
   "/remove-bg/process",
+  "/article-generate/generate",
   "/api/drive/files",
   "/drive/open/",
   "/drive/download/",
@@ -112,8 +113,12 @@ function isRemoveBgPath(pathname) {
   return pathname === "/remove-bg/process";
 }
 
+function isArticleGeneratePath(pathname) {
+  return pathname === "/article-generate/generate";
+}
+
 function isPcToolPath(pathname) {
-  return isOcrPath(pathname) || pathname === "/file-converter/convert" || isRemoveBgPath(pathname) || isDriveFilePath(pathname);
+  return isOcrPath(pathname) || pathname === "/file-converter/convert" || isRemoveBgPath(pathname) || isArticleGeneratePath(pathname) || isDriveFilePath(pathname);
 }
 
 function isAdminUserUpdatePath(pathname) {
@@ -620,7 +625,7 @@ async function proxyWithFailover(request) {
   }
 
   if (isPcToolPath(url.pathname)) {
-    return new Response(JSON.stringify({ error: isOcrPath(url.pathname) ? "OCR PC servers are unavailable" : (isDriveFilePath(url.pathname) ? "Drive PC servers are unavailable" : (isRemoveBgPath(url.pathname) ? "Remove BG PC servers are unavailable" : "File converter PC servers are unavailable")) }), {
+    return new Response(JSON.stringify({ error: isOcrPath(url.pathname) ? "OCR PC servers are unavailable" : (isDriveFilePath(url.pathname) ? "Drive PC servers are unavailable" : (isRemoveBgPath(url.pathname) ? "Remove BG PC servers are unavailable" : (isArticleGeneratePath(url.pathname) ? "Article Generate PC servers are unavailable" : "File converter PC servers are unavailable"))) }), {
       status: 503,
       headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*", "X-FavoriteWeb-Worker": "server-failover", "X-FavoriteWeb-Target": "none" }
     });

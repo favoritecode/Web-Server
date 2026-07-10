@@ -9,6 +9,7 @@ const NAV_ITEMS = [
   { href: "/analytics", label: "Web Analyzer" },
   { href: "/file-converter", label: "File Converter" },
   { href: "/remove-bg", label: "Remove BG" },
+  { href: "/article-generate", label: "Article Generate" },
 ];
 
 function getCurrentPage() {
