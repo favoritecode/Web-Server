@@ -318,7 +318,7 @@
       <div class="hero-panel">
         <p class="eyebrow">AI Content Toolkit</p>
         <h1>Article Generate</h1>
-        <p>Type only a title and generate a ready-to-copy post, SEO title, meta description, tags, and hashtags for social media or website publishing.</p>
+        <p>Type a title and generate a complete education-focused article, word count, SEO metadata, tags, and hashtags.</p>
       </div>
       <aside class="status-panel">
         <span class="status-pill" id="engineStatus">Ready</span>
@@ -335,7 +335,7 @@
         </label>
         <button class="generate-btn" id="generateBtn" type="button">Generate Post</button>
       </div>
-      <div class="hint-line" id="hintLine">Enter a title to generate article text, tags and hashtags.</div>
+      <div class="hint-line" id="hintLine">Enter a title to generate a full article with validation and SEO metadata.</div>
       <div class="progress" id="progressBar"><span></span></div>
     </section>
 
@@ -453,14 +453,14 @@ async function generatePost() {
     }
     const result = data.result || {};
     setText(postOutput, result.post || "");
-    setText(seoOutput, `SEO Title: ${result.seo_title || result.title || title}\n\nMeta Description: ${result.meta_description || ""}`);
+    setText(seoOutput, `Word Count: ${result.wordCount || 0}\n\nMeta Title: ${result.metaTitle || result.seo_title || result.title || title}\n\nMeta Description: ${result.metaDescription || result.meta_description || ""}\n\nSlug: ${result.slug || ""}`);
     setText(captionOutput, result.caption || "");
     renderChips(tagsOutput, result.tags || []);
     renderChips(hashtagsOutput, result.hashtags || []);
     tagsText.textContent = (result.tags || []).join(", ");
     hashtagsText.textContent = (result.hashtags || []).join(" ");
     engineStatus.textContent = result.engine === "openai" ? "OpenAI" : "Local Mode";
-    hintLine.textContent = result.engine === "openai" ? "Generated with OpenAI." : "Generated with local fallback. Add OPENAI_API_KEY on the server for ChatGPT quality.";
+    hintLine.textContent = result.engine === "openai" ? "Generated with OpenAI and passed validation." : "Generated with education fallback and passed validation. Add OPENAI_API_KEY for AI rewriting.";
   } catch (error) {
     hintLine.textContent = error.message || "Generation failed.";
     engineStatus.textContent = "Error";

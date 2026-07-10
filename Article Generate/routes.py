@@ -3,11 +3,97 @@ from pathlib import Path
 import json
 import os
 import re
+import unicodedata
 import urllib.error
 import urllib.request
 
 BASE_DIR = Path(__file__).resolve().parent
+PROMPT_PATH = BASE_DIR / "prompts" / "bangla-education-article.txt"
 MAX_TITLE_LENGTH = 180
+MAX_CONTEXT_LENGTH = 2200
+DEFAULT_CATEGORY = "শিক্ষা"
+DEFAULT_TARGET_AUDIENCE = "শিক্ষার্থী ও অভিভাবক"
+DEFAULT_TONE = "সহজ, প্রাঞ্জল, বিশ্বাসযোগ্য ও হালকা প্রচারণামূলক"
+DEFAULT_WORD_COUNT = "500 থেকে 700 বাংলা শব্দ"
+DEFAULT_PRODUCT_CONTEXT = (
+    "ইজি সিরিজ / Technique Easy Education বইয়ের বিভিন্ন অধ্যায়, প্রশ্ন ও সমাধানের পাশে QR কোড থাকে। "
+    "QR কোড মোবাইল দিয়ে scan করলে সংশ্লিষ্ট ভিডিও শিক্ষক পাওয়া যায়। ভিডিওতে কঠিন বিষয় ও সমাধান ধাপে ধাপে বুঝিয়ে দেওয়া হয়। "
+    "শিক্ষার্থী pause, replay এবং বারবার দেখে নিজের সুবিধামতো শিখতে পারে। এটি স্কুলের শিক্ষককে প্রতিস্থাপন করে না; "
+    "বাড়িতে পুনরাবৃত্তি, অনুশীলন এবং স্বশিক্ষায় সহায়তা করে।"
+)
+BANNED_PHRASES = [
+    "পরিষ্কার ধারণা থাকলে সিদ্ধান্ত নেওয়া",
+    "পরিষ্কার ধারণা থাকলে সিদ্ধান্ত নেয়া",
+    "পরিকল্পনা করা এবং বাস্তবে ভালো ফল",
+    "অপ্রয়োজনীয় বিভ্রান্তি কমে যায়",
+    "নিজের প্রয়োজন, সময়, budget",
+    "trusted source",
+    "better engagement",
+    "long-term result",
+    "সহজ comparison",
+    "ছোট checklist",
+]
+UNSAFE_CLAIMS = ["নিশ্চিত A+", "১০০% ফল", "100% ফল", "সব সমস্যা শেষ", "কোচিং সম্পূর্ণ অপ্রয়োজনীয়", "কোচিং সম্পূর্ণ অপ্রয়োজনীয়"]
+ALLOWED_ENGLISH_WORDS = {"qr", "scan", "pause", "replay", "video", "technique", "easy", "education", "h1", "seo", "url"}
+
+DEFAULT_SYSTEM_PROMPT = """তুমি বাংলাদেশের শিক্ষার্থী ও অভিভাবকদের জন্য স্বাভাবিক, তথ্যবহুল এবং সহজ বাংলা শিক্ষাবিষয়ক article writer।
+
+তুমি generic SEO filler writer নও।
+
+প্রথমে title-এর মূল বক্তব্য বোঝো। তারপর category, target audience এবং product context অনুযায়ী article লেখো।
+
+Product context:
+ইজি সিরিজ বইয়ের বিভিন্ন অধ্যায়, প্রশ্ন ও সমাধানের পাশে QR কোড থাকে। QR কোড scan করলে সংশ্লিষ্ট ভিডিও শিক্ষক পাওয়া যায়। ভিডিওতে কঠিন বিষয় ও সমাধান ধাপে ধাপে বুঝিয়ে দেওয়া হয়। শিক্ষার্থী pause, replay এবং বারবার দেখে নিজের সুবিধামতো শিখতে পারে। এটি স্কুলের শিক্ষককে প্রতিস্থাপন করে না; বাড়িতে পুনরাবৃত্তি, অনুশীলন এবং স্বশিক্ষায় সহায়তা করে।
+
+কঠোর নিয়ম:
+1. Title-এর প্রকৃত অর্থের বাইরে যাবে না।
+2. Title-এর শব্দ আলাদা করে কমা দিয়ে keyword list বানাবে না।
+3. Title একই article-এ অপ্রয়োজনে বারবার repeat করবে না।
+4. প্রতিটি paragraph-এ নতুন ও নির্দিষ্ট তথ্য থাকবে।
+5. generic paragraph লিখবে না।
+6. অপ্রয়োজনীয় English শব্দ ব্যবহার করবে না।
+7. “budget”, “checklist”, “comparison”, “trusted source”, “better engagement”, “long-term result” ব্যবহার করবে না।
+8. “পরিষ্কার ধারণা থাকলে সিদ্ধান্ত নেওয়া”, “পরিকল্পনা করা এবং বাস্তবে ভালো ফল”, “অপ্রয়োজনীয় বিভ্রান্তি কমে যায়” ধরনের filler sentence ব্যবহার করবে না।
+9. একই বক্তব্য ভিন্ন ভাষায় বারবার লিখবে না।
+10. ভিত্তিহীন দাবি করবে না।
+11. “নিশ্চিত A+”, “১০০% ফল”, “সব সমস্যা শেষ”, “কোচিং সম্পূর্ণ অপ্রয়োজনীয়” লিখবে না।
+12. প্রয়োজন হলে “কমতে পারে”, “সহায়ক হতে পারে”, “সহজ হয়” ধরনের বিশ্বাসযোগ্য ভাষা ব্যবহার করবে।
+13. ভাষা হবে বাংলাদেশের স্বাভাবিক বাংলা।
+14. article-এর মধ্যে বাংলা ও English অস্বাভাবিকভাবে মিশাবে না।
+15. পাঠক article পড়ে product কীভাবে কাজ করে, কার জন্য এবং কী সুবিধা দেয় তা বুঝতে পারবে।
+
+Article structure:
+- Title হুবহু H1 heading
+- আকর্ষণীয় ও বিষয়ভিত্তিক ভূমিকা
+- শিক্ষার্থীর বাস্তব সমস্যা
+- QR কোড ও ভিডিও শিক্ষক কীভাবে কাজ করে
+- কঠিন বিষয় বোঝার সুবিধা
+- শিক্ষার্থী ও অভিভাবকের উপকার
+- ব্যবহার করার সহজ পদ্ধতি
+- বাস্তবসম্মত সতর্কতা বা সীমাবদ্ধতা
+- সংক্ষিপ্ত উপসংহার
+
+Article length:
+500–700 বাংলা শব্দ, যদি আলাদা wordCount দেওয়া না হয়।
+
+Output rules:
+- শুধু final article return করবে
+- কোনো analysis, note, explanation বা meta-commentary থাকবে না
+- Markdown heading ব্যবহার করা যাবে
+- অপ্রয়োজনীয় bullet list ব্যবহার করবে না
+
+Bad example pattern, কখনো লিখবে না:
+“বিষয়টি সম্পর্কে পরিষ্কার ধারণা থাকলে সিদ্ধান্ত নেওয়া, পরিকল্পনা করা এবং বাস্তবে ভালো ফল পাওয়া সহজ হয়।”
+“নিজের প্রয়োজন, সময়, budget এবং প্রত্যাশিত ফলাফল মিলিয়ে trusted source অনুসরণ করলে better engagement পাওয়া যায়।”
+
+Good example pattern:
+Title: “বইয়ের ভেতর শিক্ষক থাকলে, লেখাপড়ায় আর প্রতিবন্ধকতা কিসের?”
+Style: “একটি অঙ্কের উত্তর বইয়ে দেওয়া থাকলেও মাঝের ধাপটি অনেক শিক্ষার্থীর কাছে পরিষ্কার হয় না। বইয়ের পাশে থাকা QR কোড scan করলে সংশ্লিষ্ট ভিডিও শিক্ষক ধাপে ধাপে সমাধানটি বুঝিয়ে দিতে পারেন। শিক্ষার্থী প্রয়োজন হলে ভিডিও pause করে একই অংশ বারবার দেখতে পারে।”
+Title: “QR কোড স্ক্যান করলেই শিক্ষক হাজির”
+Style: “পাতার পাশে থাকা QR কোড scan করলে একই অধ্যায়ের ভিডিও ব্যাখ্যা খুলে যায়। তখন শিক্ষার্থী বইয়ের প্রশ্ন দেখে সঙ্গে সঙ্গে শিক্ষক কীভাবে সমাধান করছেন তা অনুসরণ করতে পারে।”
+Title: “বইয়ের সাথে ২৪ ঘণ্টা শিক্ষক ফ্রি”
+Style: “রাতে বা ছুটির দিনে কোনো প্রশ্নে আটকে গেলে ভিডিও শিক্ষক সহায়ক হতে পারে। শিক্ষার্থী নিজের সময় অনুযায়ী ভিডিও দেখে আবার বইয়ের অনুশীলনে ফিরতে পারে।”
+"""
 
 
 def _secret_value(name, default=""):
@@ -21,181 +107,214 @@ def _secret_value(name, default=""):
     return getattr(local_secrets, name, default)
 
 
+def _read_text(path, default=""):
+    try:
+        return Path(path).read_text(encoding="utf-8")
+    except OSError:
+        return default
+
+
+def system_prompt():
+    return _read_text(PROMPT_PATH, DEFAULT_SYSTEM_PROMPT).strip() or DEFAULT_SYSTEM_PROMPT
+
+
+def _clean_text(value, max_len=500):
+    value = unicodedata.normalize("NFC", str(value or ""))
+    return re.sub(r"\s+", " ", value).strip()[:max_len]
+
+
 def _clean_title(title):
-    return re.sub(r"\s+", " ", (title or "").strip())[:MAX_TITLE_LENGTH]
+    return _clean_text(title, MAX_TITLE_LENGTH)
 
 
 def _has_bengali_script(text):
     return bool(re.search(r"[\u0980-\u09ff]", text or ""))
 
 
-BANGLISH_WORDS = {
-    "ami": "\u0986\u09ae\u09bf", "amra": "\u0986\u09ae\u09b0\u09be", "apni": "\u0986\u09aa\u09a8\u09bf", "apnar": "\u0986\u09aa\u09a8\u09be\u09b0", "amar": "\u0986\u09ae\u09be\u09b0",
-    "ei": "\u098f\u0987", "eita": "\u098f\u099f\u09be", "eta": "\u098f\u099f\u09be", "oita": "\u0993\u099f\u09be", "seita": "\u09b8\u09c7\u099f\u09be",
-    "valo": "\u09ad\u09be\u09b2\u09cb", "bhalo": "\u09ad\u09be\u09b2\u09cb", "kharap": "\u0996\u09be\u09b0\u09be\u09aa", "notun": "\u09a8\u09a4\u09c1\u09a8", "puraton": "\u09aa\u09c1\u09b0\u09cb\u09a8\u09cb",
-    "ki": "\u0995\u09bf", "keno": "\u0995\u09c7\u09a8", "kivabe": "\u0995\u09bf\u09ad\u09be\u09ac\u09c7", "kibhabe": "\u0995\u09bf\u09ad\u09be\u09ac\u09c7", "kokhon": "\u0995\u0996\u09a8",
-    "kothay": "\u0995\u09cb\u09a5\u09be\u09af\u09bc", "konti": "\u0995\u09cb\u09a8\u099f\u09bf", "kon": "\u0995\u09cb\u09a8", "kara": "\u0995\u09be\u09b0\u09be",
-    "jonno": "\u099c\u09a8\u09cd\u09af", "jonyo": "\u099c\u09a8\u09cd\u09af", "niye": "\u09a8\u09bf\u09af\u09bc\u09c7", "theke": "\u09a5\u09c7\u0995\u09c7", "sathe": "\u09b8\u09be\u09a5\u09c7",
-    "moddhe": "\u09ae\u09a7\u09cd\u09af\u09c7", "vitore": "\u09ad\u09bf\u09a4\u09b0\u09c7", "baire": "\u09ac\u09be\u0987\u09b0\u09c7", "upore": "\u0989\u09aa\u09b0\u09c7", "niche": "\u09a8\u09bf\u099a\u09c7",
-    "dorkar": "\u09a6\u09b0\u0995\u09be\u09b0", "lagbe": "\u09b2\u09be\u0997\u09ac\u09c7", "hobe": "\u09b9\u09ac\u09c7", "hoy": "\u09b9\u09af\u09bc", "hocche": "\u09b9\u099a\u09cd\u099b\u09c7",
-    "korbo": "\u0995\u09b0\u09ac\u09cb", "kora": "\u0995\u09b0\u09be", "korte": "\u0995\u09b0\u09a4\u09c7", "koro": "\u0995\u09b0\u09cb", "korun": "\u0995\u09b0\u09c1\u09a8",
-    "dekhun": "\u09a6\u09c7\u0996\u09c1\u09a8", "dekha": "\u09a6\u09c7\u0996\u09be", "bujhte": "\u09ac\u09c1\u099d\u09a4\u09c7", "bujhun": "\u09ac\u09c1\u099d\u09c1\u09a8", "pete": "\u09aa\u09c7\u09a4\u09c7",
-    "pawa": "\u09aa\u09be\u0993\u09af\u09bc\u09be", "paowa": "\u09aa\u09be\u0993\u09af\u09bc\u09be", "shuru": "\u09b6\u09c1\u09b0\u09c1", "seshe": "\u09b6\u09c7\u09b7\u09c7", "age": "\u0986\u0997\u09c7",
-    "por": "\u09aa\u09b0", "somoy": "\u09b8\u09ae\u09af\u09bc", "somossa": "\u09b8\u09ae\u09b8\u09cd\u09af\u09be",
-    "kore": "\u0995\u09b0\u09c7", "korle": "\u0995\u09b0\u09b2\u09c7", "korar": "\u0995\u09b0\u09be\u09b0", "hole": "\u09b9\u09b2\u09c7", "thakle": "\u09a5\u09be\u0995\u09b2\u09c7",
-    "ache": "\u0986\u099b\u09c7", "nai": "\u09a8\u09be\u0987", "nei": "\u09a8\u09c7\u0987", "sobai": "\u09b8\u09ac\u09be\u0987", "sob": "\u09b8\u09ac", "aro": "\u0986\u09b0\u0993", "onek": "\u0985\u09a8\u09c7\u0995",
-}
-
-BANGLISH_HINTS = set(BANGLISH_WORDS) | {"jabe", "jete", "jai", "kom", "beshi", "shob", "ta", "tar"}
+def _word_count(text):
+    return len(re.findall(r"[\w\u0980-\u09ff]+", text or ""))
 
 
-def _looks_bangla(title):
-    if _has_bengali_script(title):
-        return True
-    words = re.findall(r"[A-Za-z]+", (title or "").lower())
-    if not words:
-        return False
-    matches = sum(1 for word in words if word in BANGLISH_HINTS)
-    return matches >= 1 and matches / max(len(words), 1) >= 0.18
+def _sentence_list(text):
+    return [s.strip() for s in re.split(r"(?<=[।.!?])\s+", text or "") if s.strip()]
 
 
-def _banglish_to_bengali_title(title):
-    def replace_word(match):
-        word = match.group(0)
-        mapped = BANGLISH_WORDS.get(word.lower())
-        return mapped if mapped else word
-    return re.sub(r"[A-Za-z]+", replace_word, title or "")
+def _normalize_for_count(text):
+    text = re.sub(r"[#*_`>\-]+", " ", text or "")
+    text = re.sub(r"[^\w\u0980-\u09ff\s]", " ", text.lower())
+    return re.sub(r"\s+", " ", text).strip()
 
 
-def _keyword_tokens(title):
-    words = re.findall(r"[\w\u0980-\u09ff]+", title.lower())
-    stop = {
-        "and", "or", "the", "for", "with", "from", "this", "that", "your", "you",
-        "how", "why", "what", "best", "new", "a", "an", "to", "of", "in", "on",
-        "r", "er", "ar", "ki", "kivabe", "jonno", "theke", "eta", "eita", "sob",
-    }
+def _title_repetition_count(title, article):
+    title_norm = _normalize_for_count(title)
+    article_norm = _normalize_for_count(article)
+    return article_norm.count(title_norm) if title_norm else 0
+
+
+def _meaningful_title_words(title):
+    stop = {"এই", "ওই", "আর", "কিসের", "থাকলে", "হলে", "জন্য", "সাথে", "the", "and", "for", "with", "of"}
+    words = re.findall(r"[\w\u0980-\u09ff]+", _normalize_for_count(title))
+    return [w for w in words if len(w) > 2 and w not in stop]
+
+
+def _english_words(text):
+    return [w.lower() for w in re.findall(r"\b[A-Za-z][A-Za-z-]*\b", text or "")]
+
+
+def _contains_any(text, variants):
+    text = (text or "").lower()
+    return any(v.lower() in text for v in variants)
+
+
+def _education_title(title):
+    return _contains_any(title, ["বই", "শিক্ষক", "লেখাপড়া", "পড়াশোনা", "পড়াশোনা", "সমাধান", "অঙ্ক", "QR", "কোড", "ইজি", "শিক্ষা", "কোচিং", "স্বশিক্ষা", "অভিভাবক"])
+
+
+def validate_article(article, title, min_words=450):
+    article = article or ""
+    reasons = []
+    banned = [phrase for phrase in BANNED_PHRASES if phrase.lower() in article.lower()]
+    unsafe = [phrase for phrase in UNSAFE_CLAIMS if phrase.lower() in article.lower()]
+    reasons.extend([f"Banned phrase found: {phrase}" for phrase in banned])
+    reasons.extend([f"Unsafe claim found: {phrase}" for phrase in unsafe])
+
+    wc = _word_count(article)
+    if wc < min_words:
+        reasons.append(f"Article is too short: {wc} words")
+
+    title_count = _title_repetition_count(title, article)
+    if title_count > 3:
+        reasons.append(f"Title repeated too many times: {title_count}")
+
+    sentences = _sentence_list(article)
     seen = set()
-    tokens = []
-    for word in words:
-        if len(word) < 3 or word in stop or word in seen:
+    duplicates = set()
+    for sentence in sentences:
+        key = _normalize_for_count(sentence)
+        if len(key) < 24:
             continue
-        seen.add(word)
-        tokens.append(word)
-    return tokens[:12]
+        if key in seen:
+            duplicates.add(sentence)
+        seen.add(key)
+    if duplicates:
+        reasons.append("Duplicate sentence found")
 
+    english = [w for w in _english_words(article) if w not in ALLOWED_ENGLISH_WORDS]
+    if _has_bengali_script(article) and english:
+        ratio = len(english) / max(wc, 1)
+        if len(english) > 28 or ratio > 0.075:
+            reasons.append("Too many unnecessary English words in Bangla article")
 
-def _make_hashtags(tokens, bangla=False):
-    tags = []
-    for token in tokens[:12]:
-        clean = re.sub(r"[^\w\u0980-\u09ff]", "", token)
-        if not clean:
+    norm = _normalize_for_count(article)
+    stuffing_exempt = {"ভিডিও", "শিক্ষক", "শিক্ষার্থী", "বই", "QR", "কোড", "সমাধান", "ইজি", "সিরিজ"}
+    for word in _meaningful_title_words(title):
+        if word in stuffing_exempt:
             continue
-        tag = "#" + clean
-        if tag not in tags:
-            tags.append(tag)
-    defaults = ("#FavoriteWeb", "#\u09ac\u09be\u0982\u09b2\u09be_\u09aa\u09cb\u09b8\u09cd\u099f", "#UsefulTips", "#SmartGuide", "#TrendingNow") if bangla else ("#FavoriteWeb", "#UsefulTips", "#SmartGuide", "#TrendingNow", "#DailyUpdate")
-    for tag in defaults:
-        if len(tags) >= 12:
+        count = len(re.findall(rf"\b{re.escape(word)}\b", norm))
+        if count > 16:
+            reasons.append(f"Possible keyword stuffing: {word}")
             break
-        if tag not in tags:
-            tags.append(tag)
-    return tags[:12]
+
+    concept_groups = {
+        "qr": ["qr", "কিউআর", "কোড", "স্ক্যান", "scan"],
+        "video_teacher": ["ভিডিও শিক্ষক", "ভিডিও", "শিক্ষক"],
+        "hard_solution": ["কঠিন", "সমাধান", "ধাপে ধাপে", "ধাপ", "অঙ্ক", "প্রশ্ন"],
+        "replay": ["বারবার", "replay", "pause", "থামিয়ে", "আবার দেখা", "পুনরায়"],
+        "student": ["শিক্ষার্থী", "ছাত্র", "ছাত্রী"],
+        "parent": ["অভিভাবক", "মা-বাবা", "বাসার"],
+        "cost": ["খরচ", "কোচিং", "প্রাইভেট", "নির্ভরতা", "কমতে পারে"],
+    }
+    if _education_title(title):
+        matched = [name for name, variants in concept_groups.items() if _contains_any(article, variants)]
+        if len(matched) < 5:
+            reasons.append("Missing required education/product concepts")
+        if not _contains_any(article, ["ইজি সিরিজ", "Technique Easy Education", "QR", "কোড", "ভিডিও শিক্ষক"]):
+            reasons.append("Product context is not clear")
+
+    generic_markers = ["যেকোনো বিষয়ে", "সঠিক পরিকল্পনা", "স্মার্ট পদ্ধতি", "ভালো ফলাফল অর্জন"]
+    if sum(1 for marker in generic_markers if marker in article) >= 2:
+        reasons.append("Article still sounds generic")
+
+    return {
+        "isValid": not reasons,
+        "reasons": reasons,
+        "wordCount": wc,
+        "titleRepetitionCount": title_count,
+        "bannedPhrasesFound": banned,
+    }
 
 
-def _fallback_result(title):
-    tokens = _keyword_tokens(title)
-    display_topic = title.rstrip(".?!")
-    is_bangla = _looks_bangla(display_topic)
+def _slugify(title):
+    mapping = {
+        "বই": "boi", "বইয়ের": "boiyer", "বইয়ের": "boiyer", "ভেতর": "vitor", "শিক্ষক": "shikkhok", "থাকলে": "thakle", "আর": "ar",
+        "লেখাপড়া": "lekhapora", "লেখাপড়ায়": "lekhaporay", "লেখাপড়ায়": "lekhaporay", "পড়াশোনা": "porashona", "পড়াশোনা": "porashona",
+        "প্রতিবন্ধকতা": "protibondhokota", "কিসের": "kiser", "QR": "qr", "কোড": "code", "স্ক্যান": "scan", "সমাধান": "somadhan",
+        "ইজি": "easy", "সিরিজ": "series", "অভিভাবক": "ovivabok", "কোচিং": "coaching", "খরচ": "khoroch", "অঙ্ক": "onk",
+    }
+    words = re.findall(r"[A-Za-z0-9]+|[\u0980-\u09ff]+", title or "")
+    slug_words = []
+    for word in words:
+        slug_words.append(mapping.get(word, word.lower() if re.match(r"^[A-Za-z0-9]+$", word) else "post"))
+    slug = "-".join(slug_words)
+    slug = re.sub(r"-+", "-", slug).strip("-")
+    return slug[:90] or "article"
 
-    if is_bangla:
-        display_topic = _banglish_to_bengali_title(display_topic)
-        tags = [_banglish_to_bengali_title(token) for token in (tokens[:12] or [display_topic])]
-        hashtags = _make_hashtags(tags, bangla=True)
-        focus = ", ".join(tags[:5]) if tags else display_topic
-        benefit_line = f"{display_topic} \u09a8\u09bf\u09af\u09bc\u09c7 \u09aa\u09b0\u09bf\u09b7\u09cd\u0995\u09be\u09b0 \u09a7\u09be\u09b0\u09a3\u09be \u09a5\u09be\u0995\u09b2\u09c7 \u09b8\u09bf\u09a6\u09cd\u09a7\u09be\u09a8\u09cd\u09a4 \u09a8\u09c7\u0993\u09af\u09bc\u09be, \u09aa\u09b0\u09bf\u0995\u09b2\u09cd\u09aa\u09a8\u09be \u0995\u09b0\u09be \u098f\u09ac\u0982 \u09ac\u09be\u09b8\u09cd\u09a4\u09ac\u09c7 \u09ad\u09be\u09b2\u09cb \u09ab\u09b2 \u09aa\u09be\u0993\u09af\u09bc\u09be \u0985\u09a8\u09c7\u0995 \u09b8\u09b9\u099c \u09b9\u09af\u09bc\u0964"
-        value_line = f"\u098f\u0987 \u09aa\u09cb\u09b8\u09cd\u099f\u09c7 {focus} \u09b8\u09ae\u09cd\u09aa\u09b0\u09cd\u0995\u09bf\u09a4 \u0997\u09c1\u09b0\u09c1\u09a4\u09cd\u09ac\u09aa\u09c2\u09b0\u09cd\u09a3 \u09ac\u09bf\u09b7\u09af\u09bc\u0997\u09c1\u09b2\u09cb \u09b8\u09b9\u099c \u09ad\u09be\u09b7\u09be\u09af\u09bc \u09b8\u09be\u099c\u09be\u09a8\u09cb \u09b9\u09af\u09bc\u09c7\u099b\u09c7, \u09af\u09be\u09a4\u09c7 \u09aa\u09be\u09a0\u0995 \u09a6\u09cd\u09b0\u09c1\u09a4 \u09ac\u09c1\u099d\u09a4\u09c7 \u09aa\u09be\u09b0\u09c7\u09a8 \u0995\u09cb\u09a8 \u09a6\u09bf\u0995\u0997\u09c1\u09b2\u09cb\u09a4\u09c7 \u09ac\u09c7\u09b6\u09bf \u09ae\u09a8\u09cb\u09af\u09cb\u0997 \u09a6\u09c7\u0993\u09af\u09bc\u09be \u09a6\u09b0\u0995\u09be\u09b0\u0964"
-        post = (
-            f"{display_topic}\n\n"
-            f"{benefit_line} {value_line}\n\n"
-            f"\u09aa\u09cd\u09b0\u09a5\u09ae\u09c7\u0987 \u09ac\u09b2\u09be \u09af\u09be\u09af\u09bc, {display_topic} \u09ac\u09bf\u09b7\u09af\u09bc\u099f\u09bf \u09a0\u09bf\u0995\u09ad\u09be\u09ac\u09c7 \u09ac\u09c1\u099d\u09a4\u09c7 \u09aa\u09be\u09b0\u09b2\u09c7 \u0985\u09aa\u09cd\u09b0\u09af\u09bc\u09cb\u099c\u09a8\u09c0\u09af\u09bc \u09ac\u09bf\u09ad\u09cd\u09b0\u09be\u09a8\u09cd\u09a4\u09bf \u0995\u09ae\u09c7 \u09af\u09be\u09af\u09bc\u0964 "
-            f"\u0985\u09a8\u09c7\u0995 \u09b8\u09ae\u09af\u09bc \u0986\u09ae\u09b0\u09be \u09b6\u09c1\u09a7\u09c1 \u09b6\u09bf\u09b0\u09cb\u09a8\u09be\u09ae \u09a6\u09c7\u0996\u09c7 \u09b8\u09bf\u09a6\u09cd\u09a7\u09be\u09a8\u09cd\u09a4 \u09a8\u09c7\u0987, \u0995\u09bf\u09a8\u09cd\u09a4\u09c1 \u09ad\u09be\u09b2\u09cb \u09ab\u09b2 \u09aa\u09c7\u09a4\u09c7 \u09b9\u09b2\u09c7 \u09ac\u09bf\u09b7\u09af\u09bc\u099f\u09bf\u09b0 \u09ae\u09c2\u09b2 \u0995\u09be\u09b0\u09a3, \u09ac\u09cd\u09af\u09ac\u09b9\u09be\u09b0\u09bf\u0995 \u09a6\u09bf\u0995 \u098f\u09ac\u0982 \u09b8\u09be\u09a7\u09be\u09b0\u09a3 \u09ad\u09c1\u09b2\u0997\u09c1\u09b2\u09cb \u099c\u09be\u09a8\u09be \u099c\u09b0\u09c1\u09b0\u09bf\u0964\n\n"
-            f"\u09ac\u09be\u09b8\u09cd\u09a4\u09ac\u09c7 {display_topic} \u09a8\u09bf\u09af\u09bc\u09c7 \u0995\u09be\u099c \u0995\u09b0\u09be\u09b0 \u09b8\u09ae\u09af\u09bc \u09a8\u09bf\u099c\u09c7\u09b0 \u09aa\u09cd\u09b0\u09af\u09bc\u09cb\u099c\u09a8, \u09b8\u09ae\u09af\u09bc, budget \u098f\u09ac\u0982 \u09aa\u09cd\u09b0\u09a4\u09cd\u09af\u09be\u09b6\u09bf\u09a4 \u09ab\u09b2\u09be\u09ab\u09b2 \u09ae\u09bf\u09b2\u09bf\u09af\u09bc\u09c7 \u09a6\u09c7\u0996\u09be \u0989\u099a\u09bf\u09a4\u0964 "
-            f"\u09af\u09c7\u0996\u09be\u09a8\u09c7 \u09a6\u09b0\u0995\u09be\u09b0 \u09b8\u09c7\u0996\u09be\u09a8\u09c7 \u0989\u09a6\u09be\u09b9\u09b0\u09a3, \u099b\u09cb\u099f checklist, \u0985\u09a5\u09ac\u09be \u09b8\u09b9\u099c comparison \u09ac\u09cd\u09af\u09ac\u09b9\u09be\u09b0 \u0995\u09b0\u09b2\u09c7 \u09ac\u09bf\u09b7\u09af\u09bc\u099f\u09bf \u0986\u09b0\u0993 \u09b8\u09b9\u099c\u09c7 \u09ac\u09cb\u099d\u09be \u09af\u09be\u09af\u09bc\u0964\n\n"
-            f"\u09ad\u09be\u09b2\u09cb \u09ab\u09b2 \u09aa\u09c7\u09a4\u09c7 trusted source \u0985\u09a8\u09c1\u09b8\u09b0\u09a3 \u0995\u09b0\u09be, \u0985\u09aa\u09cd\u09b0\u09af\u09bc\u09cb\u099c\u09a8\u09c0\u09af\u09bc shortcut \u098f\u09a1\u09bc\u09be\u09a8\u09cb \u098f\u09ac\u0982 step-by-step \u0989\u09a8\u09cd\u09a8\u09a4\u09bf \u09a6\u09c7\u0996\u09be \u09b8\u09ac\u099a\u09c7\u09af\u09bc\u09c7 \u0995\u09be\u09b0\u09cd\u09af\u0995\u09b0 \u09aa\u09a6\u09cd\u09a7\u09a4\u09bf\u0964 "
-            f"\u098f\u09ad\u09be\u09ac\u09c7 \u098f\u0997\u09cb\u09b2\u09c7 better engagement, \u09ad\u09be\u09b2\u09cb \u09ac\u09bf\u09b6\u09cd\u09ac\u09be\u09b8\u09af\u09cb\u0997\u09cd\u09af\u09a4\u09be \u098f\u09ac\u0982 long-term result \u09aa\u09be\u0993\u09af\u09bc\u09be \u09b8\u09ae\u09cd\u09ad\u09ac\u0964"
-        )
-        seo_title = display_topic[:65]
-        meta_description = f"{display_topic} \u09a8\u09bf\u09af\u09bc\u09c7 \u09b8\u09b9\u099c \u09ac\u09be\u0982\u09b2\u09be guide, practical tips, common mistakes \u098f\u09ac\u0982 smart recommendations\u0964"
-        caption = f"{display_topic}\n\n{benefit_line} \u09b8\u09b9\u099c\u09ad\u09be\u09ac\u09c7 \u09ac\u09bf\u09b7\u09af\u09bc\u099f\u09bf \u09ac\u09c1\u099d\u09a4\u09c7 \u098f\u0987 \u09aa\u09cb\u09b8\u09cd\u099f\u099f\u09bf follow \u0995\u09b0\u09c1\u09a8\u0964\n\n" + " ".join(hashtags[:10])
-        return {"engine": "local-fallback", "title": display_topic, "post": post, "tags": tags, "hashtags": hashtags, "seo_title": seo_title, "meta_description": meta_description, "caption": caption}
 
-    topic_words = tokens[:5]
-    focus = ", ".join(topic_words) if topic_words else display_topic
-    hashtags = _make_hashtags(tokens, bangla=False)
-    tags = tokens[:12] or [display_topic]
-    benefit_line = f"A clear understanding of {display_topic} makes planning, decision-making, and real-world results much easier."
-    value_line = f"This post explains the most useful points around {focus} in a simple, practical way."
-    post = (
-        f"{display_topic}\n\n"
-        f"{benefit_line} {value_line}\n\n"
-        f"The first thing to remember is that {display_topic} works best when the reader gets clear, useful information without unnecessary complexity. "
-        f"Before taking action, it helps to understand the main benefits, common mistakes, and practical steps that can improve the final result.\n\n"
-        f"In real use, {display_topic} should be matched with your goal, time, budget, and expected outcome. "
-        f"Short paragraphs, direct explanations, examples, and simple comparisons can make the content more helpful and easier to follow.\n\n"
-        f"For better results, follow trusted sources, avoid shortcuts that create confusion, and improve step by step. "
-        f"Track what is working, what needs to change, and which part gives the most value to the audience.\n\n"
-        f"If you want to work with {display_topic}, start with a clear goal, make a small plan, and keep improving it regularly. "
-        f"That approach can build better engagement, stronger trust, and more useful long-term results."
+def _metadata(title, article):
+    clean_title = re.sub(r"^#\s*", "", title).strip()
+    meta_title = clean_title[:68]
+    first_para = " ".join([p.strip("# \n\r\t") for p in article.split("\n\n") if p.strip() and not p.lstrip().startswith("#")][:2])
+    meta_description = re.sub(r"\s+", " ", first_para).strip()
+    if len(meta_description) > 158:
+        meta_description = meta_description[:157].rsplit(" ", 1)[0] + "।"
+    return {"metaTitle": meta_title, "metaDescription": meta_description, "slug": _slugify(clean_title)}
+
+
+def _settings_from_payload(data):
+    title = _clean_title(data.get("title"))
+    category = _clean_text(data.get("category") or DEFAULT_CATEGORY, 80)
+    target = _clean_text(data.get("targetAudience") or DEFAULT_TARGET_AUDIENCE, 120)
+    tone = _clean_text(data.get("tone") or DEFAULT_TONE, 160)
+    word_count = _clean_text(data.get("wordCount") or DEFAULT_WORD_COUNT, 60)
+    context = _clean_text(data.get("productContext") or DEFAULT_PRODUCT_CONTEXT, MAX_CONTEXT_LENGTH)
+    return {"title": title, "category": category, "targetAudience": target, "tone": tone, "wordCount": word_count, "productContext": context}
+
+
+def _build_user_prompt(settings, validation_reasons=None):
+    prompt = (
+        f"Title: {settings['title']}\n"
+        f"Category: {settings['category']}\n"
+        f"Target audience: {settings['targetAudience']}\n"
+        f"Tone: {settings['tone']}\n"
+        f"Desired length: {settings['wordCount']}\n\n"
+        f"Product context:\n{settings['productContext']}\n\n"
+        "এই title নিয়ে একটি সম্পূর্ণ article লেখো। Title-এর প্রকৃত অর্থ বুঝে লিখবে। "
+        "Generic SEO filler, keyword stuffing, repeated title এবং অপ্রয়োজনীয় English শব্দ ব্যবহার করবে না।"
     )
-    seo_title = display_topic[:65]
-    meta_description = f"A practical guide to {display_topic} with useful tips, common mistakes, and smart recommendations."
-    caption = f"{display_topic}\n\n{benefit_line} Follow this post for a clear and practical overview.\n\n" + " ".join(hashtags[:10])
-    return {"engine": "local-fallback", "title": display_topic, "post": post, "tags": tags, "hashtags": hashtags, "seo_title": seo_title, "meta_description": meta_description, "caption": caption}
+    if validation_reasons:
+        prompt += "\n\nThe previous draft failed validation for these reasons: " + "; ".join(validation_reasons)
+        prompt += " Rewrite the full article. Remove all generic filler, repetition and keyword stuffing. Make every paragraph directly relevant to the title and product context."
+    return prompt
 
 
-def _extract_json(text):
-    if not text:
-        return None
-    text = text.strip()
-    if text.startswith("```"):
-        text = re.sub(r"^```(?:json)?\s*", "", text)
-        text = re.sub(r"\s*```$", "", text)
-    try:
-        return json.loads(text)
-    except Exception:
-        pass
-    match = re.search(r"\{.*\}", text, flags=re.S)
-    if not match:
-        return None
-    try:
-        return json.loads(match.group(0))
-    except Exception:
-        return None
+def _extract_output_text(data):
+    output_text = data.get("output_text") or ""
+    if output_text:
+        return output_text.strip()
+    parts = []
+    for item in data.get("output", []):
+        for content in item.get("content", []):
+            if content.get("type") in {"output_text", "text"}:
+                parts.append(content.get("text") or "")
+    return "\n".join(parts).strip()
 
 
-def _openai_result(title):
+def _call_openai(prompt):
     api_key = _secret_value("OPENAI_API_KEY")
     if not api_key:
         return None
-
     model = _secret_value("OPENAI_TEXT_MODEL", "gpt-5.6")
-    instructions = (
-        "You are FavoriteWeb's professional social and blog post generator. "
-        "Return only valid JSON with keys: title, post, tags, hashtags, seo_title, "
-        "meta_description, caption. Write naturally in the same language as the user's title. "
-        "Make the post useful, non-spammy, and ready to copy. If the title is Bangla or Banglish, "
-        "write Bangla words in Bengali script, but keep English brand names and technical terms in English letters. "
-        "If the title is pure English, write in English. hashtags must include #."
-    )
-    payload = {
-        "model": model,
-        "reasoning": {"effort": "low"},
-        "instructions": instructions,
-        "input": (
-            f"Generate one high-quality post package from this title: {title}\n"
-            "Post length: 180-320 words. Tags: 8-12. Hashtags: 10-15."
-        ),
-    }
+    payload = {"model": model, "reasoning": {"effort": "low"}, "instructions": system_prompt(), "input": prompt}
     req = urllib.request.Request(
         "https://api.openai.com/v1/responses",
         data=json.dumps(payload).encode("utf-8"),
@@ -203,31 +322,64 @@ def _openai_result(title):
         method="POST",
     )
     try:
-        with urllib.request.urlopen(req, timeout=55) as resp:
-            data = json.loads(resp.read().decode("utf-8", errors="replace"))
+        with urllib.request.urlopen(req, timeout=65) as resp:
+            return _extract_output_text(json.loads(resp.read().decode("utf-8", errors="replace")))
     except (urllib.error.URLError, TimeoutError, ValueError):
         return None
 
-    output_text = data.get("output_text") or ""
-    if not output_text:
-        parts = []
-        for item in data.get("output", []):
-            for content in item.get("content", []):
-                if content.get("type") in {"output_text", "text"}:
-                    parts.append(content.get("text") or "")
-        output_text = "\n".join(parts)
-    parsed = _extract_json(output_text)
-    if not isinstance(parsed, dict):
-        return None
-    result = _fallback_result(title)
-    for key in ("title", "post", "seo_title", "meta_description", "caption"):
-        if parsed.get(key):
-            result[key] = str(parsed[key]).strip()
-    for key in ("tags", "hashtags"):
-        if isinstance(parsed.get(key), list):
-            result[key] = [str(item).strip() for item in parsed[key] if str(item).strip()][:15]
-    result["engine"] = "openai"
-    return result
+
+def _education_fallback_article(settings):
+    title = settings["title"].strip()
+    return (
+        f"# {title}\n\n"
+        "অনেক শিক্ষার্থী বইয়ে উত্তর দেখেও সমাধানের মাঝের ধাপ বুঝতে পারে না। আবার রাতে, ছুটির দিনে বা পরীক্ষার প্রস্তুতির সময় কোনো প্রশ্নে আটকে গেলে সঙ্গে সঙ্গে শিক্ষককে পাওয়া সবসময় সম্ভব হয় না। এই জায়গাতেই ইজি সিরিজ / Technique Easy Education বইয়ের QR কোডভিত্তিক ভিডিও শিক্ষক শেখার একটি সহায়ক পথ তৈরি করে। বইয়ের পাতার সঙ্গে ভিডিও ব্যাখ্যা যুক্ত থাকায় শিক্ষার্থী শুধু উত্তর দেখে থেমে থাকে না; বরং কীভাবে উত্তরটি তৈরি হলো সেটিও বুঝে নেওয়ার সুযোগ পায়।\n\n"
+        "ইজি সিরিজের অধ্যায়, প্রশ্ন বা সমাধানের পাশে থাকা QR কোড মোবাইল দিয়ে scan করলে সংশ্লিষ্ট ভিডিও শিক্ষক খুলে যায়। ভিডিওতে শিক্ষক ধাপে ধাপে কঠিন বিষয়, অঙ্কের সমাধান বা প্রশ্নের ব্যাখ্যা বুঝিয়ে দেন। ফলে বইয়ের লেখা, উদাহরণ এবং ভিডিও ব্যাখ্যা একই সঙ্গে মিলিয়ে পড়া যায়। যে শিক্ষার্থী ক্লাসে একবার শুনে পুরো বিষয় ধরতে পারে না, সে বাড়িতে নিজের গতিতে আবার বিষয়টি দেখে নিতে পারে।\n\n"
+        "ভিডিওর বড় সুবিধা হলো শেখার নিয়ন্ত্রণ শিক্ষার্থীর হাতে থাকে। কোনো ধাপ দ্রুত চলে গেলে pause করা যায়, না বোঝা অংশ replay করে বারবার দেখা যায়, আবার বুঝে গেলে পরের অংশে যাওয়া যায়। এতে মুখস্থের চাপ কিছুটা কমে এবং সমাধানের পদ্ধতি বোঝার অভ্যাস তৈরি হয়। বিশেষ করে গণিত, বিজ্ঞান বা ব্যাকরণের মতো বিষয়ে মাঝের ধাপ বোঝা খুব জরুরি; ভিডিও শিক্ষক সেই জায়গায় সহায়ক হতে পারে।\n\n"
+        "অভিভাবকদের জন্যও এই ব্যবস্থা ব্যবহারিক। অনেক মা-বাবা সন্তানের সব বিষয় নিজে পড়াতে পারেন না, আবার প্রতিটি অধ্যায়ের জন্য আলাদা সহায়তা জোগাড় করাও সহজ নয়। বইয়ের সঙ্গে ভিডিও ব্যাখ্যা থাকলে শিক্ষার্থী অন্তত আটকে যাওয়া অংশ নিজে দেখে নিতে পারে। এতে কোচিং বা প্রাইভেটের ওপর নির্ভরতা কিছু ক্ষেত্রে কমতে পারে, যদিও প্রয়োজন অনুযায়ী শিক্ষক ও অভিভাবকের দিকনির্দেশনা এখনো গুরুত্বপূর্ণ।\n\n"
+        "ব্যবহার পদ্ধতিটিও সহজ। শিক্ষার্থী প্রথমে বইয়ের অধ্যায় বা প্রশ্ন পড়বে, কোথায় সমস্যা হচ্ছে তা চিহ্নিত করবে, তারপর পাশে থাকা QR কোড scan করে ভিডিও দেখবে। ভিডিও দেখার পর আবার বইয়ে ফিরে একই প্রশ্ন নিজে সমাধান করার চেষ্টা করবে। শুধু ভিডিও দেখে গেলে শেখা স্থায়ী হয় না; নিয়মিত অনুশীলন, ভুল সংশোধন এবং বিদ্যালয়ের শিক্ষকের নির্দেশনা মানাও জরুরি।\n\n"
+        "শেখার সময় একটি ছোট নিয়ম অনুসরণ করলে সুবিধা বেশি পাওয়া যায়। প্রথমে প্রশ্নটি নিজে করার চেষ্টা করা, তারপর আটকে গেলে ভিডিও দেখা, এরপর ভিডিও বন্ধ রেখে আবার খাতায় সমাধান করা—এই অভ্যাস শিক্ষার্থীকে সক্রিয়ভাবে শেখায়। এতে সে শুধু শিক্ষক কী বললেন তা শুনে যায় না; নিজের ভুল কোথায় হচ্ছে সেটিও ধরতে পারে। একই অধ্যায়ের কয়েকটি প্রশ্ন বারবার অনুশীলন করলে দুর্বল অংশ ধীরে ধীরে পরিষ্কার হয়।\n\n"
+        "অভিভাবক চাইলে সন্তানের পড়ার অগ্রগতি দেখতেও এই পদ্ধতি ব্যবহার করতে পারেন। কোন অধ্যায়ের কোন প্রশ্নে সন্তান বারবার ভিডিও দেখছে, কোন অংশে বেশি সময় লাগছে, সেটি বুঝলে বাড়িতে সহায়তা করা সহজ হয়। এতে পড়াশোনা নিয়ে অযথা চাপ না দিয়ে নির্দিষ্ট দুর্বল জায়গায় মনোযোগ দেওয়া যায়।\n\n"
+        "তবে মোবাইল ব্যবহার যেন শুধু ভিডিও দেখার মধ্যেই সীমাবদ্ধ না থাকে, সেটিও খেয়াল রাখা দরকার। ভিডিও দেখার পর বইয়ের অনুশীলন, খাতায় সমাধান লেখা এবং ভুলগুলো চিহ্নিত করা শেখাকে বেশি কার্যকর করে। নিয়মিত এভাবে পড়লে শিক্ষার্থী ধীরে ধীরে নিজের ওপর আস্থা পায়।\n\n"
+        "তাই ‘বইয়ের ভেতর শিক্ষক’ কথাটির অর্থ কোনো জাদুকরী নিশ্চয়তা নয়। এর অর্থ হলো বইয়ের সঙ্গে এমন একটি ভিডিও সহায়তা যুক্ত থাকা, যা প্রয়োজনের সময় শিক্ষার্থীকে বিষয়টি বুঝতে সাহায্য করতে পারে। সঠিকভাবে ব্যবহার করলে ইজি সিরিজের QR কোড ও ভিডিও শিক্ষক পড়াশোনাকে আরও সহজ, নিয়মিত এবং আত্মবিশ্বাসী করে তুলতে পারে।"
+    )
+
+
+def _generate_article(settings):
+    validation = None
+    if _secret_value("OPENAI_API_KEY"):
+        for attempt in range(3):
+            draft = _call_openai(_build_user_prompt(settings, validation["reasons"] if validation else None))
+            if not draft:
+                break
+            validation = validate_article(draft, settings["title"])
+            if validation["isValid"]:
+                return draft, "openai", validation
+    draft = _education_fallback_article(settings)
+    validation = validate_article(draft, settings["title"])
+    return draft, "local-education", validation
+
+
+def generate_article_package(settings):
+    article, engine, validation = _generate_article(settings)
+    if not validation["isValid"]:
+        return {"error": "ভালো মানের article তৈরি করা যায়নি। Title বা context একটু নির্দিষ্ট করে আবার চেষ্টা করুন।", "validation": validation}
+    meta = _metadata(settings["title"], article)
+    return {
+        "engine": engine,
+        "title": settings["title"],
+        "post": article,
+        "article": article,
+        "wordCount": validation["wordCount"],
+        "validation": validation,
+        "metaTitle": meta["metaTitle"],
+        "metaDescription": meta["metaDescription"],
+        "slug": meta["slug"],
+        "seo_title": meta["metaTitle"],
+        "meta_description": meta["metaDescription"],
+        "tags": ["ইজি সিরিজ", "QR কোড", "ভিডিও শিক্ষক", "শিক্ষার্থী", "অভিভাবক", "স্বশিক্ষা"],
+        "hashtags": ["#ইজি_সিরিজ", "#QREducation", "#ভিডিও_শিক্ষক", "#বাংলা_শিক্ষা", "#TechniqueEasyEducation"],
+        "caption": meta["metaDescription"],
+    }
 
 
 def init_routes(app):
@@ -240,8 +392,10 @@ def init_routes(app):
         if "user" not in session:
             return jsonify({"error": "login required"}), 401
         data = request.get_json(silent=True) or {}
-        title = _clean_title(data.get("title"))
-        if len(title) < 3:
-            return jsonify({"error": "title required"}), 400
-        result = _openai_result(title) or _fallback_result(title)
-        return jsonify({"status": "ok", "result": result})
+        settings = _settings_from_payload(data)
+        if len(settings["title"]) < 3:
+            return jsonify({"error": "Title লিখে Generate করুন।"}), 400
+        package = generate_article_package(settings)
+        if package.get("error"):
+            return jsonify(package), 422
+        return jsonify({"status": "ok", "result": package})
