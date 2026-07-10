@@ -6,11 +6,14 @@ import re
 import unicodedata
 import urllib.error
 import urllib.request
+import urllib.parse
 
 BASE_DIR = Path(__file__).resolve().parent
 PROMPT_PATH = BASE_DIR / "prompts" / "bangla-education-article.txt"
 MAX_TITLE_LENGTH = 180
 MAX_CONTEXT_LENGTH = 2200
+DEFAULT_CLOUDFLARE_AI_MODEL = "@cf/zai/glm-4.7-flash"
+CLOUDFLARE_AI_ENDPOINT = "https://api.cloudflare.com/client/v4/accounts/{account_id}/ai/run/{model}"
 DEFAULT_CATEGORY = "শিক্ষা"
 DEFAULT_TARGET_AUDIENCE = "শিক্ষার্থী ও অভিভাবক"
 DEFAULT_TONE = "সহজ, প্রাঞ্জল, বিশ্বাসযোগ্য ও হালকা প্রচারণামূলক"
@@ -346,13 +349,77 @@ def _call_chat_completions(api_url, api_key, model, prompt, extra_headers=None):
         return None
 
 
-def _call_deepseek(prompt):
-    api_key = _secret_value("DEEPSEEK_API_KEY") or _secret_value("DEEPSEEK_WORKER_API_KEY")
-    if not api_key:
+def _extract_cloudflare_text(data):
+    if not isinstance(data, dict):
+        return ""
+    result = data.get("result")
+    if isinstance(result, str):
+        return result.strip()
+    if isinstance(result, dict):
+        for key in ("response", "text", "output_text", "answer"):
+            value = result.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+        chat_text = _extract_chat_text(result)
+        if chat_text:
+            return chat_text
+        output_text = _extract_output_text(result)
+        if output_text:
+            return output_text
+    for key in ("response", "text", "output_text", "answer"):
+        value = data.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return _extract_chat_text(data) or _extract_output_text(data)
+
+
+def _run_cloudflare_payload(api_url, api_token, payload):
+    req = urllib.request.Request(
+        api_url,
+        data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+        headers={
+            "Authorization": f"Bearer {api_token}",
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=75) as resp:
+            return _extract_cloudflare_text(json.loads(resp.read().decode("utf-8", errors="replace")))
+    except (urllib.error.URLError, TimeoutError, ValueError):
         return None
-    api_url = _secret_value("DEEPSEEK_API_URL") or _secret_value("DEEPSEEK_WORKER_URL") or "https://api.deepseek.com/chat/completions"
-    model = _secret_value("DEEPSEEK_MODEL", "deepseek-chat")
-    return _call_chat_completions(api_url, api_key, model, prompt)
+
+
+def _call_cloudflare_ai(prompt):
+    account_id = (_secret_value("CLOUDFLARE_ACCOUNT_ID") or _secret_value("CF_ACCOUNT_ID") or "").strip()
+    api_token = (_secret_value("CLOUDFLARE_API_TOKEN") or _secret_value("CF_API_TOKEN") or "").strip()
+    model = (_secret_value("CLOUDFLARE_AI_MODEL", DEFAULT_CLOUDFLARE_AI_MODEL) or DEFAULT_CLOUDFLARE_AI_MODEL).strip()
+    if not account_id or not api_token or not model:
+        return None
+    api_url = CLOUDFLARE_AI_ENDPOINT.format(
+        account_id=urllib.parse.quote(account_id, safe=""),
+        model=model,
+    )
+    messages_payload = {
+        "messages": [
+            {"role": "system", "content": system_prompt()},
+            {"role": "user", "content": prompt},
+        ],
+        "temperature": 0.55,
+        "top_p": 0.9,
+        "max_tokens": 2600,
+    }
+    text = _run_cloudflare_payload(api_url, api_token, messages_payload)
+    if text:
+        return text
+    fallback_payload = {
+        "prompt": f"{system_prompt()}\n\n{prompt}",
+        "temperature": 0.55,
+        "top_p": 0.9,
+        "max_tokens": 2600,
+    }
+    return _run_cloudflare_payload(api_url, api_token, fallback_payload)
 
 
 def _call_openai(prompt):
@@ -403,8 +470,8 @@ def _generate_with_provider(settings, provider_name, caller):
 
 
 def _generate_article(settings):
-    if _secret_value("DEEPSEEK_API_KEY") or _secret_value("DEEPSEEK_WORKER_API_KEY"):
-        result = _generate_with_provider(settings, "deepseek", _call_deepseek)
+    if (_secret_value("CLOUDFLARE_ACCOUNT_ID") or _secret_value("CF_ACCOUNT_ID")) and (_secret_value("CLOUDFLARE_API_TOKEN") or _secret_value("CF_API_TOKEN")):
+        result = _generate_with_provider(settings, "cloudflare-ai", _call_cloudflare_ai)
         if result:
             return result
     if _secret_value("OPENAI_API_KEY"):
