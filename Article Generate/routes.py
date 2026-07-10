@@ -44,36 +44,58 @@ def _keyword_tokens(title):
 
 def _fallback_result(title):
     tokens = _keyword_tokens(title)
-    focus = ", ".join(tokens[:4]) or title
-    hashtags = ["#" + re.sub(r"[^\w\u0980-\u09ff]", "", token.title()) for token in tokens[:10]]
-    while len(hashtags) < 8:
-        hashtags.append(["#FavoriteWeb", "#UsefulTips", "#Trending", "#Guide"][len(hashtags) % 4])
-    tags = tokens[:10] or [title]
-    intro = (
-        f"{title} niye ei post-e simple, practical ebong user-friendly guide share kora holo. "
-        f"Jara {focus} niye clear idea pete chan, tader jonno ei content ta helpful hobe."
+    topic_words = tokens[:5]
+    focus = ", ".join(topic_words) if topic_words else title
+    display_topic = title.rstrip(".?!")
+
+    hashtags = []
+    for token in tokens[:12]:
+        tag = "#" + re.sub(r"[^\w\u0980-\u09ff]", "", token.title())
+        if len(tag) > 1 and tag not in hashtags:
+            hashtags.append(tag)
+    for tag in ("#FavoriteWeb", "#UsefulTips", "#SmartGuide", "#TrendingNow", "#DailyUpdate"):
+        if len(hashtags) >= 12:
+            break
+        if tag not in hashtags:
+            hashtags.append(tag)
+
+    tags = tokens[:12] or [display_topic]
+    benefit_line = f"{display_topic} niye clear idea thakle decision newa, planning kora, and practical result pawa onek easier hoy."
+    value_line = f"Ei guide-e {focus} related important points simple vabe explain kora holo, jate reader quickly bujhte pare kon jaygay focus kora dorkar."
+    practical_line = f"Real use-er somoy {display_topic} ke sudhu theory hisebe na dekhe, nijer need, budget, time, and expected result-er sathe match kore dekhte hobe."
+    trust_line = "Valo result pete hole trusted source follow kora, unnecessary shortcut avoid kora, and step-by-step improvement track kora best approach."
+    action_line = f"Apni jodi {display_topic} niye kaj korte chan, tahole prothome goal clear korun, tarpor small plan kore regular update nin."
+
+    post = (
+        f"{display_topic}\n\n"
+        f"{benefit_line} {value_line}\n\n"
+        f"Prothom kotha holo, topic ta jotoi simple mone hok, right information chara onek somoy wrong decision hoye jay. "
+        f"Tai {display_topic} niye kaj shuru korar age basic idea, useful tips, and common mistake-gulo jana important. "
+        f"Eta reader-ke time save korte help kore and final result-ke aro clean, professional, and effective kore.\n\n"
+        f"{practical_line} Jekhane proyojon sekhane example, checklist, ba comparison use korle content-er value aro bere jay. "
+        f"Beshi complicated language use na kore short paragraph, clear heading, and direct explanation dile reader easily follow korte pare.\n\n"
+        f"{trust_line} Ekbar-e perfect result expect na kore regular testing and improvement korle better outcome ashe. "
+        f"Kon jinis kaj korche, kon jinis change kora dorkar, and kon part reader-er jonno most useful seta note rakha bhalo.\n\n"
+        f"{action_line} Eivabe smart vabe agale {display_topic} theke better value, better engagement, and long-term trust build kora possible."
     )
-    body = [
-        intro,
-        f"Prothome main topic ta short kore bujhi: {title} er value holo eta user-er real problem solve korte pare.",
-        "Key points:",
-        f"1. Topic-er main benefit clear kore bolo, jate reader prothom line thekei interest pay.",
-        f"2. Practical example add koro, karon example content-ke trustworthy kore.",
-        f"3. Simple language use koro, unnecessary long paragraph avoid koro.",
-        f"4. Last-e clear call-to-action dao, jemon comment, share, download, contact, ba visit.",
-        "Conclusion: Content ta regular update korle SEO value, social reach, and reader trust dhire dhire barbe.",
-    ]
+
+    seo_title = display_topic[:65]
+    meta_description = f"{display_topic} niye practical guide, useful tips, common mistakes, and smart recommendations in one simple post."
+    caption = (
+        f"{display_topic}\n\n"
+        f"{benefit_line} Short, clear, and practical vabe topic ta bujhte ei post ta follow korun.\n\n"
+        + " ".join(hashtags[:10])
+    )
     return {
         "engine": "local-fallback",
-        "title": title,
-        "post": "\n\n".join(body),
+        "title": display_topic,
+        "post": post,
         "tags": tags,
         "hashtags": hashtags[:12],
-        "seo_title": title[:65],
-        "meta_description": f"{title} niye practical guide, tips, key points, and useful recommendations.",
-        "caption": f"{title}\n\n{intro}\n\n{' '.join(hashtags[:8])}",
+        "seo_title": seo_title,
+        "meta_description": meta_description,
+        "caption": caption,
     }
-
 
 def _extract_json(text):
     if not text:
