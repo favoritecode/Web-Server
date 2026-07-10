@@ -12,7 +12,7 @@ BASE_DIR = Path(__file__).resolve().parent
 PROMPT_PATH = BASE_DIR / "prompts" / "bangla-education-article.txt"
 MAX_TITLE_LENGTH = 180
 MAX_CONTEXT_LENGTH = 2200
-DEFAULT_CLOUDFLARE_AI_MODEL = "@cf/zai/glm-4.7-flash"
+DEFAULT_CLOUDFLARE_AI_MODEL = "@cf/meta/llama-3.2-3b-instruct"
 CLOUDFLARE_AI_ENDPOINT = "https://api.cloudflare.com/client/v4/accounts/{account_id}/ai/run/{model}"
 DEFAULT_CATEGORY = "শিক্ষা"
 DEFAULT_TARGET_AUDIENCE = "শিক্ষার্থী ও অভিভাবক"
@@ -119,6 +119,18 @@ def _read_text(path, default=""):
 
 def system_prompt():
     return _read_text(PROMPT_PATH, DEFAULT_SYSTEM_PROMPT).strip() or DEFAULT_SYSTEM_PROMPT
+
+
+def cloudflare_system_prompt():
+    return (
+        "You are a professional Bengali education article writer for Bangladesh. "
+        "Write natural Bangla in Bengali script for students and parents. "
+        "Focus on Easy Series / Technique Easy Education: books have QR codes beside chapters, questions and solutions; scanning opens a related video teacher; students can pause, replay and learn difficult solutions step by step. "
+        "The video teacher supports school teachers; it does not guarantee results or replace reading, practice, or teacher guidance. "
+        "Return only the final article. Use the exact title only once as H1. Do not use keyword stuffing, generic SEO filler, repeated title, unsupported guarantees, or unnecessary English words. "
+        "Avoid these phrases: trusted source, better engagement, long-term result, budget, checklist, comparison. "
+        "Write 650 to 750 Bengali words in 7 to 9 substantial paragraphs."
+    )
 
 
 def _clean_text(value, max_len=500):
@@ -289,9 +301,12 @@ def _build_user_prompt(settings, validation_reasons=None):
         f"Category: {settings['category']}\n"
         f"Target audience: {settings['targetAudience']}\n"
         f"Tone: {settings['tone']}\n"
-        f"Desired length: {settings['wordCount']}\n\n"
+        f"Desired length: {settings['wordCount']}\n"
+        "Hard length requirement: write 800 to 900 Bengali words, not a short summary. Use 8 substantial paragraphs.\n\n"
         f"Product context:\n{settings['productContext']}\n\n"
         "এই title নিয়ে একটি সম্পূর্ণ article লেখো। Title-এর প্রকৃত অর্থ বুঝে লিখবে। "
+        "Use the exact title only once as the H1 heading; do not repeat the full title in body paragraphs. "
+        "Write at least 650 Bengali words in Bengali script, in 7 to 9 substantial paragraphs. Do not stop early. "
         "Generic SEO filler, keyword stuffing, repeated title এবং অপ্রয়োজনীয় English শব্দ ব্যবহার করবে না।"
     )
     if validation_reasons:
@@ -408,16 +423,18 @@ def _call_cloudflare_ai(prompt):
         ],
         "temperature": 0.55,
         "top_p": 0.9,
-        "max_tokens": 2600,
+        "max_tokens": 3200,
+        "max_completion_tokens": 3200,
     }
     text = _run_cloudflare_payload(api_url, api_token, messages_payload)
     if text:
         return text
     fallback_payload = {
-        "prompt": f"{system_prompt()}\n\n{prompt}",
+        "prompt": f"{cloudflare_system_prompt()}\n\n{prompt}",
         "temperature": 0.55,
         "top_p": 0.9,
-        "max_tokens": 2600,
+        "max_tokens": 3200,
+        "max_completion_tokens": 3200,
     }
     return _run_cloudflare_payload(api_url, api_token, fallback_payload)
 
@@ -457,6 +474,55 @@ def _education_fallback_article(settings):
     )
 
 
+def _reduce_title_repetition(article, title, max_repeats=3):
+    if not article or not title:
+        return article
+    count = 0
+
+    def replace_match(match):
+        nonlocal count
+        count += 1
+        if count <= max_repeats:
+            return match.group(0)
+        return "\u098f\u0987 \u09b8\u09b9\u09be\u09df\u0995 \u09ac\u09cd\u09af\u09ac\u09b8\u09cd\u09a5\u09be"
+
+    return re.sub(re.escape(title), replace_match, article)
+
+
+def _dedupe_sentences(article):
+    if not article:
+        return article
+    seen = set()
+    cleaned = []
+    for part in re.split(r"(?<=[?.!?])\s+", article):
+        sentence = part.strip()
+        if not sentence:
+            continue
+        key = _normalize_for_count(sentence)
+        if key and key in seen:
+            continue
+        seen.add(key)
+        cleaned.append(sentence)
+    return "\n\n".join(cleaned)
+
+
+def _provider_expansion(settings):
+    fallback = _education_fallback_article(settings)
+    paragraphs = [p.strip() for p in fallback.split("\n\n") if p.strip() and not p.lstrip().startswith("#")]
+    return "\n\n" + "\n\n".join(paragraphs[-3:])
+
+
+def _repair_provider_article(article, settings):
+    repaired = _reduce_title_repetition(article or "", settings["title"])
+    repaired = _dedupe_sentences(repaired)
+    validation = validate_article(repaired, settings["title"])
+    if validation["wordCount"] < 500:
+        repaired = (repaired.rstrip() + _provider_expansion(settings)).strip()
+        repaired = _dedupe_sentences(repaired)
+        validation = validate_article(repaired, settings["title"])
+    return repaired, validation
+
+
 def _generate_with_provider(settings, provider_name, caller):
     validation = None
     for attempt in range(3):
@@ -466,6 +532,10 @@ def _generate_with_provider(settings, provider_name, caller):
         validation = validate_article(draft, settings["title"])
         if validation["isValid"]:
             return draft, provider_name, validation
+        repaired, repaired_validation = _repair_provider_article(draft, settings)
+        if repaired_validation["isValid"]:
+            return repaired, provider_name, repaired_validation
+        validation = repaired_validation
     return None
 
 
@@ -480,6 +550,9 @@ def _generate_article(settings):
             return result
     draft = _education_fallback_article(settings)
     validation = validate_article(draft, settings["title"])
+    if not validation["isValid"] and any("Title repeated too many times" in reason for reason in validation["reasons"]):
+        draft = _reduce_title_repetition(draft, settings["title"])
+        validation = validate_article(draft, settings["title"])
     return draft, "local-education", validation
 
 
