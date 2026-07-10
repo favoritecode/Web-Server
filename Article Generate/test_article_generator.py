@@ -22,6 +22,13 @@ TEST_TITLES = [
 
 
 class ArticleGeneratorTests(unittest.TestCase):
+    def setUp(self):
+        self._original_secret_value = routes._secret_value
+        routes._secret_value = lambda name, default="": "" if name in {"DEEPSEEK_API_KEY", "DEEPSEEK_WORKER_API_KEY", "OPENAI_API_KEY"} else default
+
+    def tearDown(self):
+        routes._secret_value = self._original_secret_value
+
     def make_package(self, title):
         settings = routes._settings_from_payload({"title": title})
         package = routes.generate_article_package(settings)

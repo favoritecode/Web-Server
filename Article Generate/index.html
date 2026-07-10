@@ -323,7 +323,7 @@
       <aside class="status-panel">
         <span class="status-pill" id="engineStatus">Ready</span>
         <strong>Title in, complete content out.</strong>
-        <span>Login required. OpenAI mode is used when the server has an API key; otherwise FavoriteWeb local mode keeps the tool available.</span>
+        <span>Login required. DeepSeek/OpenAI mode is used when the server has an API key; otherwise FavoriteWeb local mode keeps the tool available.</span>
       </aside>
     </section>
 
@@ -459,8 +459,8 @@ async function generatePost() {
     renderChips(hashtagsOutput, result.hashtags || []);
     tagsText.textContent = (result.tags || []).join(", ");
     hashtagsText.textContent = (result.hashtags || []).join(" ");
-    engineStatus.textContent = result.engine === "openai" ? "OpenAI" : "Local Mode";
-    hintLine.textContent = result.engine === "openai" ? "Generated with OpenAI and passed validation." : "Generated with education fallback and passed validation. Add OPENAI_API_KEY for AI rewriting.";
+    engineStatus.textContent = result.engine === "deepseek" ? "DeepSeek" : (result.engine === "openai" ? "OpenAI" : "Local Mode");
+    hintLine.textContent = result.engine === "deepseek" ? "Generated with DeepSeek and passed validation." : (result.engine === "openai" ? "Generated with OpenAI and passed validation." : "Generated with education fallback and passed validation. Add DEEPSEEK_API_KEY for AI rewriting.");
   } catch (error) {
     hintLine.textContent = error.message || "Generation failed.";
     engineStatus.textContent = "Error";

@@ -309,6 +309,52 @@ def _extract_output_text(data):
     return "\n".join(parts).strip()
 
 
+def _extract_chat_text(data):
+    try:
+        choice = (data.get("choices") or [])[0]
+        message = choice.get("message") or {}
+        return (message.get("content") or choice.get("text") or "").strip()
+    except (AttributeError, IndexError):
+        return ""
+
+
+def _call_chat_completions(api_url, api_key, model, prompt, extra_headers=None):
+    if not api_url or not api_key or not model:
+        return None
+    payload = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": system_prompt()},
+            {"role": "user", "content": prompt},
+        ],
+        "temperature": 0.55,
+        "top_p": 0.9,
+        "max_tokens": 2600,
+    }
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+    }
+    if extra_headers:
+        headers.update(extra_headers)
+    req = urllib.request.Request(api_url, data=json.dumps(payload).encode("utf-8"), headers=headers, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=75) as resp:
+            return _extract_chat_text(json.loads(resp.read().decode("utf-8", errors="replace")))
+    except (urllib.error.URLError, TimeoutError, ValueError):
+        return None
+
+
+def _call_deepseek(prompt):
+    api_key = _secret_value("DEEPSEEK_API_KEY") or _secret_value("DEEPSEEK_WORKER_API_KEY")
+    if not api_key:
+        return None
+    api_url = _secret_value("DEEPSEEK_API_URL") or _secret_value("DEEPSEEK_WORKER_URL") or "https://api.deepseek.com/chat/completions"
+    model = _secret_value("DEEPSEEK_MODEL", "deepseek-chat")
+    return _call_chat_completions(api_url, api_key, model, prompt)
+
+
 def _call_openai(prompt):
     api_key = _secret_value("OPENAI_API_KEY")
     if not api_key:
@@ -344,16 +390,27 @@ def _education_fallback_article(settings):
     )
 
 
-def _generate_article(settings):
+def _generate_with_provider(settings, provider_name, caller):
     validation = None
+    for attempt in range(3):
+        draft = caller(_build_user_prompt(settings, validation["reasons"] if validation else None))
+        if not draft:
+            break
+        validation = validate_article(draft, settings["title"])
+        if validation["isValid"]:
+            return draft, provider_name, validation
+    return None
+
+
+def _generate_article(settings):
+    if _secret_value("DEEPSEEK_API_KEY") or _secret_value("DEEPSEEK_WORKER_API_KEY"):
+        result = _generate_with_provider(settings, "deepseek", _call_deepseek)
+        if result:
+            return result
     if _secret_value("OPENAI_API_KEY"):
-        for attempt in range(3):
-            draft = _call_openai(_build_user_prompt(settings, validation["reasons"] if validation else None))
-            if not draft:
-                break
-            validation = validate_article(draft, settings["title"])
-            if validation["isValid"]:
-                return draft, "openai", validation
+        result = _generate_with_provider(settings, "openai", _call_openai)
+        if result:
+            return result
     draft = _education_fallback_article(settings)
     validation = validate_article(draft, settings["title"])
     return draft, "local-education", validation
