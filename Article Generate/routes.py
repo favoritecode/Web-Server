@@ -14,6 +14,7 @@ MAX_TITLE_LENGTH = 180
 MAX_CONTEXT_LENGTH = 2200
 DEFAULT_CLOUDFLARE_AI_MODEL = "@cf/meta/llama-3.2-3b-instruct"
 CLOUDFLARE_AI_ENDPOINT = "https://api.cloudflare.com/client/v4/accounts/{account_id}/ai/run/{model}"
+LAST_CLOUDFLARE_ERROR = ""
 DEFAULT_CATEGORY = "শিক্ষা"
 DEFAULT_TARGET_AUDIENCE = "শিক্ষার্থী ও অভিভাবক"
 DEFAULT_TONE = "সহজ, প্রাঞ্জল, বিশ্বাসযোগ্য ও হালকা প্রচারণামূলক"
@@ -342,7 +343,7 @@ def _call_chat_completions(api_url, api_key, model, prompt, extra_headers=None):
     payload = {
         "model": model,
         "messages": [
-            {"role": "system", "content": system_prompt()},
+            {"role": "system", "content": cloudflare_system_prompt()},
             {"role": "user", "content": prompt},
         ],
         "temperature": 0.55,
@@ -399,14 +400,33 @@ def _run_cloudflare_payload(api_url, api_token, payload):
         },
         method="POST",
     )
+    global LAST_CLOUDFLARE_ERROR
     try:
         with urllib.request.urlopen(req, timeout=75) as resp:
             return _extract_cloudflare_text(json.loads(resp.read().decode("utf-8", errors="replace")))
-    except (urllib.error.URLError, TimeoutError, ValueError):
+    except urllib.error.HTTPError as exc:
+        body = ""
+        try:
+            body = exc.read().decode("utf-8", errors="replace")
+        except Exception:
+            body = ""
+        lower_body = body.lower()
+        if exc.code == 429 or "daily free allocation" in lower_body or "4006" in lower_body:
+            LAST_CLOUDFLARE_ERROR = "Cloudflare Workers AI free quota is exhausted. Please wait for reset or enable Workers Paid plan."
+        elif exc.code in {401, 403}:
+            LAST_CLOUDFLARE_ERROR = "Cloudflare Workers AI token is invalid or missing Workers AI permission."
+        else:
+            LAST_CLOUDFLARE_ERROR = f"Cloudflare Workers AI request failed with HTTP {exc.code}."
+        return None
+    except (urllib.error.URLError, TimeoutError, ValueError) as exc:
+        if not LAST_CLOUDFLARE_ERROR:
+            LAST_CLOUDFLARE_ERROR = f"Cloudflare Workers AI request failed: {type(exc).__name__}."
         return None
 
 
 def _call_cloudflare_ai(prompt):
+    global LAST_CLOUDFLARE_ERROR
+    LAST_CLOUDFLARE_ERROR = ""
     account_id = (_secret_value("CLOUDFLARE_ACCOUNT_ID") or _secret_value("CF_ACCOUNT_ID") or "").strip()
     api_token = (_secret_value("CLOUDFLARE_API_TOKEN") or _secret_value("CF_API_TOKEN") or "").strip()
     model = (_secret_value("CLOUDFLARE_AI_MODEL", DEFAULT_CLOUDFLARE_AI_MODEL) or DEFAULT_CLOUDFLARE_AI_MODEL).strip()
@@ -559,6 +579,8 @@ def _generate_article(settings):
         result = _generate_with_provider(settings, "cloudflare-ai", _call_cloudflare_ai)
         if result:
             return result
+        if LAST_CLOUDFLARE_ERROR:
+            return "", "cloudflare-error", {"isValid": False, "reasons": [LAST_CLOUDFLARE_ERROR], "wordCount": 0, "titleRepetitionCount": 0, "bannedPhrasesFound": []}
     if _secret_value("OPENAI_API_KEY"):
         result = _generate_with_provider(settings, "openai", _call_openai)
         if result:
@@ -573,6 +595,8 @@ def _generate_article(settings):
 
 def generate_article_package(settings):
     article, engine, validation = _generate_article(settings)
+    if engine == "cloudflare-error":
+        return {"error": validation["reasons"][0], "validation": validation}
     if not validation["isValid"]:
         return {"error": "ভালো মানের article তৈরি করা যায়নি। Title বা context একটু নির্দিষ্ট করে আবার চেষ্টা করুন।", "validation": validation}
     meta = _metadata(settings["title"], article)
