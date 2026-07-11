@@ -299,6 +299,25 @@ def _settings_from_payload(data):
     return {"title": title, "category": category, "targetAudience": target, "tone": tone, "wordCount": word_count, "productContext": context}
 
 
+def _build_compact_user_prompt(settings, validation_reasons=None):
+    prompt = (
+        f"Title: {settings['title']}\n"
+        f"Category: {settings['category']}\n"
+        f"Target audience: {settings['targetAudience']}\n"
+        f"Tone: {settings['tone']}\n"
+        "Length: 650 to 750 Bengali words in 7 to 9 substantial paragraphs.\n\n"
+        f"Product context:\n{settings['productContext']}\n\n"
+        "Write a complete Bengali article. Use the exact title only once as H1. "
+        "Make every paragraph directly relevant to the title and Easy Series QR/video teacher context. "
+        "Avoid generic SEO filler, repeated title, keyword stuffing, unsupported guarantees, and unnecessary English words. "
+        "Return only the final article."
+    )
+    if validation_reasons:
+        prompt += "\n\nPrevious draft failed validation: " + "; ".join(validation_reasons)
+        prompt += " Rewrite the full article with more specific, title-relevant detail."
+    return prompt
+
+
 def _build_user_prompt(settings, validation_reasons=None):
     prompt = (
         f"Title: {settings['title']}\n"
@@ -338,6 +357,17 @@ def _extract_chat_text(data):
         return (message.get("content") or choice.get("text") or "").strip()
     except (AttributeError, IndexError):
         return ""
+
+
+def _normalize_chat_api_url(api_url):
+    api_url = (api_url or "").strip().rstrip("/")
+    if not api_url:
+        return ""
+    if api_url.endswith("/chat/completions"):
+        return api_url
+    if api_url.endswith("/v1"):
+        return api_url + "/chat/completions"
+    return api_url
 
 
 def _call_chat_completions(api_url, api_key, model, prompt, extra_headers=None):
@@ -502,7 +532,7 @@ def _call_nvidia(prompt):
     api_key = (_secret_value("NVIDIA_API_KEY") or _secret_value("NVIDIA_NIM_API_KEY") or "").strip()
     if not api_key:
         return None
-    api_url = (_secret_value("NVIDIA_API_URL", DEFAULT_NVIDIA_API_URL) or DEFAULT_NVIDIA_API_URL).strip()
+    api_url = _normalize_chat_api_url(_secret_value("NVIDIA_API_URL", DEFAULT_NVIDIA_API_URL) or DEFAULT_NVIDIA_API_URL)
     model = (_secret_value("NVIDIA_MODEL", DEFAULT_NVIDIA_MODEL) or DEFAULT_NVIDIA_MODEL).strip()
     return _call_chat_completions(api_url, api_key, model, prompt)
 
@@ -609,7 +639,8 @@ def _repair_provider_article(article, settings):
 def _generate_with_provider(settings, provider_name, caller):
     validation = None
     for attempt in range(3):
-        draft = caller(_build_user_prompt(settings, validation["reasons"] if validation else None))
+        prompt_builder = _build_compact_user_prompt if provider_name in {"gemini", "nvidia-nim"} else _build_user_prompt
+        draft = caller(prompt_builder(settings, validation["reasons"] if validation else None))
         if not draft:
             break
         validation = validate_article(draft, settings["title"])
@@ -631,16 +662,16 @@ def _generate_article(settings):
         result = _generate_with_provider(settings, "nvidia-nim", _call_nvidia)
         if result:
             return result
-    if (_secret_value("CLOUDFLARE_ACCOUNT_ID") or _secret_value("CF_ACCOUNT_ID")) and (_secret_value("CLOUDFLARE_API_TOKEN") or _secret_value("CF_API_TOKEN")):
-        result = _generate_with_provider(settings, "cloudflare-ai", _call_cloudflare_ai)
-        if result:
-            return result
-        if LAST_CLOUDFLARE_ERROR:
-            return "", "cloudflare-error", {"isValid": False, "reasons": [LAST_CLOUDFLARE_ERROR], "wordCount": 0, "titleRepetitionCount": 0, "bannedPhrasesFound": []}
     if _secret_value("OPENAI_API_KEY"):
         result = _generate_with_provider(settings, "openai", _call_openai)
         if result:
             return result
+    if (_secret_value("CLOUDFLARE_ACCOUNT_ID") or _secret_value("CF_ACCOUNT_ID")) and (_secret_value("CLOUDFLARE_API_TOKEN") or _secret_value("CF_API_TOKEN")):
+        result = _generate_with_provider(settings, "cloudflare-ai", _call_cloudflare_ai)
+        if result:
+            return result
+        if LAST_CLOUDFLARE_ERROR and not (_secret_value("GEMINI_API_KEY") or _secret_value("GOOGLE_AI_API_KEY") or _secret_value("NVIDIA_API_KEY") or _secret_value("NVIDIA_NIM_API_KEY") or _secret_value("OPENAI_API_KEY")):
+            return "", "cloudflare-error", {"isValid": False, "reasons": [LAST_CLOUDFLARE_ERROR], "wordCount": 0, "titleRepetitionCount": 0, "bannedPhrasesFound": []}
     draft = _personalize_fallback_article(_education_fallback_article(settings), settings["title"])
     validation = validate_article(draft, settings["title"])
     if not validation["isValid"] and any("Title repeated too many times" in reason for reason in validation["reasons"]):
