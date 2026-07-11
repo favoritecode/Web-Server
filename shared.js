@@ -4,12 +4,9 @@ const NAV_ITEMS = [
   { href: "/", label: "Home" },
   { href: "/download", label: "Download" },
   { href: "/drive", label: "Cloud Drive", requiresAuth: true },
-  { href: "/ytplayer/", label: "YT Stream" },
-  { href: "/ocr", label: "OCR" },
   { href: "/analytics", label: "Web Analyzer" },
   { href: "/file-converter", label: "File Converter" },
   { href: "/remove-bg", label: "Remove BG" },
-  { href: "/article-generate", label: "Article Generate" },
 ];
 
 function getCurrentPage() {
