@@ -459,8 +459,10 @@ async function generatePost() {
     renderChips(hashtagsOutput, result.hashtags || []);
     tagsText.textContent = (result.tags || []).join(", ");
     hashtagsText.textContent = (result.hashtags || []).join(" ");
-    engineStatus.textContent = result.engine === "cloudflare-ai" ? "Cloudflare AI" : (result.engine === "openai" ? "OpenAI" : "Local Mode");
-    hintLine.textContent = result.engine === "cloudflare-ai" ? "Generated with Cloudflare AI and passed validation." : (result.engine === "openai" ? "Generated with OpenAI and passed validation." : "Generated with education fallback and passed validation. Add CLOUDFLARE_API_TOKEN for cloud AI writing.");
+    const engineLabels = { "gemini": "Gemini", "nvidia-nim": "NVIDIA NIM", "cloudflare-ai": "Cloudflare AI", "openai": "OpenAI" };
+    const engineName = engineLabels[result.engine] || "Local Mode";
+    engineStatus.textContent = engineName;
+    hintLine.textContent = result.engine && result.engine !== "local-education" ? `Generated with ${engineName} and passed validation.` : "Generated with education fallback and passed validation. Add GEMINI_API_KEY or NVIDIA_API_KEY for AI writing.";
   } catch (error) {
     hintLine.textContent = error.message || "Generation failed.";
     engineStatus.textContent = "Error";

@@ -24,7 +24,7 @@ TEST_TITLES = [
 class ArticleGeneratorTests(unittest.TestCase):
     def setUp(self):
         self._original_secret_value = routes._secret_value
-        routes._secret_value = lambda name, default="": "" if name in {"CLOUDFLARE_ACCOUNT_ID", "CLOUDFLARE_API_TOKEN", "CF_ACCOUNT_ID", "CF_API_TOKEN", "OPENAI_API_KEY"} else default
+        routes._secret_value = lambda name, default="": "" if name in {"GEMINI_API_KEY", "GOOGLE_AI_API_KEY", "NVIDIA_API_KEY", "NVIDIA_NIM_API_KEY", "CLOUDFLARE_ACCOUNT_ID", "CLOUDFLARE_API_TOKEN", "CF_ACCOUNT_ID", "CF_API_TOKEN", "OPENAI_API_KEY"} else default
 
     def tearDown(self):
         routes._secret_value = self._original_secret_value
