@@ -474,6 +474,21 @@ def _education_fallback_article(settings):
     )
 
 
+def _personalize_fallback_article(article, title):
+    parts = [part.strip() for part in (article or "").split("\n\n") if part.strip()]
+    if len(parts) < 6:
+        return article
+    heading, paragraphs = parts[0], parts[1:]
+    seed = sum(ord(ch) for ch in _normalize_for_count(title))
+    focus_count = min(4, len(paragraphs))
+    focus_index = seed % focus_count
+    focus = paragraphs.pop(focus_index)
+    if paragraphs:
+        shift = seed % len(paragraphs)
+        paragraphs = paragraphs[shift:] + paragraphs[:shift]
+    return "\n\n".join([heading, focus] + paragraphs)
+
+
 def _reduce_title_repetition(article, title, max_repeats=3):
     if not article or not title:
         return article
@@ -548,7 +563,7 @@ def _generate_article(settings):
         result = _generate_with_provider(settings, "openai", _call_openai)
         if result:
             return result
-    draft = _education_fallback_article(settings)
+    draft = _personalize_fallback_article(_education_fallback_article(settings), settings["title"])
     validation = validate_article(draft, settings["title"])
     if not validation["isValid"] and any("Title repeated too many times" in reason for reason in validation["reasons"]):
         draft = _reduce_title_repetition(draft, settings["title"])
