@@ -204,20 +204,72 @@ def validate_article(article, title, min_words=200, max_words=500):
     }
 
 
+def _bengali_digit_to_ascii(text):
+    digits = str.maketrans("\u09e6\u09e7\u09e8\u09e9\u09ea\u09eb\u09ec\u09ed\u09ee\u09ef", "0123456789")
+    return (text or "").translate(digits)
+
+
+_BANGLA_WORD_SLUGS = {
+    "\u09ac\u0987": "boi",
+    "\u09ac\u0987\u09df\u09c7\u09b0": "boiyer",
+    "\u09ad\u09c7\u09a4\u09b0": "vitor",
+    "\u09b6\u09bf\u0995\u09cd\u09b7\u0995": "shikkhok",
+    "\u09aa\u09dc\u09be\u09b6\u09cb\u09a8\u09be": "porashona",
+    "\u09b2\u09c7\u0996\u09be\u09aa\u09dc\u09be": "lekhapora",
+    "\u09b6\u09b0\u09cd\u099f\u0995\u09be\u099f": "shortcut",
+    "\u0995\u09bf\u09ac\u09cb\u09b0\u09cd\u09a1": "keyboard",
+    "\u099c\u09bf\u09a8\u09bf\u09df\u09be\u09b8": "genius",
+    "\u0989\u0987\u09a8\u09cd\u09a1\u09cb\u099c": "windows",
+    "\u09ac\u09bf\u09b6\u09cd\u09ac\u0995\u09be\u09aa": "world-cup",
+    "\u09ac\u09bf\u09b6\u09cd\u09ac\u0995\u09be\u09aa\u09c7\u09b0": "world-cup",
+    "\u0986\u09b2\u09cb\u099a\u09bf\u09a4": "trending",
+    "\u0996\u09ac\u09b0": "news",
+    "\u09ab\u09c1\u099f\u09ac\u09b2": "football",
+    "\u0995\u09cd\u09b0\u09bf\u0995\u09c7\u099f": "cricket",
+    "\u09ad\u09bf\u09a1\u09bf\u0993": "video",
+    "\u09af\u09c1\u099f\u09bf\u0989\u09ac": "youtube",
+    "\u09ab\u09c7\u09b8\u09ac\u09c1\u0995": "facebook",
+}
+
+_BANGLA_ROMAN_BASE = {
+    "\u0985": "o", "\u0986": "a", "\u0987": "i", "\u0988": "i", "\u0989": "u", "\u098a": "u", "\u098b": "ri", "\u098f": "e", "\u0990": "oi", "\u0993": "o", "\u0994": "ou",
+    "\u0995": "k", "\u0996": "kh", "\u0997": "g", "\u0998": "gh", "\u0999": "ng", "\u099a": "ch", "\u099b": "chh", "\u099c": "j", "\u099d": "jh", "\u099e": "n",
+    "\u099f": "t", "\u09a0": "th", "\u09a1": "d", "\u09a2": "dh", "\u09a3": "n", "\u09a4": "t", "\u09a5": "th", "\u09a6": "d", "\u09a7": "dh", "\u09a8": "n",
+    "\u09aa": "p", "\u09ab": "f", "\u09ac": "b", "\u09ad": "v", "\u09ae": "m", "\u09af": "y", "\u09b0": "r", "\u09b2": "l", "\u09b6": "sh", "\u09b7": "sh", "\u09b8": "s", "\u09b9": "h", "\u09dc": "r", "\u09dd": "rh", "\u09df": "y", "\u09ce": "t",
+}
+_BANGLA_ROMAN_SIGNS = {
+    "\u09be": "a", "\u09bf": "i", "\u09c0": "i", "\u09c1": "u", "\u09c2": "u", "\u09c3": "ri", "\u09c7": "e", "\u09c8": "oi", "\u09cb": "o", "\u09cc": "ou", "\u09cd": "",
+}
+
+
+def _bengali_to_slug_word(word):
+    word = _bengali_digit_to_ascii(word)
+    if word in _BANGLA_WORD_SLUGS:
+        return _BANGLA_WORD_SLUGS[word]
+    out = []
+    for char in word:
+        if char in _BANGLA_ROMAN_BASE:
+            out.append(_BANGLA_ROMAN_BASE[char])
+        elif char in _BANGLA_ROMAN_SIGNS:
+            out.append(_BANGLA_ROMAN_SIGNS[char])
+        elif char.isdigit():
+            out.append(char)
+    slug = "".join(out).strip("-")
+    return re.sub(r"-+", "-", slug) or "post"
+
+
 def _slugify(title):
-    mapping = {
-        "বই": "boi", "বইয়ের": "boiyer", "বইয়ের": "boiyer", "ভেতর": "vitor", "শিক্ষক": "shikkhok", "থাকলে": "thakle", "আর": "ar",
-        "লেখাপড়া": "lekhapora", "লেখাপড়ায়": "lekhaporay", "লেখাপড়ায়": "lekhaporay", "পড়াশোনা": "porashona", "পড়াশোনা": "porashona",
-        "প্রতিবন্ধকতা": "protibondhokota", "কিসের": "kiser", "QR": "qr", "কোড": "code", "স্ক্যান": "scan", "সমাধান": "somadhan",
-        "ইজি": "easy", "সিরিজ": "series", "অভিভাবক": "ovivabok", "কোচিং": "coaching", "খরচ": "khoroch", "অঙ্ক": "onk",
-    }
-    words = re.findall(r"[A-Za-z0-9]+|[\u0980-\u09ff]+", title or "")
+    words = re.findall(r"[A-Za-z0-9]+|[\u0980-\u09ff]+", _bengali_digit_to_ascii(title or ""))
     slug_words = []
     for word in words:
-        slug_words.append(mapping.get(word, word.lower() if re.match(r"^[A-Za-z0-9]+$", word) else "post"))
-    slug = "-".join(slug_words)
+        if re.match(r"^[A-Za-z0-9]+$", word):
+            slug_words.append(word.lower())
+        else:
+            slug_words.append(_bengali_to_slug_word(word))
+    slug = "-".join(part for part in slug_words if part and part != "post")
+    slug = re.sub(r"[^a-z0-9-]+", "-", slug.lower())
     slug = re.sub(r"-+", "-", slug).strip("-")
-    return slug[:90] or "article"
+    return slug[:90].strip("-") or "article"
 
 
 def _metadata(title, article):
@@ -737,13 +789,22 @@ def _keyword_candidates(title, article):
 
 
 def _clean_tag_phrase(phrase):
-    phrase = re.sub(r"[^A-Za-z0-9\u0980-\u09ff+#.\s-]+", " ", str(phrase or ""))
+    phrase = _bengali_digit_to_ascii(str(phrase or ""))
+    phrase = re.sub(r"[^A-Za-z0-9\u0980-\u09ff+#.\s-]+", " ", phrase)
     phrase = re.sub(r"\s+", " ", phrase).strip(" -_")
     if not phrase or "????" in phrase:
         return ""
     words = re.findall(r"[A-Za-z0-9]+|[\u0980-\u09ff]+", phrase.lower())
     if not words or len(words) > 7:
         return ""
+    year_re = r"(?:19|20)\d{2}"
+    if len(words) == 2 and re.fullmatch(year_re, words[1]) and words[0].endswith("\u09c7\u09b0"):
+        return ""
+    if len(words) == 2 and re.fullmatch(year_re, words[0]) and words[1].endswith("\u09c7\u09b0"):
+        base = words[1][:-2]
+        if len(base) >= 3:
+            phrase = f"{words[0]} {base}"
+            words = [words[0], base]
     stop = _tag_stop_words()
     meaningful = [word for word in words if word not in stop and len(word) >= 3]
     if not meaningful:
@@ -760,53 +821,91 @@ def _add_tag(tags, phrase):
         tags.append(phrase)
 
 
-def _title_keyword_phrases(title):
+def _title_tokens_for_tags(title):
+    raw = [word.lower() if re.match(r"^[A-Za-z0-9]+$", word) else word for word in re.findall(r"[A-Za-z0-9]+|[\u0980-\u09ff]+", _bengali_digit_to_ascii(title or ""))]
     stop = _tag_stop_words() - {"best", "top"}
-    words = [word.lower() if re.match(r"^[A-Za-z0-9]+$", word) else word for word in re.findall(r"[A-Za-z0-9]+|[\u0980-\u09ff]+", title or "")]
-    phrases = [title]
-    clean_words = [word for word in words if word not in stop and len(word) >= 2]
-    if len(clean_words) >= 2:
-        phrases.append(" ".join(clean_words))
-    for size in range(min(4, len(words)), 1, -1):
-        for index in range(0, len(words) - size + 1):
-            chunk = words[index:index + size]
-            if any(word in stop for word in chunk):
-                continue
-            phrases.append(" ".join(chunk))
+    return [word for word in raw if word not in stop and len(word) >= 2]
+
+
+def _phrase_from_tokens(tokens):
+    return " ".join(tokens).strip()
+
+
+def _title_keyword_phrases(title):
+    tokens = _title_tokens_for_tags(title)
+    phrases = []
+    if not tokens:
+        return []
+
+    full = _clean_tag_phrase(_phrase_from_tokens(tokens))
+    if full:
+        phrases.append(full)
+
+    # Meaningful n-grams preserve the title's natural order without blindly adding tips/guide/review.
+    for size in range(min(4, len(tokens)), 1, -1):
+        for index in range(0, len(tokens) - size + 1):
+            phrase = _phrase_from_tokens(tokens[index:index + size])
+            if _clean_tag_phrase(phrase):
+                phrases.append(phrase)
+
+    # Year + main topic, useful for news/sports/event titles like 2026 World Cup.
+    year = next((word for word in tokens if re.fullmatch(r"20\d{2}|19\d{2}", word)), "")
+    if year:
+        for token in tokens:
+            if token != year and not re.fullmatch(r"\d+", token):
+                phrases.append(f"{year} {token}")
+                phrases.append(f"{token} {year}")
+                break
+
+    # Possessive Bengali topic plus last keyword, such as world cup news.
+    if len(tokens) >= 3:
+        last = tokens[-1]
+        for token in tokens[:-1]:
+            if token.endswith("\u09c7\u09b0") and token != last:
+                phrases.append(f"{token} {last}")
+                base = token[:-2]
+                if len(base) >= 3:
+                    phrases.append(f"{base} {last}")
+
     return phrases
 
 
 def _topic_keyword_phrases(title, article):
     text = f"{title or ''} {article or ''}".lower()
-    profiles = [
-        (['windows', 'win 11', 'windows 11', 'shortcut', 'shortcuts', 'hotkey', 'keyboard', 'useful', 'usefull', '\u09b6\u09b0\u09cd\u099f\u0995\u09be\u099f', '\u0995\u09bf\u09ac\u09cb\u09b0\u09cd\u09a1'], ['Windows 11 shortcuts', 'Windows 11 keyboard shortcuts', 'most useful Windows 11 shortcuts', 'Windows 11 shortcut keys', 'keyboard shortcuts for Windows 11', 'Windows shortcut keys', 'Windows 11 hotkeys', 'Windows key shortcuts', 'Windows 11 tips and tricks', 'Windows 11 productivity shortcuts', 'Windows 11 shortcut keys Bangla', '\u0989\u0987\u09a8\u09cd\u09a1\u09cb\u099c \u09e7\u09e7 \u09b6\u09b0\u09cd\u099f\u0995\u09be\u099f', '\u0995\u09bf\u09ac\u09cb\u09b0\u09cd\u09a1 \u09b6\u09b0\u09cd\u099f\u0995\u09be\u099f']),
-        (['skin', 'skincare', 'oily', 'acne', 'face wash', 'sunscreen'], ['best skincare routine', 'skincare routine for oily skin', 'oily skin care tips', 'acne prone skin care', 'face wash for oily skin', 'moisturizer for oily skin', 'sunscreen for oily skin', 'skin care routine Bangla']),
-        (['business', 'online business', 'startup', 'marketing'], ['online business ideas', 'small business growth tips', 'digital marketing strategy', 'business growth tips', 'online business guide', 'startup marketing tips']),
-        (['smartphone', 'phone', 'mobile', 'android', 'iphone', 'laptop', 'gadgets'], ['best smartphone', 'smartphone buying guide', 'budget smartphone', 'phone review', 'android phone tips', 'laptop buying guide', 'best laptop', 'tech review Bangla']),
-        (['youtube', 'video', 'creator', 'content creator', 'description'], ['YouTube SEO', 'YouTube video description', 'YouTube content ideas', 'video SEO tips', 'content creator tools', 'YouTube growth tips', 'YouTube description template']),
-        (['facebook', 'page', 'social media', 'instagram', 'tiktok'], ['Facebook page growth', 'social media marketing', 'Facebook content ideas', 'page engagement tips', 'social media content strategy', 'Instagram content tips']),
-        (['ai', 'chatgpt', 'artificial intelligence', 'tools'], ['AI tools', 'best AI tools', 'AI tools for content creators', 'ChatGPT alternatives', 'AI content writing tools', 'free AI tools', 'AI productivity tools']),
-        (['breakfast', 'food', 'recipe', 'healthy', 'diet', 'workout', 'fitness', 'health'], ['healthy breakfast ideas', 'easy breakfast recipes', 'healthy food tips', 'diet tips', 'home workout plan', 'fitness tips for beginners', 'health tips Bangla']),
-        (['travel', 'cox', 'bazar', 'tour', 'hotel', 'guide'], ['travel guide', 'Coxs Bazar travel guide', 'tour plan', 'hotel booking tips', 'budget travel tips', 'Bangladesh travel guide']),
-    ]
     phrases = []
+    profiles = [
+        (["windows", "win 11", "windows 11", "shortcut", "shortcuts", "hotkey", "keyboard", "useful", "usefull", "\u09b6\u09b0\u09cd\u099f\u0995\u09be\u099f", "\u0995\u09bf\u09ac\u09cb\u09b0\u09cd\u09a1"], ["Windows 11 shortcuts", "Windows 11 keyboard shortcuts", "most useful Windows 11 shortcuts", "Windows 11 shortcut keys", "keyboard shortcuts for Windows 11", "Windows shortcut keys", "Windows 11 hotkeys", "Windows key shortcuts", "Windows 11 tips and tricks", "Windows 11 productivity shortcuts", "Windows 11 shortcut keys Bangla", "\u0989\u0987\u09a8\u09cd\u09a1\u09cb\u099c \u09e7\u09e7 \u09b6\u09b0\u09cd\u099f\u0995\u09be\u099f", "\u0995\u09bf\u09ac\u09cb\u09b0\u09cd\u09a1 \u09b6\u09b0\u09cd\u099f\u0995\u09be\u099f"]),
+        (["world cup", "fifa", "football", "\u09ac\u09bf\u09b6\u09cd\u09ac\u0995\u09be\u09aa", "\u09ab\u09c1\u099f\u09ac\u09b2"], ["2026 FIFA World Cup", "World Cup 2026 news", "FIFA World Cup news", "World Cup latest news", "Football World Cup updates", "\u09e8\u09e6\u09e8\u09ec \u09ac\u09bf\u09b6\u09cd\u09ac\u0995\u09be\u09aa", "\u09ac\u09bf\u09b6\u09cd\u09ac\u0995\u09be\u09aa\u09c7\u09b0 \u0996\u09ac\u09b0"]),
+        (["skin", "skincare", "oily", "acne", "face wash", "sunscreen"], ["best skincare routine", "skincare routine for oily skin", "oily skin care tips", "acne prone skin care", "face wash for oily skin", "moisturizer for oily skin", "sunscreen for oily skin", "skin care routine Bangla"]),
+        (["business", "online business", "startup", "marketing"], ["online business ideas", "small business growth tips", "digital marketing strategy", "business growth tips", "online business guide", "startup marketing tips"]),
+        (["smartphone", "phone", "mobile", "android", "iphone", "laptop", "gadgets"], ["best smartphone", "smartphone buying guide", "budget smartphone", "phone review", "android phone tips", "laptop buying guide", "best laptop", "tech review Bangla"]),
+        (["youtube", "video", "creator", "content creator", "description"], ["YouTube SEO", "YouTube video description", "YouTube content ideas", "video SEO tips", "content creator tools", "YouTube growth tips", "YouTube description template"]),
+        (["facebook", "page", "social media", "instagram", "tiktok"], ["Facebook page growth", "social media marketing", "Facebook content ideas", "page engagement tips", "social media content strategy", "Instagram content tips"]),
+        (["ai", "chatgpt", "artificial intelligence", "tools"], ["AI tools", "best AI tools", "AI tools for content creators", "ChatGPT alternatives", "AI content writing tools", "free AI tools", "AI productivity tools"]),
+        (["breakfast", "food", "recipe", "healthy", "diet", "workout", "fitness", "health"], ["healthy breakfast ideas", "easy breakfast recipes", "healthy food tips", "diet tips", "home workout plan", "fitness tips for beginners", "health tips Bangla"]),
+        (["travel", "cox", "bazar", "tour", "hotel"], ["travel guide", "Coxs Bazar travel guide", "tour plan", "hotel booking tips", "budget travel tips", "Bangladesh travel guide"]),
+    ]
     for triggers, keywords in profiles:
         if any(trigger.lower() in text for trigger in triggers):
             phrases.extend(keywords)
     return phrases
 
-def _generic_seo_modifiers(title):
-    base = _clean_tag_phrase(title)
-    if not base:
-        return []
-    modifiers = ["tips", "guide", "Bangla", "review", "ideas", "tutorial"]
-    lower_base = base.lower()
+
+def _contextual_title_variations(title):
+    tokens = _title_tokens_for_tags(title)
     phrases = []
-    for modifier in modifiers:
-        if lower_base.endswith(" " + modifier.lower()):
-            continue
-        phrases.append(f"{base} {modifier}")
+    if len(tokens) >= 2:
+        phrases.append(_phrase_from_tokens(tokens[-2:]))
+    if len(tokens) >= 3:
+        phrases.append(_phrase_from_tokens(tokens[1:]))
+    if len(tokens) >= 4:
+        phrases.append(_phrase_from_tokens(tokens[:3]))
     return phrases
+
+
+def _generic_seo_modifiers(title):
+    # Kept for compatibility, but no longer appends generic tips/guide/review to every title.
+    return _contextual_title_variations(title)
 
 
 def _keyword_tags(title, article):

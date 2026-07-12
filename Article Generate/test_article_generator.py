@@ -7,6 +7,7 @@ spec = importlib.util.spec_from_file_location("article_routes", MODULE_PATH)
 routes = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(routes)
 
+WORLD_CUP_TITLE = "\u09e8\u09e6\u09e8\u09ec \u09ac\u09bf\u09b6\u09cd\u09ac\u0995\u09be\u09aa\u09c7\u09b0 \u0986\u09b2\u09cb\u099a\u09bf\u09a4 \u0996\u09ac\u09b0"
 WINDOWS_SHORTCUT_TITLE = "windows 11 most usefull \u09b6\u09b0\u09cd\u099f\u0995\u09be\u099f, \u098f\u0997\u09c1\u09b2\u09cb \u099c\u09be\u09a8\u09b2\u09c7 \u0986\u09aa\u09a8\u09bf \u099c\u09bf\u09a8\u09bf\u09df\u09be\u09b8\u0964"
 
 TEST_TITLES = [
@@ -92,6 +93,20 @@ class ArticleGeneratorTests(unittest.TestCase):
         self.assertNotIn("????", article)
         self.assertNotIn("????", joined_tags)
         self.assertLessEqual(routes._word_count(" ".join(package["tags"])), 200)
+
+
+    def test_bangla_news_title_gets_clean_slug_and_meaningful_tags(self):
+        package = self.make_package(WORLD_CUP_TITLE)
+        tags = package["tags"]
+        joined = ", ".join(tags)
+        self.assertEqual(package["slug"], "2026-world-cup-trending-news")
+        self.assertIn("2026 \u09ac\u09bf\u09b6\u09cd\u09ac\u0995\u09be\u09aa", joined)
+        self.assertIn("\u0986\u09b2\u09cb\u099a\u09bf\u09a4 \u0996\u09ac\u09b0", joined)
+        self.assertIn("\u09ac\u09bf\u09b6\u09cd\u09ac\u0995\u09be\u09aa\u09c7\u09b0 \u0986\u09b2\u09cb\u099a\u09bf\u09a4 \u0996\u09ac\u09b0", joined)
+        self.assertIn("\u09ac\u09bf\u09b6\u09cd\u09ac\u0995\u09be\u09aa\u09c7\u09b0 \u0996\u09ac\u09b0", joined)
+        for generic in ["tips", "guide", "review", "ideas", "tutorial"]:
+            self.assertNotIn(f"{WORLD_CUP_TITLE} {generic}", tags)
+        self.assertNotIn("????", joined)
 
     def test_validator_catches_banned_generic_copy(self):
         bad = "This draft uses trusted source, better engagement and long-term result as generic filler."
