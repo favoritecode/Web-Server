@@ -18,16 +18,11 @@ LAST_CLOUDFLARE_ERROR = ""
 DEFAULT_GEMINI_MODEL = "gemini-2.5-flash"
 DEFAULT_NVIDIA_MODEL = "meta/llama-3.1-70b-instruct"
 DEFAULT_NVIDIA_API_URL = "https://integrate.api.nvidia.com/v1/chat/completions"
-DEFAULT_CATEGORY = "শিক্ষা"
-DEFAULT_TARGET_AUDIENCE = "শিক্ষার্থী ও অভিভাবক"
-DEFAULT_TONE = "সহজ, প্রাঞ্জল, বিশ্বাসযোগ্য ও হালকা প্রচারণামূলক"
-DEFAULT_WORD_COUNT = '150 থেকে 250 বাংলা শব্দ'
-DEFAULT_PRODUCT_CONTEXT = (
-    "ইজি সিরিজ / Technique Easy Education বইয়ের বিভিন্ন অধ্যায়, প্রশ্ন ও সমাধানের পাশে QR কোড থাকে। "
-    "QR কোড মোবাইল দিয়ে scan করলে সংশ্লিষ্ট ভিডিও শিক্ষক পাওয়া যায়। ভিডিওতে কঠিন বিষয় ও সমাধান ধাপে ধাপে বুঝিয়ে দেওয়া হয়। "
-    "শিক্ষার্থী pause, replay এবং বারবার দেখে নিজের সুবিধামতো শিখতে পারে। এটি স্কুলের শিক্ষককে প্রতিস্থাপন করে না; "
-    "বাড়িতে পুনরাবৃত্তি, অনুশীলন এবং স্বশিক্ষায় সহায়তা করে।"
-)
+DEFAULT_CATEGORY = "general"
+DEFAULT_TARGET_AUDIENCE = "general readers and viewers"
+DEFAULT_TONE = "clear, useful, trustworthy, and engaging"
+DEFAULT_WORD_COUNT = '250 \u09a5\u09c7\u0995\u09c7 350 \u09ac\u09be\u0982\u09b2\u09be \u09b6\u09ac\u09cd\u09a6'
+DEFAULT_PRODUCT_CONTEXT = "No fixed brand or product context. Understand the user title and write for the likely audience. If the title mentions a brand, product, service, tutorial, review, news, offer, lifestyle, education, technology, health, entertainment, or business topic, follow that topic only."
 BANNED_PHRASES = [
     "পরিষ্কার ধারণা থাকলে সিদ্ধান্ত নেওয়া",
     "পরিষ্কার ধারণা থাকলে সিদ্ধান্ত নেয়া",
@@ -43,63 +38,18 @@ BANNED_PHRASES = [
 UNSAFE_CLAIMS = ["নিশ্চিত A+", "১০০% ফল", "100% ফল", "সব সমস্যা শেষ", "কোচিং সম্পূর্ণ অপ্রয়োজনীয়", "কোচিং সম্পূর্ণ অপ্রয়োজনীয়"]
 ALLOWED_ENGLISH_WORDS = {"qr", "scan", "pause", "replay", "video", "technique", "easy", "education", "h1", "seo", "url"}
 
-DEFAULT_SYSTEM_PROMPT = """তুমি বাংলাদেশের শিক্ষার্থী ও অভিভাবকদের জন্য স্বাভাবিক, তথ্যবহুল এবং সহজ বাংলা শিক্ষাবিষয়ক article writer।
+DEFAULT_SYSTEM_PROMPT = """You are a Bangladesh-focused Bengali content writer for general SEO and YouTube-friendly posts.
 
-তুমি generic SEO filler writer নও।
+You are not tied to any fixed brand, company, product, or education topic. First understand the user's title, then write natural Bangla content for the likely audience.
 
-প্রথমে title-এর মূল বক্তব্য বোঝো। তারপর category, target audience এবং product context অনুযায়ী article লেখো।
-
-Product context:
-ইজি সিরিজ বইয়ের বিভিন্ন অধ্যায়, প্রশ্ন ও সমাধানের পাশে QR কোড থাকে। QR কোড scan করলে সংশ্লিষ্ট ভিডিও শিক্ষক পাওয়া যায়। ভিডিওতে কঠিন বিষয় ও সমাধান ধাপে ধাপে বুঝিয়ে দেওয়া হয়। শিক্ষার্থী pause, replay এবং বারবার দেখে নিজের সুবিধামতো শিখতে পারে। এটি স্কুলের শিক্ষককে প্রতিস্থাপন করে না; বাড়িতে পুনরাবৃত্তি, অনুশীলন এবং স্বশিক্ষায় সহায়তা করে।
-
-কঠোর নিয়ম:
-1. Title-এর প্রকৃত অর্থের বাইরে যাবে না।
-2. Title-এর শব্দ আলাদা করে কমা দিয়ে keyword list বানাবে না।
-3. Title একই article-এ অপ্রয়োজনে বারবার repeat করবে না।
-4. প্রতিটি paragraph-এ নতুন ও নির্দিষ্ট তথ্য থাকবে।
-5. generic paragraph লিখবে না।
-6. অপ্রয়োজনীয় English শব্দ ব্যবহার করবে না।
-7. “budget”, “checklist”, “comparison”, “trusted source”, “better engagement”, “long-term result” ব্যবহার করবে না।
-8. “পরিষ্কার ধারণা থাকলে সিদ্ধান্ত নেওয়া”, “পরিকল্পনা করা এবং বাস্তবে ভালো ফল”, “অপ্রয়োজনীয় বিভ্রান্তি কমে যায়” ধরনের filler sentence ব্যবহার করবে না।
-9. একই বক্তব্য ভিন্ন ভাষায় বারবার লিখবে না।
-10. ভিত্তিহীন দাবি করবে না।
-11. “নিশ্চিত A+”, “১০০% ফল”, “সব সমস্যা শেষ”, “কোচিং সম্পূর্ণ অপ্রয়োজনীয়” লিখবে না।
-12. প্রয়োজন হলে “কমতে পারে”, “সহায়ক হতে পারে”, “সহজ হয়” ধরনের বিশ্বাসযোগ্য ভাষা ব্যবহার করবে।
-13. ভাষা হবে বাংলাদেশের স্বাভাবিক বাংলা।
-14. article-এর মধ্যে বাংলা ও English অস্বাভাবিকভাবে মিশাবে না।
-15. পাঠক article পড়ে product কীভাবে কাজ করে, কার জন্য এবং কী সুবিধা দেয় তা বুঝতে পারবে।
-
-Article structure:
-- Title হুবহু H1 heading
-- আকর্ষণীয় ও বিষয়ভিত্তিক ভূমিকা
-- শিক্ষার্থীর বাস্তব সমস্যা
-- QR কোড ও ভিডিও শিক্ষক কীভাবে কাজ করে
-- কঠিন বিষয় বোঝার সুবিধা
-- শিক্ষার্থী ও অভিভাবকের উপকার
-- ব্যবহার করার সহজ পদ্ধতি
-- বাস্তবসম্মত সতর্কতা বা সীমাবদ্ধতা
-- সংক্ষিপ্ত উপসংহার
-
-Article length:
-500–700 বাংলা শব্দ, যদি আলাদা wordCount দেওয়া না হয়।
-
-Output rules:
-- শুধু final article return করবে
-- কোনো analysis, note, explanation বা meta-commentary থাকবে না
-- Markdown heading ব্যবহার করা যাবে
-- অপ্রয়োজনীয় bullet list ব্যবহার করবে না
-
-Bad example pattern, কখনো লিখবে না:
-“বিষয়টি সম্পর্কে পরিষ্কার ধারণা থাকলে সিদ্ধান্ত নেওয়া, পরিকল্পনা করা এবং বাস্তবে ভালো ফল পাওয়া সহজ হয়।”
-“নিজের প্রয়োজন, সময়, budget এবং প্রত্যাশিত ফলাফল মিলিয়ে trusted source অনুসরণ করলে better engagement পাওয়া যায়।”
-
-Good example pattern:
-Title: “বইয়ের ভেতর শিক্ষক থাকলে, লেখাপড়ায় আর প্রতিবন্ধকতা কিসের?”
-Style: “একটি অঙ্কের উত্তর বইয়ে দেওয়া থাকলেও মাঝের ধাপটি অনেক শিক্ষার্থীর কাছে পরিষ্কার হয় না। বইয়ের পাশে থাকা QR কোড scan করলে সংশ্লিষ্ট ভিডিও শিক্ষক ধাপে ধাপে সমাধানটি বুঝিয়ে দিতে পারেন। শিক্ষার্থী প্রয়োজন হলে ভিডিও pause করে একই অংশ বারবার দেখতে পারে।”
-Title: “QR কোড স্ক্যান করলেই শিক্ষক হাজির”
-Style: “পাতার পাশে থাকা QR কোড scan করলে একই অধ্যায়ের ভিডিও ব্যাখ্যা খুলে যায়। তখন শিক্ষার্থী বইয়ের প্রশ্ন দেখে সঙ্গে সঙ্গে শিক্ষক কীভাবে সমাধান করছেন তা অনুসরণ করতে পারে।”
-Title: “বইয়ের সাথে ২৪ ঘণ্টা শিক্ষক ফ্রি”
-Style: “রাতে বা ছুটির দিনে কোনো প্রশ্নে আটকে গেলে ভিডিও শিক্ষক সহায়ক হতে পারে। শিক্ষার্থী নিজের সময় অনুযায়ী ভিডিও দেখে আবার বইয়ের অনুশীলনে ফিরতে পারে।”
+Rules:
+- Output only the final post body.
+- Use the exact title once as an H1 heading.
+- Write 250 to 350 Bangla words; never exceed 500 words.
+- Use 3 to 5 focused paragraphs.
+- Do not include tags or hashtags inside the post body.
+- Do not use keyword stuffing, comma-separated keyword lists, unsupported guarantees, or unnecessary English words.
+- Keep the writing useful for website posts, Facebook captions, and YouTube descriptions.
 """
 
 
@@ -127,13 +77,13 @@ def system_prompt():
 
 def cloudflare_system_prompt():
     return (
-        "You are a professional Bengali education article writer for Bangladesh. "
-        "Write natural Bangla in Bengali script for students and parents. "
-        "Focus on Easy Series / Technique Easy Education: books have QR codes beside chapters, questions and solutions; scanning opens a related video teacher; students can pause, replay and learn difficult solutions step by step. "
-        "The video teacher supports school teachers; it does not guarantee results or replace reading, practice, or teacher guidance. "
-        "Return only the final post body. Use the exact title only once as H1. Do not put tags or hashtags inside the body. Do not use keyword stuffing, generic SEO filler, repeated title, unsupported guarantees, or unnecessary English words. "
+        "You are a professional Bengali content writer for Bangladesh. "
+        "You are not tied to any fixed brand, company, product, or education topic. "
+        "Understand the given title first, infer the likely audience, and write a useful SEO and YouTube-friendly Bengali post. "
+        "Return only the final post body. Use the exact title only once as H1. Do not put tags or hashtags inside the body. "
+        "Do not use keyword stuffing, generic filler, repeated title, unsupported guarantees, or unnecessary English words. "
         "Avoid these phrases: trusted source, better engagement, long-term result, budget, checklist, comparison. "
-        "Write a short SEO and YouTube-friendly Bengali post: 150 to 250 Bengali words, maximum 500 words, in 2 to 4 tight paragraphs."
+        "Write 250 to 350 Bengali words, maximum 500 words, in 3 to 5 focused paragraphs."
     )
 
 
@@ -185,11 +135,8 @@ def _contains_any(text, variants):
     return any(v.lower() in text for v in variants)
 
 
-def _education_title(title):
-    return _contains_any(title, ["বই", "শিক্ষক", "লেখাপড়া", "পড়াশোনা", "পড়াশোনা", "সমাধান", "অঙ্ক", "QR", "কোড", "ইজি", "শিক্ষা", "কোচিং", "স্বশিক্ষা", "অভিভাবক"])
 
-
-def validate_article(article, title, min_words=60, max_words=500):
+def validate_article(article, title, min_words=200, max_words=500):
     article = article or ""
     reasons = []
     banned = [phrase for phrase in BANNED_PHRASES if phrase.lower() in article.lower()]
@@ -226,7 +173,7 @@ def validate_article(article, title, min_words=60, max_words=500):
     english = [w for w in _english_words(article) if w not in ALLOWED_ENGLISH_WORDS]
     if _has_bengali_script(article) and english:
         ratio = len(english) / max(wc, 1)
-        if len(english) > 28 or ratio > 0.075:
+        if len(english) > 80 or ratio > 0.35:
             reasons.append("Too many unnecessary English words in Bangla article")
 
     norm = _normalize_for_count(article)
@@ -238,22 +185,6 @@ def validate_article(article, title, min_words=60, max_words=500):
         if count > 16:
             reasons.append(f"Possible keyword stuffing: {word}")
             break
-
-    concept_groups = {
-        "qr": ["qr", "কিউআর", "কোড", "স্ক্যান", "scan"],
-        "video_teacher": ["ভিডিও শিক্ষক", "ভিডিও", "শিক্ষক"],
-        "hard_solution": ["কঠিন", "সমাধান", "ধাপে ধাপে", "ধাপ", "অঙ্ক", "প্রশ্ন"],
-        "replay": ["বারবার", "replay", "pause", "থামিয়ে", "আবার দেখা", "পুনরায়"],
-        "student": ["শিক্ষার্থী", "ছাত্র", "ছাত্রী"],
-        "parent": ["অভিভাবক", "মা-বাবা", "বাসার"],
-        "cost": ["খরচ", "কোচিং", "প্রাইভেট", "নির্ভরতা", "কমতে পারে"],
-    }
-    if _education_title(title):
-        matched = [name for name, variants in concept_groups.items() if _contains_any(article, variants)]
-        if len(matched) < 5:
-            reasons.append("Missing required education/product concepts")
-        if not _contains_any(article, ["ইজি সিরিজ", "Technique Easy Education", "QR", "কোড", "ভিডিও শিক্ষক"]):
-            reasons.append("Product context is not clear")
 
     generic_markers = ["যেকোনো বিষয়ে", "সঠিক পরিকল্পনা", "স্মার্ট পদ্ধতি", "ভালো ফলাফল অর্জন"]
     if sum(1 for marker in generic_markers if marker in article) >= 2:
@@ -310,16 +241,16 @@ def _build_compact_user_prompt(settings, validation_reasons=None):
         f"Category: {settings['category']}\n"
         f"Target audience: {settings['targetAudience']}\n"
         f"Tone: {settings['tone']}\n"
-        "Length: 150 to 250 Bengali words, maximum 500 words, in 2 to 4 tight paragraphs.\n\n"
-        f"Product context:\n{settings['productContext']}\n\n"
+        "Length: 250 to 350 Bengali words, maximum 500 words, in 3 to 5 focused paragraphs.\n\n"
+        f"Additional context:\n{settings['productContext']}\n\n"
         "Write a short SEO and YouTube-friendly Bengali post. Use the exact title only once as H1. "
-        "Make every paragraph directly relevant to the title and Easy Series QR/video teacher context. "
+        "Make every paragraph directly relevant to the title, category, audience, and context. "
         "Avoid generic SEO filler, repeated title, keyword stuffing, unsupported guarantees, and unnecessary English words. "
         "Return only the final post body. Do not include tags or hashtags in the body."
     )
     if validation_reasons:
         prompt += "\n\nPrevious draft failed validation: " + "; ".join(validation_reasons)
-        prompt += " Rewrite the short post with more specific, title-relevant detail. Keep it under 500 words."
+        prompt += " Rewrite the short post with more specific, title-relevant detail. Write 250 to 350 Bengali words, under 500 words."
     return prompt
 
 
@@ -330,16 +261,16 @@ def _build_user_prompt(settings, validation_reasons=None):
         f"Target audience: {settings['targetAudience']}\n"
         f"Tone: {settings['tone']}\n"
         f"Desired length: {settings['wordCount']}\n"
-        "Hard length requirement: write 150 to 250 Bengali words, maximum 500 words. Use 2 to 4 tight paragraphs.\n\n"
-        f"Product context:\n{settings['productContext']}\n\n"
+        "Hard length requirement: write 250 to 350 Bengali words, maximum 500 words. Use 3 to 5 focused paragraphs.\n\n"
+        f"Additional context:\n{settings['productContext']}\n\n"
         "Write a short SEO and YouTube-friendly Bengali post from this title. Understand the real meaning before writing. "
         "Use the exact title only once as the H1 heading; do not repeat the full title in body paragraphs. "
-        "Write 150 to 250 Bengali words in Bengali script, never more than 500 words. Keep it useful, direct, and ready to copy. "
+        "Write 250 to 350 Bengali words in Bengali script, never more than 500 words. Keep it useful, direct, and ready to copy. "
         "Do not use generic SEO filler, keyword stuffing, repeated title, unnecessary English words, tags, or hashtags inside the body."
     )
     if validation_reasons:
         prompt += "\n\nThe previous draft failed validation for these reasons: " + "; ".join(validation_reasons)
-        prompt += " Rewrite the full short post. Remove generic filler, repetition and keyword stuffing. Keep every paragraph directly relevant to the title and product context, under 500 words."
+        prompt += " Rewrite the full short post. Remove generic filler, repetition and keyword stuffing. Keep every paragraph directly relevant to the title and given context. Write 250 to 350 words, under 500 words."
     return prompt
 
 
@@ -386,7 +317,7 @@ def _call_chat_completions(api_url, api_key, model, prompt, extra_headers=None):
         ],
         "temperature": 0.55,
         "top_p": 0.9,
-        "max_tokens": 900,
+        "max_tokens": 1300,
     }
     headers = {
         "Authorization": f"Bearer {api_key}",
@@ -481,8 +412,8 @@ def _call_cloudflare_ai(prompt):
         ],
         "temperature": 0.55,
         "top_p": 0.9,
-        "max_tokens": 900,
-        "max_completion_tokens": 900,
+        "max_tokens": 1300,
+        "max_completion_tokens": 1300,
     }
     text = _run_cloudflare_payload(api_url, api_token, messages_payload)
     if text:
@@ -491,8 +422,8 @@ def _call_cloudflare_ai(prompt):
         "prompt": f"{cloudflare_system_prompt()}\n\n{prompt}",
         "temperature": 0.55,
         "top_p": 0.9,
-        "max_tokens": 900,
-        "max_completion_tokens": 900,
+        "max_tokens": 1300,
+        "max_completion_tokens": 1300,
     }
     return _run_cloudflare_payload(api_url, api_token, fallback_payload)
 
@@ -518,7 +449,7 @@ def _call_gemini(prompt):
     payload = {
         "systemInstruction": {"parts": [{"text": cloudflare_system_prompt()}]},
         "contents": [{"role": "user", "parts": [{"text": prompt}]}],
-        "generationConfig": {"temperature": 0.65, "topP": 0.9, "maxOutputTokens": 900},
+        "generationConfig": {"temperature": 0.65, "topP": 0.9, "maxOutputTokens": 1300},
     }
     req = urllib.request.Request(
         api_url,
@@ -563,17 +494,19 @@ def _call_openai(prompt):
 
 def _education_fallback_article(settings):
     title = settings["title"].strip()
+    category = settings.get("category") or DEFAULT_CATEGORY
+    audience = settings.get("targetAudience") or DEFAULT_TARGET_AUDIENCE
     return (
         f"# {title}\n\n"
-        "অনেক শিক্ষার্থী বইয়ে উত্তর দেখেও সমাধানের মাঝের ধাপ বুঝতে পারে না। আবার রাতে, ছুটির দিনে বা পরীক্ষার প্রস্তুতির সময় কোনো প্রশ্নে আটকে গেলে সঙ্গে সঙ্গে শিক্ষককে পাওয়া সবসময় সম্ভব হয় না। এই জায়গাতেই ইজি সিরিজ / Technique Easy Education বইয়ের QR কোডভিত্তিক ভিডিও শিক্ষক শেখার একটি সহায়ক পথ তৈরি করে। বইয়ের পাতার সঙ্গে ভিডিও ব্যাখ্যা যুক্ত থাকায় শিক্ষার্থী শুধু উত্তর দেখে থেমে থাকে না; বরং কীভাবে উত্তরটি তৈরি হলো সেটিও বুঝে নেওয়ার সুযোগ পায়।\n\n"
-        "ইজি সিরিজের অধ্যায়, প্রশ্ন বা সমাধানের পাশে থাকা QR কোড মোবাইল দিয়ে scan করলে সংশ্লিষ্ট ভিডিও শিক্ষক খুলে যায়। ভিডিওতে শিক্ষক ধাপে ধাপে কঠিন বিষয়, অঙ্কের সমাধান বা প্রশ্নের ব্যাখ্যা বুঝিয়ে দেন। ফলে বইয়ের লেখা, উদাহরণ এবং ভিডিও ব্যাখ্যা একই সঙ্গে মিলিয়ে পড়া যায়। যে শিক্ষার্থী ক্লাসে একবার শুনে পুরো বিষয় ধরতে পারে না, সে বাড়িতে নিজের গতিতে আবার বিষয়টি দেখে নিতে পারে।\n\n"
-        "ভিডিওর বড় সুবিধা হলো শেখার নিয়ন্ত্রণ শিক্ষার্থীর হাতে থাকে। কোনো ধাপ দ্রুত চলে গেলে pause করা যায়, না বোঝা অংশ replay করে বারবার দেখা যায়, আবার বুঝে গেলে পরের অংশে যাওয়া যায়। এতে মুখস্থের চাপ কিছুটা কমে এবং সমাধানের পদ্ধতি বোঝার অভ্যাস তৈরি হয়। বিশেষ করে গণিত, বিজ্ঞান বা ব্যাকরণের মতো বিষয়ে মাঝের ধাপ বোঝা খুব জরুরি; ভিডিও শিক্ষক সেই জায়গায় সহায়ক হতে পারে।\n\n"
-        "অভিভাবকদের জন্যও এই ব্যবস্থা ব্যবহারিক। অনেক মা-বাবা সন্তানের সব বিষয় নিজে পড়াতে পারেন না, আবার প্রতিটি অধ্যায়ের জন্য আলাদা সহায়তা জোগাড় করাও সহজ নয়। বইয়ের সঙ্গে ভিডিও ব্যাখ্যা থাকলে শিক্ষার্থী অন্তত আটকে যাওয়া অংশ নিজে দেখে নিতে পারে। এতে কোচিং বা প্রাইভেটের ওপর নির্ভরতা কিছু ক্ষেত্রে কমতে পারে, যদিও প্রয়োজন অনুযায়ী শিক্ষক ও অভিভাবকের দিকনির্দেশনা এখনো গুরুত্বপূর্ণ।\n\n"
-        "ব্যবহার পদ্ধতিটিও সহজ। শিক্ষার্থী প্রথমে বইয়ের অধ্যায় বা প্রশ্ন পড়বে, কোথায় সমস্যা হচ্ছে তা চিহ্নিত করবে, তারপর পাশে থাকা QR কোড scan করে ভিডিও দেখবে। ভিডিও দেখার পর আবার বইয়ে ফিরে একই প্রশ্ন নিজে সমাধান করার চেষ্টা করবে। শুধু ভিডিও দেখে গেলে শেখা স্থায়ী হয় না; নিয়মিত অনুশীলন, ভুল সংশোধন এবং বিদ্যালয়ের শিক্ষকের নির্দেশনা মানাও জরুরি।\n\n"
-        "শেখার সময় একটি ছোট নিয়ম অনুসরণ করলে সুবিধা বেশি পাওয়া যায়। প্রথমে প্রশ্নটি নিজে করার চেষ্টা করা, তারপর আটকে গেলে ভিডিও দেখা, এরপর ভিডিও বন্ধ রেখে আবার খাতায় সমাধান করা—এই অভ্যাস শিক্ষার্থীকে সক্রিয়ভাবে শেখায়। এতে সে শুধু শিক্ষক কী বললেন তা শুনে যায় না; নিজের ভুল কোথায় হচ্ছে সেটিও ধরতে পারে। একই অধ্যায়ের কয়েকটি প্রশ্ন বারবার অনুশীলন করলে দুর্বল অংশ ধীরে ধীরে পরিষ্কার হয়।\n\n"
-        "অভিভাবক চাইলে সন্তানের পড়ার অগ্রগতি দেখতেও এই পদ্ধতি ব্যবহার করতে পারেন। কোন অধ্যায়ের কোন প্রশ্নে সন্তান বারবার ভিডিও দেখছে, কোন অংশে বেশি সময় লাগছে, সেটি বুঝলে বাড়িতে সহায়তা করা সহজ হয়। এতে পড়াশোনা নিয়ে অযথা চাপ না দিয়ে নির্দিষ্ট দুর্বল জায়গায় মনোযোগ দেওয়া যায়।\n\n"
-        "তবে মোবাইল ব্যবহার যেন শুধু ভিডিও দেখার মধ্যেই সীমাবদ্ধ না থাকে, সেটিও খেয়াল রাখা দরকার। ভিডিও দেখার পর বইয়ের অনুশীলন, খাতায় সমাধান লেখা এবং ভুলগুলো চিহ্নিত করা শেখাকে বেশি কার্যকর করে। নিয়মিত এভাবে পড়লে শিক্ষার্থী ধীরে ধীরে নিজের ওপর আস্থা পায়।\n\n"
-        "তাই ‘বইয়ের ভেতর শিক্ষক’ কথাটির অর্থ কোনো জাদুকরী নিশ্চয়তা নয়। এর অর্থ হলো বইয়ের সঙ্গে এমন একটি ভিডিও সহায়তা যুক্ত থাকা, যা প্রয়োজনের সময় শিক্ষার্থীকে বিষয়টি বুঝতে সাহায্য করতে পারে। সঠিকভাবে ব্যবহার করলে ইজি সিরিজের QR কোড ও ভিডিও শিক্ষক পড়াশোনাকে আরও সহজ, নিয়মিত এবং আত্মবিশ্বাসী করে তুলতে পারে।"
+        "This post is written for the title itself, without forcing any fixed brand, company, or product context. "
+        "A good content draft should first explain what the topic means, why readers may care about it, and what useful point they can take away from it. "
+        "The language should stay direct, natural, and ready to use as a website post, Facebook caption, or YouTube description.\n\n"
+        f"For {audience}, the main value of this topic is clarity. If the title is about a product, service, review, tutorial, offer, news, lifestyle, education, technology, or business idea, the content should follow that exact subject. "
+        f"Because the selected category is {category}, the writing should avoid unnecessary filler and focus on practical details, benefits, limitations, and simple next steps.\n\n"
+        "SEO-friendly content does not mean repeating the same keyword again and again. It means using the title naturally, answering the likely questions behind it, and keeping each paragraph useful. "
+        "If the topic includes a brand or company, the content should avoid fake promises and mention only realistic benefits. If the topic is general, the content should help readers understand the idea quickly.\n\n"
+        "In short, the best result is specific, readable, and copy-ready. The post should not include tags or hashtags inside the body; those should be generated separately from the actual content. "
+        "This keeps the main writing clean while still making it useful for publishing, sharing, and search visibility."
     )
 
 
@@ -652,7 +585,7 @@ def _dedupe_sentences(article):
     return "\n\n".join(cleaned)
 
 
-def _shorten_to_word_limit(article, max_words=260):
+def _shorten_to_word_limit(article, max_words=420, min_words=260):
     if not article:
         return article
     parts = [p.strip() for p in article.split("\n\n") if p.strip()]
@@ -666,9 +599,15 @@ def _shorten_to_word_limit(article, max_words=260):
         part_count = _word_count(part)
         if kept and count + part_count > max_words:
             break
+        if not kept and count + part_count > max_words:
+            remaining = max(max_words - count, 80)
+            words = re.findall(r"\S+", part)[:remaining]
+            kept.append(" ".join(words).strip())
+            count = max_words
+            break
         kept.append(part)
         count += part_count
-        if count >= 150:
+        if count >= min_words:
             break
     if not kept and body_parts:
         words = re.findall(r"\S+", body_parts[0])[:max_words]
@@ -686,12 +625,12 @@ def _repair_provider_article(article, settings):
     repaired = _ensure_title_heading(article or "", settings["title"])
     repaired = _reduce_title_repetition(repaired, settings["title"])
     repaired = _dedupe_sentences(repaired)
-    repaired = _shorten_to_word_limit(repaired, 280)
+    repaired = _shorten_to_word_limit(repaired, 440, 300)
     validation = validate_article(repaired, settings["title"])
-    if validation["wordCount"] < 60:
+    if validation["wordCount"] < 200:
         repaired = (repaired.rstrip() + _provider_expansion(settings)).strip()
         repaired = _dedupe_sentences(repaired)
-        repaired = _shorten_to_word_limit(repaired, 280)
+        repaired = _shorten_to_word_limit(repaired, 440, 300)
         validation = validate_article(repaired, settings["title"])
     return repaired, validation
 
@@ -729,42 +668,83 @@ def _generate_article(settings):
             return result
         if LAST_CLOUDFLARE_ERROR and not (_secret_value("GEMINI_API_KEY") or _secret_value("GOOGLE_AI_API_KEY") or _secret_value("NVIDIA_API_KEY") or _secret_value("NVIDIA_NIM_API_KEY") or _secret_value("OPENAI_API_KEY")):
             return "", "cloudflare-error", {"isValid": False, "reasons": [LAST_CLOUDFLARE_ERROR], "wordCount": 0, "titleRepetitionCount": 0, "bannedPhrasesFound": []}
-    draft = _personalize_fallback_article(_education_fallback_article(settings), settings["title"])
+    draft = _education_fallback_article(settings)
     draft = _ensure_title_heading(draft, settings["title"])
-    draft = _shorten_to_word_limit(draft, 260)
+    draft = _shorten_to_word_limit(draft, 420, 280)
     validation = validate_article(draft, settings["title"])
     if not validation["isValid"] and any("Title repeated too many times" in reason for reason in validation["reasons"]):
         draft = _reduce_title_repetition(draft, settings["title"])
         draft = _ensure_title_heading(draft, settings["title"])
-        draft = _shorten_to_word_limit(draft, 260)
+        draft = _shorten_to_word_limit(draft, 420, 280)
         validation = validate_article(draft, settings["title"])
-    return draft, "local-education", validation
+    return draft, "local-generic", validation
 
 
-def _keyword_tags(title):
-    base = ['\u0987\u099c\u09bf \u09b8\u09bf\u09b0\u09bf\u099c', 'QR \u0995\u09cb\u09a1', '\u09ad\u09bf\u09a1\u09bf\u0993 \u09b6\u09bf\u0995\u09cd\u09b7\u0995', '\u09ac\u09be\u0982\u09b2\u09be \u09b6\u09bf\u0995\u09cd\u09b7\u09be', 'Technique Easy Education']
-    extras = []
-    for word in _meaningful_title_words(title):
-        clean = word.strip()
+def _tag_stop_words():
+    return set(['\u098f\u0987', '\u0993\u0987', '\u0986\u09b0', '\u09b9\u09ac\u09c7', '\u09b9\u09b2\u09c7', '\u0995\u09b0\u09c7', '\u0995\u09b0\u09be', '\u0995\u09b0\u09b2\u09c7', '\u0995\u09b0\u09b2\u09c7\u0987', '\u099c\u09a8\u09cd\u09af', '\u09b8\u09be\u09a5\u09c7', '\u09a5\u09c7\u0995\u09c7', '\u09a4\u09be\u09a6\u09c7\u09b0', '\u09a4\u09be\u09b0', '\u09a4\u09be\u0987', '\u09af\u09be\u09df', '\u09aa\u09be\u09b0\u09c7', '\u09b9\u09df', '\u09a8\u09be', '\u09ac\u09be', '\u098f\u09ac\u0982', '\u0995\u09c0\u09ad\u09be\u09ac\u09c7', '\u09a8\u09bf\u09df\u09c7', '\u09a6\u09c7\u09df', '\u09a6\u09bf\u09df\u09c7', '\u098f\u099f\u09bf', '\u098f\u099f\u09be', '\u098f\u0996\u09a8', '\u09a8\u09bf\u099c\u09c7', '\u09a8\u09a4\u09c1\u09a8', '\u09b9\u09df\u09c7', '\u09a5\u09be\u0995\u09c7', '\u09a5\u09be\u0995\u09be', '\u09a6\u09c7\u0996\u09be', '\u09a6\u09c7\u0996\u09c7', '\u09b8\u09c7\u0987', '\u09b8\u09ac', '\u09af\u09be', '\u09af\u09c7', '\u09af\u09be\u09a4\u09c7', '\u09ae\u09a4\u09cb', '\u09a8\u09bf\u09b2\u09c7', '\u09a6\u09c7\u0993\u09df\u09be', '\u09a8\u09c7\u0993\u09df\u09be', '\u09aa\u09be\u0993\u09df\u09be', '\u09b9\u09be\u09a4\u09c7', '\u09b8\u09ae\u09df', '\u09b8\u09c1\u09ac\u09bf\u09a7\u09be', '\u099c\u09a8\u09cd\u09af\u0993', '\u0985\u09a8\u09c7\u0995', '\u09ac\u09cd\u09af\u09ac\u09b8\u09cd\u09a5\u09be', '\u09ac\u09cd\u09af\u09ac\u09b9\u09be\u09b0\u09bf\u0995', '\u09ac\u09be\u09ac\u09be', '\u09ae\u09be', '\u09b8\u09a8\u09cd\u09a4\u09be\u09a8\u09c7\u09b0', '\u09aa\u09be\u09b0\u09c7\u09a8', '\u09b8\u09b9\u099c', '\u09ac\u09bf\u09b6\u09c7\u09b7', '\u09aa\u09cd\u09b0\u09a4\u09bf\u099f\u09bf', '\u09aa\u09be\u09b6\u09c7', '\u09ae\u09cb\u09ac\u09be\u0987\u09b2', '\u09a6\u09bf\u09a8', '\u09b8\u09ae\u09b8\u09cd\u09af\u09be', '\u0986\u09ac\u09be\u09b0', '\u09b8\u0999\u09cd\u0997\u09c7', '\u0997\u09c7\u09b2\u09c7', '\u098f\u0995\u0987', '\u098f\u09a4\u09c7', '\u0995\u09b0\u09ac\u09c7', '\u0995\u09cb\u09a8\u09cb', '\u09a8\u09bf\u09a4\u09c7', '\u09a6\u09b0\u0995\u09be\u09b0', '\u09a4\u0996\u09a8', '\u09ab\u09b2\u09c7', '\u0985\u09a8\u09c1\u09af\u09be\u09df\u09c0', '\u099a\u09be\u0987\u09b2\u09c7', '\u09b6\u09c1\u09a7\u09c1', '\u09b9\u09af\u09bc', '\u09af\u09be\u09af\u09bc', '\u098f\u0995\u099f\u09bf', '\u09a4\u09ac\u09c7', '\u09a8\u09af\u09bc', '\u09a8\u09bf\u099c\u09c7\u09b0', '\u09ac\u09a1\u09bc', '\u099a\u09c7\u09b7\u09cd\u099f\u09be', '\u09ad\u09bf\u09a8\u09cd\u09a8\u09ad\u09be\u09ac\u09c7', '\u09b8\u09be\u09ae\u09a8\u09c7', '\u099a\u09b2\u09c7', '\u0986\u09b8\u09c7', '????', '????', '?????', '????', '???', '???', '????', '??????', '????', '?????', '???????', '?????', '?????', '????', '????'])
+
+
+def _keyword_candidates(title, article):
+    combined = f"{title} {article}"
+    norm = _normalize_for_count(combined)
+    stop = _tag_stop_words()
+    title_words = set(_meaningful_title_words(title))
+    scores = {}
+    for word in re.findall(r"[A-Za-z0-9]+|[\u0980-\u09ff]+", norm):
+        if len(word) < 3 or word in stop:
+            continue
+        if word.isdigit():
+            continue
+        scores[word] = scores.get(word, 0) + (4 if word in title_words else 1)
+    return scores
+
+
+def _keyword_tags(title, article):
+    combined = f"{title} {article}"
+    scores = _keyword_candidates(title, article)
+    tags = []
+    for phrase in ["SEO friendly content", "YouTube description", "Facebook caption", "digital marketing", "online business", "product review", "how to guide", "social media content"]:
+        if _contains_any(combined, [phrase]):
+            tags.append(phrase)
+    common_stop = _tag_stop_words()
+    title_words = [w for w in _meaningful_title_words(title) if w not in common_stop]
+    for left, right in zip(title_words, title_words[1:]):
+        phrase = f"{left} {right}"
+        if phrase.lower() not in {tag.lower() for tag in tags}:
+            tags.append(phrase)
+    scored_words = [word for word, _score in sorted(scores.items(), key=lambda item: (-item[1], item[0]))]
+    for word in scored_words:
+        if word.lower() in {tag.lower() for tag in tags}:
+            continue
+        tags.append(word)
+        if len(tags) >= 80:
+            break
+    if not tags:
+        tags = ['\u09b6\u09bf\u0995\u09cd\u09b7\u09be']
+    limited = []
+    total_words = 0
+    for tag in tags:
+        tag_words = max(_word_count(tag), 1)
+        if limited and total_words + tag_words > 200:
+            break
+        limited.append(tag)
+        total_words += tag_words
+    return limited
+
+
+def _hashtags(title, article, tags=None):
+    tags = tags or _keyword_tags(title, article)
+    output = []
+    for tag in tags:
+        clean = re.sub(r"[^A-Za-z0-9\u0980-\u09ff]+", "_", tag).strip("_")
         if len(clean) < 3:
             continue
-        if clean.lower() in {item.lower() for item in base + extras}:
-            continue
-        extras.append(clean)
-        if len(extras) >= 5:
+        item = "#" + clean[:36]
+        if item not in output:
+            output.append(item)
+        if len(output) >= 8:
             break
-    return (base + extras)[:10]
-
-
-def _hashtags(title):
-    tags = ['#\u0987\u099c\u09bf_\u09b8\u09bf\u09b0\u09bf\u099c', '#QREducation', '#\u09ad\u09bf\u09a1\u09bf\u0993_\u09b6\u09bf\u0995\u09cd\u09b7\u0995', '#\u09ac\u09be\u0982\u09b2\u09be_\u09b6\u09bf\u0995\u09cd\u09b7\u09be']
-    if _contains_any(title, ['\u0995\u09cb\u099a\u09bf\u0982', '\u0996\u09b0\u099a']):
-        tags.append("#StudySmart")
-    elif _contains_any(title, ['\u0985\u0999\u09cd\u0995', '\u09b8\u09ae\u09be\u09a7\u09be\u09a8']):
-        tags.append('#\u09a7\u09be\u09aa\u09c7_\u09a7\u09be\u09aa\u09c7_\u09b6\u09c7\u0996\u09be')
-    else:
-        tags.append("#TechniqueEasyEducation")
-    return tags[:5]
+    return output or ['#\u09ac\u09be\u0982\u09b2\u09be_\u09b6\u09bf\u0995\u09cd\u09b7\u09be']
 
 
 def _caption_from_article(article, meta_description):
@@ -782,6 +762,8 @@ def generate_article_package(settings):
     if not validation["isValid"]:
         return {"error": "ভালো মানের article তৈরি করা যায়নি। Title বা context একটু নির্দিষ্ট করে আবার চেষ্টা করুন।", "validation": validation}
     meta = _metadata(settings["title"], article)
+    tags = _keyword_tags(settings["title"], article)
+    hashtags = _hashtags(settings["title"], article, tags)
     return {
         "engine": engine,
         "title": settings["title"],
@@ -794,8 +776,8 @@ def generate_article_package(settings):
         "slug": meta["slug"],
         "seo_title": meta["metaTitle"],
         "meta_description": meta["metaDescription"],
-        "tags": _keyword_tags(settings["title"]),
-        "hashtags": _hashtags(settings["title"]),
+        "tags": tags,
+        "hashtags": hashtags,
         "caption": _caption_from_article(article, meta["metaDescription"]),
     }
 

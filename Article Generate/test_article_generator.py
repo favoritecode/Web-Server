@@ -8,16 +8,16 @@ routes = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(routes)
 
 TEST_TITLES = [
-    "বইয়ের ভেতর শিক্ষক থাকলে, লেখাপড়ায় আর প্রতিবন্ধকতা কিসের?",
-    "QR কোড স্ক্যান করলেই শিক্ষক হাজির",
-    "বইয়ের সাথে ২৪ ঘণ্টা শিক্ষক ফ্রি",
-    "সমাধান না বুঝলে QR কোড স্ক্যান কর",
-    "ইজি সিরিজে পড়াশোনা হবে বুঝে বুঝে",
-    "অভিভাবকের দুশ্চিন্তা কমাবে বইয়ের ভিডিও শিক্ষক",
-    "কোচিংয়ের অতিরিক্ত খরচ কমাতে পারে ইজি সিরিজ",
-    "কঠিন অঙ্ক এখন ভিডিওতে ধাপে ধাপে",
-    "বই খুললেই সমাধান, স্ক্যান করলেই শিক্ষক",
-    "স্বশিক্ষায় QR কোডভিত্তিক বইয়ের ভূমিকা",
+    "Best skincare routine for oily skin",
+    "How to grow a small online business",
+    "Top budget smartphones for students",
+    "Healthy breakfast ideas for busy people",
+    "Facebook page growth tips for beginners",
+    "AI tools for content creators",
+    "How to choose the right laptop",
+    "Simple home workout plan",
+    "Travel guide for Cox's Bazar",
+    "YouTube video description writing tips",
 ]
 
 
@@ -41,30 +41,31 @@ class ArticleGeneratorTests(unittest.TestCase):
         article = package["article"]
         validation = package["validation"]
         self.assertTrue(validation["isValid"], validation)
+        self.assertTrue(article.startswith(f"# {title}"))
         self.assertEqual(validation["bannedPhrasesFound"], [])
         self.assertLessEqual(validation["titleRepetitionCount"], 3)
-        self.assertIn("QR", article)
-        self.assertIn("ভিডিও শিক্ষক", article)
-        self.assertRegex(article, r"কঠিন|সমাধান|ধাপে ধাপে")
-        self.assertRegex(article, r"বারবার|replay|pause|পুনরায়")
-        self.assertRegex(article, r"শিক্ষার্থী|অভিভাবক")
+        self.assertGreaterEqual(validation["wordCount"], 200)
+        self.assertLessEqual(validation["wordCount"], 500)
+        self.assertNotIn("FixedBrandExample", article)
         for unsafe in routes.UNSAFE_CLAIMS:
             self.assertNotIn(unsafe, article)
 
-    def test_all_required_titles_pass_validation(self):
+    def test_all_generic_titles_pass_validation(self):
         for title in TEST_TITLES:
             with self.subTest(title=title):
                 package = self.make_package(title)
                 validation = package["validation"]
                 self.assertTrue(validation["isValid"], validation)
-                self.assertGreaterEqual(validation["wordCount"], 60)
+                self.assertGreaterEqual(validation["wordCount"], 200)
                 self.assertLessEqual(validation["wordCount"], 500)
                 self.assertLessEqual(validation["titleRepetitionCount"], 3)
-                self.assertIn("QR", package["article"])
-                self.assertIn("ভিডিও শিক্ষক", package["article"])
+                self.assertTrue(package["article"].startswith(f"# {title}"))
+                self.assertTrue(package["tags"])
+                self.assertLessEqual(routes._word_count(" ".join(package["tags"])), 200)
+                self.assertTrue(package["hashtags"])
 
     def test_validator_catches_banned_generic_copy(self):
-        bad = "বিষয়টি সম্পর্কে পরিষ্কার ধারণা থাকলে সিদ্ধান্ত নেওয়া, পরিকল্পনা করা এবং বাস্তবে ভালো ফল পাওয়া সহজ হয়। trusted source অনুসরণ করলে better engagement পাওয়া যায়।"
+        bad = "This draft uses trusted source, better engagement and long-term result as generic filler."
         result = routes.validate_article(bad, TEST_TITLES[0], min_words=10)
         self.assertFalse(result["isValid"])
         self.assertTrue(result["bannedPhrasesFound"])
