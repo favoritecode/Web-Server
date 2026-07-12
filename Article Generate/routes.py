@@ -367,18 +367,18 @@ def _normalize_chat_api_url(api_url):
     return api_url
 
 
-def _call_chat_completions(api_url, api_key, model, prompt, extra_headers=None):
+def _call_chat_completions(api_url, api_key, model, prompt, extra_headers=None, system_content=None, max_tokens=1300, temperature=0.55):
     if not api_url or not api_key or not model:
         return None
     payload = {
         "model": model,
         "messages": [
-            {"role": "system", "content": cloudflare_system_prompt()},
+            {"role": "system", "content": system_content or cloudflare_system_prompt()},
             {"role": "user", "content": prompt},
         ],
-        "temperature": 0.55,
+        "temperature": temperature,
         "top_p": 0.9,
-        "max_tokens": 1300,
+        "max_tokens": max_tokens,
     }
     headers = {
         "Authorization": f"Bearer {api_key}",
@@ -769,6 +769,177 @@ def _generate_article(settings):
     return draft, "local-generic", validation
 
 
+def _tag_system_prompt():
+    return (
+        "You are an expert SEO keyword researcher for Google Search and YouTube. "
+        "Generate natural, high-intent search keyword tags, not robotic title fragments. "
+        "Prefer English keyword phrases. Use only a few Bengali tags when the title is Bengali. "
+        "Never append generic words like tips, guide, review, ideas, tutorial to every title. "
+        "Return only valid JSON."
+    )
+
+
+def _build_tag_prompt(settings, article):
+    return (
+        f"Title: {settings['title']}\n"
+        f"Category: {settings.get('category') or DEFAULT_CATEGORY}\n"
+        f"Audience: {settings.get('targetAudience') or DEFAULT_TARGET_AUDIENCE}\n\n"
+        "Article preview:\n"
+        f"{(article or '')[:1200]}\n\n"
+        "Generate SEO tags for this exact topic. Rules:\n"
+        "- Return JSON only: {\"tags\":[...]}\n"
+        "- 14 to 22 tags.\n"
+        "- 70% or more tags should be English search phrases.\n"
+        "- Each tag must be a phrase a real person may search.\n"
+        "- Keep each tag 2 to 7 words.\n"
+        "- No comma-separated keyword stuffing inside a tag.\n"
+        "- No meaningless partial cuts from the title.\n"
+        "- No repeated same-meaning tags.\n"
+        "- If it is news/current-events style, include search phrases like latest news, updates, schedule, teams, host, fixtures only when relevant.\n"
+        "- Include at most 5 Bengali tags when useful.\n"
+    )
+
+
+def _extract_json_object(text):
+    text = (text or "").strip()
+    if not text:
+        return None
+    text = re.sub(r"^```(?:json)?\s*|\s*```$", "", text, flags=re.I | re.S).strip()
+    try:
+        return json.loads(text)
+    except ValueError:
+        pass
+    match = re.search(r"\{.*\}", text, flags=re.S)
+    if not match:
+        return None
+    try:
+        return json.loads(match.group(0))
+    except ValueError:
+        return None
+
+
+def _valid_ai_tag(tag):
+    tag = re.sub(r"^[#\s]+", "", str(tag or "")).strip()
+    tag = re.sub(r"\s+", " ", tag)
+    tag = tag.strip(" -_,.;:")
+    if not tag or "????" in tag or "," in tag:
+        return ""
+    if len(tag) > 80:
+        return ""
+    words = re.findall(r"[A-Za-z0-9]+|[\u0980-\u09ff]+", tag)
+    if len(words) < 2 or len(words) > 7:
+        return ""
+    lower = tag.lower()
+    banned_patterns = [" tips guide", " guide review", " review ideas", " ideas tutorial"]
+    if any(pattern in lower for pattern in banned_patterns):
+        return ""
+    return tag
+
+
+def _parse_ai_tags(text):
+    data = _extract_json_object(text)
+    if not isinstance(data, dict):
+        return []
+    raw_tags = data.get("tags") or data.get("keywords") or []
+    if not isinstance(raw_tags, list):
+        return []
+    tags = []
+    bengali_count = 0
+    for item in raw_tags:
+        tag = _valid_ai_tag(item)
+        if not tag:
+            continue
+        has_bengali = _has_bengali_script(tag)
+        if has_bengali:
+            bengali_count += 1
+            if bengali_count > 5:
+                continue
+        if tag.lower() not in {existing.lower() for existing in tags}:
+            tags.append(tag)
+        if len(tags) >= 22:
+            break
+    englishish = [tag for tag in tags if not _has_bengali_script(tag)]
+    if len(tags) >= 10 and len(englishish) >= max(7, int(len(tags) * 0.6)):
+        return tags
+    return []
+
+
+def _call_gemini_for_tags(prompt):
+    api_key = (_secret_value("GEMINI_API_KEY") or _secret_value("GOOGLE_AI_API_KEY") or "").strip()
+    if not api_key:
+        return None
+    model = (_secret_value("GEMINI_MODEL", DEFAULT_GEMINI_MODEL) or DEFAULT_GEMINI_MODEL).strip()
+    api_url = "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent?key={}".format(
+        urllib.parse.quote(model, safe=""),
+        urllib.parse.quote(api_key, safe=""),
+    )
+    payload = {
+        "systemInstruction": {"parts": [{"text": _tag_system_prompt()}]},
+        "contents": [{"role": "user", "parts": [{"text": prompt}]}],
+        "generationConfig": {"temperature": 0.35, "topP": 0.9, "maxOutputTokens": 900},
+    }
+    req = urllib.request.Request(api_url, data=json.dumps(payload, ensure_ascii=False).encode("utf-8"), headers={"Content-Type": "application/json", "Accept": "application/json"}, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=45) as resp:
+            return _extract_gemini_text(json.loads(resp.read().decode("utf-8", errors="replace")))
+    except (urllib.error.URLError, TimeoutError, ValueError):
+        return None
+
+
+def _call_nvidia_for_tags(prompt):
+    api_key = (_secret_value("NVIDIA_API_KEY") or _secret_value("NVIDIA_NIM_API_KEY") or "").strip()
+    if not api_key:
+        return None
+    api_url = _normalize_chat_api_url(_secret_value("NVIDIA_API_URL", DEFAULT_NVIDIA_API_URL) or DEFAULT_NVIDIA_API_URL)
+    model = (_secret_value("NVIDIA_MODEL", DEFAULT_NVIDIA_MODEL) or DEFAULT_NVIDIA_MODEL).strip()
+    return _call_chat_completions(api_url, api_key, model, prompt, system_content=_tag_system_prompt(), max_tokens=900, temperature=0.35)
+
+
+def _call_openai_for_tags(prompt):
+    api_key = _secret_value("OPENAI_API_KEY")
+    if not api_key:
+        return None
+    model = _secret_value("OPENAI_TEXT_MODEL", "gpt-5.6")
+    payload = {"model": model, "reasoning": {"effort": "low"}, "instructions": _tag_system_prompt(), "input": prompt, "max_output_tokens": 900}
+    req = urllib.request.Request("https://api.openai.com/v1/responses", data=json.dumps(payload).encode("utf-8"), headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=45) as resp:
+            return _extract_output_text(json.loads(resp.read().decode("utf-8", errors="replace")))
+    except (urllib.error.URLError, TimeoutError, ValueError):
+        return None
+
+
+def _call_cloudflare_for_tags(prompt):
+    account_id = (_secret_value("CLOUDFLARE_ACCOUNT_ID") or _secret_value("CF_ACCOUNT_ID") or "").strip()
+    api_token = (_secret_value("CLOUDFLARE_API_TOKEN") or _secret_value("CF_API_TOKEN") or "").strip()
+    model = (_secret_value("CLOUDFLARE_AI_MODEL", DEFAULT_CLOUDFLARE_AI_MODEL) or DEFAULT_CLOUDFLARE_AI_MODEL).strip()
+    if not account_id or not api_token or not model:
+        return None
+    api_url = CLOUDFLARE_AI_ENDPOINT.format(account_id=urllib.parse.quote(account_id, safe=""), model=model)
+    payload = {
+        "messages": [
+            {"role": "system", "content": _tag_system_prompt()},
+            {"role": "user", "content": prompt},
+        ],
+        "temperature": 0.35,
+        "top_p": 0.9,
+        "max_tokens": 900,
+        "max_completion_tokens": 900,
+    }
+    return _run_cloudflare_payload(api_url, api_token, payload)
+
+
+def _ai_keyword_tags(settings, article):
+    prompt = _build_tag_prompt(settings, article)
+    callers = [_call_gemini_for_tags, _call_nvidia_for_tags, _call_openai_for_tags, _call_cloudflare_for_tags]
+    for caller in callers:
+        text = caller(prompt)
+        tags = _parse_ai_tags(text)
+        if tags:
+            return tags
+    return []
+
+
 def _tag_stop_words():
     return set(['a', 'an', 'the', 'and', 'or', 'for', 'to', 'of', 'in', 'on', 'with', 'by', 'from', 'how', 'what', 'why', 'when', 'where', 'is', 'are', 'be', 'best', 'top', 'this', 'that', 'these', 'those', 'most', 'very', 'usefull', 'useful', '\u0986\u09aa\u09a8\u09bf', '\u098f\u0997\u09c1\u09b2\u09cb', '\u099c\u09be\u09a8\u09b2\u09c7', '\u099c\u09a8\u09cd\u09af', '\u098f\u09b0', '\u098f\u0987'])
 
@@ -841,25 +1012,24 @@ def _title_keyword_phrases(title):
     if full:
         phrases.append(full)
 
-    # Meaningful n-grams preserve the title's natural order without blindly adding tips/guide/review.
-    for size in range(min(4, len(tokens)), 1, -1):
-        for index in range(0, len(tokens) - size + 1):
-            phrase = _phrase_from_tokens(tokens[index:index + size])
-            if _clean_tag_phrase(phrase):
-                phrases.append(phrase)
-
-    # Year + main topic, useful for news/sports/event titles like 2026 World Cup.
     year = next((word for word in tokens if re.fullmatch(r"20\d{2}|19\d{2}", word)), "")
+    last = tokens[-1] if tokens else ""
     if year:
+        topical = ""
         for token in tokens:
             if token != year and not re.fullmatch(r"\d+", token):
-                phrases.append(f"{year} {token}")
-                phrases.append(f"{token} {year}")
+                topical = token[:-2] if token.endswith("\u09c7\u09b0") and len(token) > 4 else token
                 break
+        if topical:
+            phrases.append(f"{year} {topical}")
+            if last and last != topical:
+                phrases.append(f"{topical} {last}")
+                phrases.append(f"{year} {topical} {last}")
 
-    # Possessive Bengali topic plus last keyword, such as world cup news.
+    if len(tokens) >= 2:
+        phrases.append(_phrase_from_tokens(tokens[-2:]))
+
     if len(tokens) >= 3:
-        last = tokens[-1]
         for token in tokens[:-1]:
             if token.endswith("\u09c7\u09b0") and token != last:
                 phrases.append(f"{token} {last}")
@@ -875,7 +1045,7 @@ def _topic_keyword_phrases(title, article):
     phrases = []
     profiles = [
         (["windows", "win 11", "windows 11", "shortcut", "shortcuts", "hotkey", "keyboard", "useful", "usefull", "\u09b6\u09b0\u09cd\u099f\u0995\u09be\u099f", "\u0995\u09bf\u09ac\u09cb\u09b0\u09cd\u09a1"], ["Windows 11 shortcuts", "Windows 11 keyboard shortcuts", "most useful Windows 11 shortcuts", "Windows 11 shortcut keys", "keyboard shortcuts for Windows 11", "Windows shortcut keys", "Windows 11 hotkeys", "Windows key shortcuts", "Windows 11 tips and tricks", "Windows 11 productivity shortcuts", "Windows 11 shortcut keys Bangla", "\u0989\u0987\u09a8\u09cd\u09a1\u09cb\u099c \u09e7\u09e7 \u09b6\u09b0\u09cd\u099f\u0995\u09be\u099f", "\u0995\u09bf\u09ac\u09cb\u09b0\u09cd\u09a1 \u09b6\u09b0\u09cd\u099f\u0995\u09be\u099f"]),
-        (["world cup", "fifa", "football", "\u09ac\u09bf\u09b6\u09cd\u09ac\u0995\u09be\u09aa", "\u09ab\u09c1\u099f\u09ac\u09b2"], ["2026 FIFA World Cup", "World Cup 2026 news", "FIFA World Cup news", "World Cup latest news", "Football World Cup updates", "\u09e8\u09e6\u09e8\u09ec \u09ac\u09bf\u09b6\u09cd\u09ac\u0995\u09be\u09aa", "\u09ac\u09bf\u09b6\u09cd\u09ac\u0995\u09be\u09aa\u09c7\u09b0 \u0996\u09ac\u09b0"]),
+        (["world cup", "fifa", "football", "\u09ac\u09bf\u09b6\u09cd\u09ac\u0995\u09be\u09aa", "\u09ab\u09c1\u099f\u09ac\u09b2"], ["2026 FIFA World Cup", "FIFA World Cup 2026", "World Cup 2026 news", "FIFA World Cup news", "World Cup latest news", "World Cup breaking news", "Football World Cup updates", "World Cup 2026 schedule", "World Cup 2026 teams", "World Cup 2026 host countries", "World Cup 2026 fixtures", "\u09e8\u09e6\u09e8\u09ec \u09ac\u09bf\u09b6\u09cd\u09ac\u0995\u09be\u09aa", "\u09ac\u09bf\u09b6\u09cd\u09ac\u0995\u09be\u09aa\u09c7\u09b0 \u0996\u09ac\u09b0", "\u09ac\u09bf\u09b6\u09cd\u09ac\u0995\u09be\u09aa\u09c7\u09b0 \u0986\u09b2\u09cb\u099a\u09bf\u09a4 \u0996\u09ac\u09b0"]),
         (["skin", "skincare", "oily", "acne", "face wash", "sunscreen"], ["best skincare routine", "skincare routine for oily skin", "oily skin care tips", "acne prone skin care", "face wash for oily skin", "moisturizer for oily skin", "sunscreen for oily skin", "skin care routine Bangla"]),
         (["business", "online business", "startup", "marketing"], ["online business ideas", "small business growth tips", "digital marketing strategy", "business growth tips", "online business guide", "startup marketing tips"]),
         (["smartphone", "phone", "mobile", "android", "iphone", "laptop", "gadgets"], ["best smartphone", "smartphone buying guide", "budget smartphone", "phone review", "android phone tips", "laptop buying guide", "best laptop", "tech review Bangla"]),
@@ -904,8 +1074,7 @@ def _contextual_title_variations(title):
 
 
 def _generic_seo_modifiers(title):
-    # Kept for compatibility, but no longer appends generic tips/guide/review to every title.
-    return _contextual_title_variations(title)
+    return []
 
 
 def _keyword_tags(title, article):
@@ -924,7 +1093,12 @@ def _keyword_tags(title, article):
 
     limited = []
     total_words = 0
+    bengali_count = 0
     for tag in tags:
+        if _has_bengali_script(tag):
+            bengali_count += 1
+            if bengali_count > 5:
+                continue
         tag_words = max(_word_count(tag), 1)
         if limited and total_words + tag_words > 200:
             break
@@ -963,7 +1137,7 @@ def generate_article_package(settings):
     if not validation["isValid"]:
         return {"error": "ভালো মানের article তৈরি করা যায়নি। Title বা context একটু নির্দিষ্ট করে আবার চেষ্টা করুন।", "validation": validation}
     meta = _metadata(settings["title"], article)
-    tags = _keyword_tags(settings["title"], article)
+    tags = _ai_keyword_tags(settings, article) or _keyword_tags(settings["title"], article)
     hashtags = _hashtags(settings["title"], article, tags)
     return {
         "engine": engine,

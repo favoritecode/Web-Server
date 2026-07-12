@@ -108,6 +108,16 @@ class ArticleGeneratorTests(unittest.TestCase):
             self.assertNotIn(f"{WORLD_CUP_TITLE} {generic}", tags)
         self.assertNotIn("????", joined)
 
+
+    def test_ai_tag_parser_prefers_real_search_phrases(self):
+        raw = """{"tags":["2026 FIFA World Cup news","FIFA World Cup 2026 updates","World Cup 2026 schedule","World Cup 2026 teams","World Cup host countries 2026","Football World Cup latest news","FIFA World Cup fixtures","World Cup breaking news","2026 World Cup qualifiers","World Cup tournament updates","FIFA World Cup host cities","World Cup match schedule"]}"""
+        tags = routes._parse_ai_tags(raw)
+        self.assertGreaterEqual(len(tags), 10)
+        self.assertIn("2026 FIFA World Cup news", tags)
+        self.assertIn("World Cup 2026 schedule", tags)
+        self.assertTrue(all("," not in tag for tag in tags))
+        self.assertTrue(all(routes._word_count(tag) <= 7 for tag in tags))
+
     def test_validator_catches_banned_generic_copy(self):
         bad = "This draft uses trusted source, better engagement and long-term result as generic filler."
         result = routes.validate_article(bad, TEST_TITLES[0], min_words=10)
