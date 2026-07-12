@@ -7,6 +7,8 @@ spec = importlib.util.spec_from_file_location("article_routes", MODULE_PATH)
 routes = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(routes)
 
+WINDOWS_SHORTCUT_TITLE = "windows 11 most usefull \u09b6\u09b0\u09cd\u099f\u0995\u09be\u099f, \u098f\u0997\u09c1\u09b2\u09cb \u099c\u09be\u09a8\u09b2\u09c7 \u0986\u09aa\u09a8\u09bf \u099c\u09bf\u09a8\u09bf\u09df\u09be\u09b8\u0964"
+
 TEST_TITLES = [
     "Best skincare routine for oily skin",
     "How to grow a small online business",
@@ -74,6 +76,22 @@ class ArticleGeneratorTests(unittest.TestCase):
         self.assertIn("oily skin care tips", joined)
         self.assertLessEqual(routes._word_count(" ".join(package["tags"])), 200)
         self.assertTrue(all(routes._word_count(tag) <= 7 for tag in package["tags"]))
+
+
+    def test_windows_shortcut_title_gets_practical_content_and_seo_tags(self):
+        package = self.make_package(WINDOWS_SHORTCUT_TITLE)
+        article = package["article"]
+        joined_tags = ", ".join(package["tags"])
+        self.assertIn("Win + E", article)
+        self.assertIn("Win + Shift + S", article)
+        self.assertIn("Ctrl + Shift + Esc", article)
+        self.assertIn("Windows 11 shortcuts", joined_tags)
+        self.assertIn("Windows 11 keyboard shortcuts", joined_tags)
+        self.assertIn("Windows 11 shortcut keys", joined_tags)
+        self.assertIn("Windows 11 tips and tricks", joined_tags)
+        self.assertNotIn("????", article)
+        self.assertNotIn("????", joined_tags)
+        self.assertLessEqual(routes._word_count(" ".join(package["tags"])), 200)
 
     def test_validator_catches_banned_generic_copy(self):
         bad = "This draft uses trusted source, better engagement and long-term result as generic filler."

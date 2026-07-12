@@ -38,9 +38,9 @@ BANNED_PHRASES = [
 UNSAFE_CLAIMS = ["নিশ্চিত A+", "১০০% ফল", "100% ফল", "সব সমস্যা শেষ", "কোচিং সম্পূর্ণ অপ্রয়োজনীয়", "কোচিং সম্পূর্ণ অপ্রয়োজনীয়"]
 ALLOWED_ENGLISH_WORDS = {"qr", "scan", "pause", "replay", "video", "technique", "easy", "education", "h1", "seo", "url"}
 
-DEFAULT_SYSTEM_PROMPT = """You are a Bangladesh-focused Bengali content writer for general SEO and YouTube-friendly posts.
+DEFAULT_SYSTEM_PROMPT = """You are a Bangladesh-focused Bengali content writer for general SEO, social posts, and YouTube-friendly descriptions.
 
-You are not tied to any fixed brand, company, product, or education topic. First understand the user's title, then write natural Bangla content for the likely audience.
+You are not tied to any fixed brand, company, product, or education topic. First understand the user's title, then infer the likely audience, search intent, and content format.
 
 Rules:
 - Output only the final post body.
@@ -49,8 +49,11 @@ Rules:
 - Use 3 to 5 focused paragraphs.
 - Do not include tags or hashtags inside the post body.
 - Do not use keyword stuffing, comma-separated keyword lists, unsupported guarantees, or unnecessary English words.
+- If the title asks for shortcuts, tips, tools, list, tutorial, how-to, or useful tricks, give concrete examples and actionable points.
+- For Windows shortcut titles, mention relevant examples such as Win + E, Win + D, Win + V, Win + Shift + S, Alt + Tab, Ctrl + Shift + Esc, and Win + L when useful.
 - Keep the writing useful for website posts, Facebook captions, and YouTube descriptions.
 """
+
 
 
 def _secret_value(name, default=""):
@@ -79,8 +82,10 @@ def cloudflare_system_prompt():
     return (
         "You are a professional Bengali content writer for Bangladesh. "
         "You are not tied to any fixed brand, company, product, or education topic. "
-        "Understand the given title first, infer the likely audience, and write a useful SEO and YouTube-friendly Bengali post. "
+        "Understand the given title first, infer the likely audience and search intent, then write a useful SEO and YouTube-friendly Bengali post. "
         "Return only the final post body. Use the exact title only once as H1. Do not put tags or hashtags inside the body. "
+        "If the title asks for shortcuts, tips, tools, how-to, list, tutorial, or tricks, include concrete examples and practical steps. "
+        "For Windows shortcut titles, include real shortcuts such as Win + E, Win + D, Win + V, Win + Shift + S, Alt + Tab, Ctrl + Shift + Esc, and Win + L where relevant. "
         "Do not use keyword stuffing, generic filler, repeated title, unsupported guarantees, or unnecessary English words. "
         "Avoid these phrases: trusted source, better engagement, long-term result, budget, checklist, comparison. "
         "Write 250 to 350 Bengali words, maximum 500 words, in 3 to 5 focused paragraphs."
@@ -244,6 +249,8 @@ def _build_compact_user_prompt(settings, validation_reasons=None):
         "Length: 250 to 350 Bengali words, maximum 500 words, in 3 to 5 focused paragraphs.\n\n"
         f"Additional context:\n{settings['productContext']}\n\n"
         "Write a short SEO and YouTube-friendly Bengali post. Use the exact title only once as H1. "
+        "First understand the title's real topic, audience, and search intent. "
+        "If the title asks for shortcuts, tips, tools, list, tutorial, or how-to, give concrete examples and practical points; for Windows shortcuts include useful key combinations when relevant. "
         "Make every paragraph directly relevant to the title, category, audience, and context. "
         "Avoid generic SEO filler, repeated title, keyword stuffing, unsupported guarantees, and unnecessary English words. "
         "Return only the final post body. Do not include tags or hashtags in the body."
@@ -263,9 +270,11 @@ def _build_user_prompt(settings, validation_reasons=None):
         f"Desired length: {settings['wordCount']}\n"
         "Hard length requirement: write 250 to 350 Bengali words, maximum 500 words. Use 3 to 5 focused paragraphs.\n\n"
         f"Additional context:\n{settings['productContext']}\n\n"
-        "Write a short SEO and YouTube-friendly Bengali post from this title. Understand the real meaning before writing. "
+        "Write a short SEO and YouTube-friendly Bengali post from this title. Understand the real meaning, likely reader problem, and search intent before writing. "
         "Use the exact title only once as the H1 heading; do not repeat the full title in body paragraphs. "
-        "Write 250 to 350 Bengali words in Bengali script, never more than 500 words. Keep it useful, direct, and ready to copy. "
+        "For shortcut, tips, tools, listicle, tutorial, or how-to titles, write concrete examples and useful steps instead of generic motivation. "
+        "For Windows 11 shortcut titles, mention real shortcut examples like Win + E, Win + D, Win + V, Win + Shift + S, Alt + Tab, Ctrl + Shift + Esc, and Win + L when relevant. "
+        "Write 250 to 350 words in Bengali script, never more than 500 words. Keep it useful, direct, and ready to copy. "
         "Do not use generic SEO filler, keyword stuffing, repeated title, unnecessary English words, tags, or hashtags inside the body."
     )
     if validation_reasons:
@@ -492,21 +501,49 @@ def _call_openai(prompt):
         return None
 
 
+def _looks_like_windows_shortcut_title(title):
+    text = _normalize_for_count(title)
+    shortcut_terms = set(['shortcut', 'shortcuts', 'hotkey', 'hotkeys', 'keyboard', 'useful', 'usefull', 'tips', 'tricks', '\u09b6\u09b0\u09cd\u099f\u0995\u09be\u099f', '\u0995\u09bf\u09ac\u09cb\u09b0\u09cd\u09a1', '\u099c\u09bf\u09a8\u09bf\u09df\u09be\u09b8'])
+    has_windows = "windows" in text or "win 11" in text or "windows 11" in text
+    has_shortcut = any(term in text for term in shortcut_terms)
+    return has_windows and has_shortcut
+
+
+def _windows_shortcut_fallback_article(settings):
+    title = settings["title"].strip()
+    return (
+        f"# {title}\n\n"
+        + 'Windows 11 \u09ac\u09cd\u09af\u09ac\u09b9\u09be\u09b0 \u0995\u09b0\u09a4\u09c7 \u0997\u09bf\u09df\u09c7 \u0985\u09a8\u09c7\u0995\u09c7\u0987 \u09ae\u09be\u0989\u09b8 \u09a6\u09bf\u09df\u09c7 \u09ac\u09be\u09b0\u09ac\u09be\u09b0 \u098f\u0995\u0987 \u0995\u09be\u099c \u0995\u09b0\u09c7\u09a8\u0964 \u0985\u09a5\u099a \u0995\u09df\u09c7\u0995\u099f\u09bf \u09a6\u09b0\u0995\u09be\u09b0\u09bf \u0995\u09bf\u09ac\u09cb\u09b0\u09cd\u09a1 \u09b6\u09b0\u09cd\u099f\u0995\u09be\u099f \u099c\u09be\u09a8\u09b2\u09c7 \u09ab\u09be\u0987\u09b2 \u0996\u09cb\u09b2\u09be, \u0989\u0987\u09a8\u09cd\u09a1\u09cb \u09ac\u09a6\u09b2\u09be\u09a8\u09cb, \u09b8\u09cd\u0995\u09cd\u09b0\u09bf\u09a8\u09b6\u099f \u09a8\u09c7\u0993\u09df\u09be \u09ac\u09be \u0995\u09aa\u09bf \u0995\u09b0\u09be \u0995\u09be\u099c \u0985\u09a8\u09c7\u0995 \u09a6\u09cd\u09b0\u09c1\u09a4 \u0995\u09b0\u09be \u09af\u09be\u09df\u0964 \u09af\u09be\u09b0\u09be \u09aa\u09dc\u09be\u09b6\u09cb\u09a8\u09be, \u0985\u09ab\u09bf\u09b8, \u09a1\u09bf\u099c\u09be\u0987\u09a8, \u09ad\u09bf\u09a1\u09bf\u0993 \u098f\u09a1\u09bf\u099f\u09bf\u0982 \u09ac\u09be \u0985\u09a8\u09b2\u09be\u0987\u09a8 \u0995\u09be\u099c \u0995\u09b0\u09c7\u09a8, \u09a4\u09be\u09a6\u09c7\u09b0 \u099c\u09a8\u09cd\u09af \u098f\u09b8\u09ac \u09b6\u09b0\u09cd\u099f\u0995\u09be\u099f \u09aa\u09cd\u09b0\u09a4\u09bf\u09a6\u09bf\u09a8\u09c7\u09b0 \u09b8\u09ae\u09df \u09ac\u09be\u0981\u099a\u09be\u09a4\u09c7 \u09b8\u09be\u09b9\u09be\u09af\u09cd\u09af \u0995\u09b0\u09c7\u0964'
+        + "\n\n"
+        + '\u09b8\u09ac\u099a\u09c7\u09df\u09c7 \u09a6\u09b0\u0995\u09be\u09b0\u09bf \u09b6\u09b0\u09cd\u099f\u0995\u09be\u099f\u09c7\u09b0 \u09ae\u09a7\u09cd\u09af\u09c7 Win + E \u099a\u09be\u09aa\u09b2\u09c7 File Explorer \u0996\u09c1\u09b2\u09c7 \u09af\u09be\u09df, Win + D \u099a\u09be\u09aa\u09b2\u09c7 \u098f\u0995 \u0995\u09cd\u09b2\u09bf\u0995\u09c7 \u09a1\u09c7\u09b8\u09cd\u0995\u099f\u09aa \u09a6\u09c7\u0996\u09be \u09af\u09be\u09df, \u0986\u09b0 Alt + Tab \u09a6\u09bf\u09df\u09c7 \u0996\u09cb\u09b2\u09be \u0985\u09cd\u09af\u09be\u09aa\u09c7\u09b0 \u09ae\u09a7\u09cd\u09af\u09c7 \u09a6\u09cd\u09b0\u09c1\u09a4 \u09af\u09be\u0993\u09df\u09be \u09af\u09be\u09df\u0964 \u0985\u09a8\u09c7\u0995 \u09b8\u09ae\u09df \u0995\u09cb\u09a8\u09cb \u09b2\u09c7\u0996\u09be \u09ac\u09be \u099b\u09ac\u09bf \u09ac\u09be\u09b0\u09ac\u09be\u09b0 \u0995\u09aa\u09bf \u0995\u09b0\u09a4\u09c7 \u09b9\u09df; \u09a4\u0996\u09a8 Win + V \u09a6\u09bf\u09df\u09c7 clipboard history \u099a\u09be\u09b2\u09c1 \u0995\u09b0\u09b2\u09c7 \u0986\u0997\u09c7\u09b0 \u0995\u09aa\u09bf \u0995\u09b0\u09be \u099c\u09bf\u09a8\u09bf\u09b8\u0993 \u09b8\u09b9\u099c\u09c7 \u09ac\u09cd\u09af\u09ac\u09b9\u09be\u09b0 \u0995\u09b0\u09be \u09af\u09be\u09df\u0964'
+        + "\n\n"
+        + '\u09b8\u09cd\u0995\u09cd\u09b0\u09bf\u09a8\u09b6\u099f\u09c7\u09b0 \u099c\u09a8\u09cd\u09af Win + Shift + S \u0996\u09c1\u09ac \u0995\u09be\u099c\u09c7 \u09b2\u09be\u0997\u09c7, \u0995\u09be\u09b0\u09a3 \u098f\u09a4\u09c7 \u09a8\u09bf\u09b0\u09cd\u09a6\u09bf\u09b7\u09cd\u099f \u0985\u0982\u09b6 \u0995\u09c7\u099f\u09c7 \u09a8\u09c7\u0993\u09df\u09be \u09af\u09be\u09df\u0964 \u0995\u09ae\u09cd\u09aa\u09bf\u0989\u099f\u09be\u09b0 \u09a7\u09c0\u09b0 \u09b2\u09be\u0997\u09b2\u09c7 Ctrl + Shift + Esc \u099a\u09be\u09aa\u09b2\u09c7\u0987 Task Manager \u0996\u09c1\u09b2\u09c7 \u0995\u09cb\u09a8 \u0985\u09cd\u09af\u09be\u09aa \u09ac\u09c7\u09b6\u09bf \u099a\u09be\u09aa \u09a6\u09bf\u099a\u09cd\u099b\u09c7 \u09a4\u09be \u09a6\u09c7\u0996\u09be \u09af\u09be\u09df\u0964 \u09ac\u09be\u0987\u09b0\u09c7 \u09af\u09be\u0993\u09df\u09be\u09b0 \u0986\u0997\u09c7 Win + L \u099a\u09be\u09aa\u09b2\u09c7 \u0995\u09ae\u09cd\u09aa\u09bf\u0989\u099f\u09be\u09b0 \u09a6\u09cd\u09b0\u09c1\u09a4 \u09b2\u0995 \u09b9\u09df\u09c7 \u09af\u09be\u09df, \u09af\u09be \u09a8\u09bf\u09b0\u09be\u09aa\u09a4\u09cd\u09a4\u09be\u09b0 \u099c\u09a8\u09cd\u09af\u0993 \u09ad\u09be\u09b2\u09cb\u0964'
+        + "\n\n"
+        + '\u09b6\u09b0\u09cd\u099f\u0995\u09be\u099f \u09ae\u09c1\u0996\u09b8\u09cd\u09a5 \u0995\u09b0\u09be\u09b0 \u09b8\u09ac\u099a\u09c7\u09df\u09c7 \u09b8\u09b9\u099c \u09aa\u09a6\u09cd\u09a7\u09a4\u09bf \u09b9\u09b2\u09cb \u098f\u0995\u09b8\u09be\u09a5\u09c7 \u09b8\u09ac \u09b6\u09c7\u0996\u09be\u09b0 \u099a\u09c7\u09b7\u09cd\u099f\u09be \u09a8\u09be \u0995\u09b0\u09c7 \u09aa\u09cd\u09b0\u09a4\u09bf\u09a6\u09bf\u09a8 \u09a6\u09c1\u0987-\u09a4\u09bf\u09a8\u099f\u09bf \u09ac\u09cd\u09af\u09ac\u09b9\u09be\u09b0 \u0995\u09b0\u09be\u0964 \u0995\u09df\u09c7\u0995\u09a6\u09bf\u09a8 \u09a8\u09bf\u09df\u09ae\u09bf\u09a4 \u09ac\u09cd\u09af\u09ac\u09b9\u09be\u09b0 \u0995\u09b0\u09b2\u09c7 \u098f\u0997\u09c1\u09b2\u09cb \u0985\u09ad\u09cd\u09af\u09be\u09b8 \u09b9\u09df\u09c7 \u09af\u09be\u09df\u0964 \u09a4\u0996\u09a8 Windows 11 \u09b6\u09c1\u09a7\u09c1 \u099a\u09be\u09b2\u09be\u09a8\u09cb \u09a8\u09df, \u0986\u09b0\u0993 \u09a6\u09cd\u09b0\u09c1\u09a4 \u0993 \u09b8\u09cd\u09ae\u09be\u09b0\u09cd\u099f\u09ad\u09be\u09ac\u09c7 \u09ac\u09cd\u09af\u09ac\u09b9\u09be\u09b0 \u0995\u09b0\u09be \u09b8\u09ae\u09cd\u09ad\u09ac \u09b9\u09df\u0964'
+
+    )
+
+
 def _education_fallback_article(settings):
     title = settings["title"].strip()
     category = settings.get("category") or DEFAULT_CATEGORY
     audience = settings.get("targetAudience") or DEFAULT_TARGET_AUDIENCE
+    if _looks_like_windows_shortcut_title(title):
+        return _windows_shortcut_fallback_article(settings)
     return (
         f"# {title}\n\n"
-        "This post is written for the title itself, without forcing any fixed brand, company, or product context. "
-        "A good content draft should first explain what the topic means, why readers may care about it, and what useful point they can take away from it. "
-        "The language should stay direct, natural, and ready to use as a website post, Facebook caption, or YouTube description.\n\n"
-        f"For {audience}, the main value of this topic is clarity. If the title is about a product, service, review, tutorial, offer, news, lifestyle, education, technology, or business idea, the content should follow that exact subject. "
-        f"Because the selected category is {category}, the writing should avoid unnecessary filler and focus on practical details, benefits, limitations, and simple next steps.\n\n"
-        "SEO-friendly content does not mean repeating the same keyword again and again. It means using the title naturally, answering the likely questions behind it, and keeping each paragraph useful. "
-        "If the topic includes a brand or company, the content should avoid fake promises and mention only realistic benefits. If the topic is general, the content should help readers understand the idea quickly.\n\n"
-        "In short, the best result is specific, readable, and copy-ready. The post should not include tags or hashtags inside the body; those should be generated separately from the actual content. "
-        "This keeps the main writing clean while still making it useful for publishing, sharing, and search visibility."
+        + '\u098f\u0987 \u09ac\u09bf\u09b7\u09df\u099f\u09bf \u09a8\u09bf\u09df\u09c7 \u09ad\u09be\u09b2\u09cb \u0995\u09a8\u099f\u09c7\u09a8\u09cd\u099f \u09b2\u09bf\u0996\u09a4\u09c7 \u09b9\u09b2\u09c7 \u09aa\u09cd\u09b0\u09a5\u09ae\u09c7 \u09b6\u09bf\u09b0\u09cb\u09a8\u09be\u09ae\u09c7\u09b0 \u0986\u09b8\u09b2 \u0989\u09a6\u09cd\u09a6\u09c7\u09b6\u09cd\u09af \u09ac\u09c1\u099d\u09a4\u09c7 \u09b9\u09df\u0964 \u09aa\u09be\u09a0\u0995 \u0995\u09c0 \u099c\u09be\u09a8\u09a4\u09c7 \u099a\u09be\u0987\u099b\u09c7, \u0995\u09cb\u09a8 \u09b8\u09ae\u09b8\u09cd\u09af\u09be\u09b0 \u0989\u09a4\u09cd\u09a4\u09b0 \u0996\u09c1\u0981\u099c\u099b\u09c7 \u098f\u09ac\u0982 \u09b2\u09c7\u0996\u09be\u099f\u09bf \u09aa\u09dc\u09be\u09b0 \u09aa\u09b0 \u0995\u09c0 \u0995\u09be\u099c\u09c7 \u09b2\u09be\u0997\u09be\u09a4\u09c7 \u09aa\u09be\u09b0\u09ac\u09c7, \u098f\u09b8\u09ac \u09aa\u09b0\u09bf\u09b7\u09cd\u0995\u09be\u09b0 \u09a5\u09be\u0995\u09b2\u09c7 \u09b2\u09c7\u0996\u09be \u09b8\u09cd\u09ac\u09be\u09ad\u09be\u09ac\u09bf\u0995 \u0993 \u09ac\u09cd\u09af\u09ac\u09b9\u09be\u09b0\u09af\u09cb\u0997\u09cd\u09af \u09b9\u09df\u0964'
+        + "\n\n"
+        + '\u09ad\u09be\u09b2\u09cb \u09aa\u09cb\u09b8\u09cd\u099f \u09b6\u09c1\u09a7\u09c1 \u09ac\u09dc \u09ac\u09dc \u0995\u09a5\u09be \u09ac\u09b2\u09c7 \u09a8\u09be; \u098f\u099f\u09bf \u09a8\u09bf\u09b0\u09cd\u09a6\u09bf\u09b7\u09cd\u099f \u0989\u09a6\u09be\u09b9\u09b0\u09a3, \u09ac\u09be\u09b8\u09cd\u09a4\u09ac \u09b8\u09c1\u09ac\u09bf\u09a7\u09be \u098f\u09ac\u0982 \u09b8\u09b9\u099c \u09ac\u09cd\u09af\u09be\u0996\u09cd\u09af\u09be \u09a6\u09c7\u09df\u0964 \u09ac\u09bf\u09b7\u09df\u099f\u09bf \u09af\u09a6\u09bf \u09aa\u09cd\u09b0\u09af\u09c1\u0995\u09cd\u09a4\u09bf, \u09b6\u09bf\u0995\u09cd\u09b7\u09be, \u09ac\u09cd\u09af\u09ac\u09b8\u09be, \u09b8\u09cd\u09ac\u09be\u09b8\u09cd\u09a5\u09cd\u09af, \u09ad\u09cd\u09b0\u09ae\u09a3, \u09b0\u09be\u09a8\u09cd\u09a8\u09be \u09ac\u09be \u09b8\u09cb\u09b6\u09cd\u09af\u09be\u09b2 \u09ae\u09bf\u09a1\u09bf\u09df\u09be \u09b8\u09ae\u09cd\u09aa\u09b0\u09cd\u0995\u09bf\u09a4 \u09b9\u09df, \u09a4\u09be\u09b9\u09b2\u09c7 \u09b8\u09c7\u0987 \u09ac\u09bf\u09b7\u09df\u09c7\u09b0 \u09aa\u09cd\u09b0\u09df\u09cb\u099c\u09a8\u09c0\u09df \u09a4\u09a5\u09cd\u09af\u0987 \u09b8\u09be\u09ae\u09a8\u09c7 \u0986\u09a8\u09a4\u09c7 \u09b9\u09ac\u09c7\u0964'
+        + "\n\n"
+        + '\u09aa\u09be\u09a0\u0995\u09c7\u09b0 \u09b8\u09ae\u09df \u0995\u09ae, \u09a4\u09be\u0987 \u09ad\u09c2\u09ae\u09bf\u0995\u09be \u099b\u09cb\u099f \u09b0\u09c7\u0996\u09c7 \u09ae\u09c2\u09b2 \u0995\u09a5\u09be\u09df \u09af\u09c7\u09a4\u09c7 \u09b9\u09ac\u09c7\u0964 \u0995\u09cb\u09a5\u09be\u09df \u0995\u09c0\u09ad\u09be\u09ac\u09c7 \u09ac\u09cd\u09af\u09ac\u09b9\u09be\u09b0 \u0995\u09b0\u09be \u09af\u09be\u09df, \u0995\u09c0 \u09b8\u09c1\u09ac\u09bf\u09a7\u09be \u09aa\u09be\u0993\u09df\u09be \u09af\u09be\u09df \u098f\u09ac\u0982 \u0995\u09cb\u09a8 \u099c\u09be\u09df\u0997\u09be\u09df \u09b8\u09a4\u09b0\u09cd\u0995 \u09a5\u09be\u0995\u09be \u09a6\u09b0\u0995\u09be\u09b0, \u098f\u09b8\u09ac \u09b8\u09b9\u099c \u09ad\u09be\u09b7\u09be\u09df \u09ac\u09b2\u09b2\u09c7 \u0995\u09a8\u099f\u09c7\u09a8\u09cd\u099f \u09ac\u09c7\u09b6\u09bf \u09ac\u09bf\u09b6\u09cd\u09ac\u09be\u09b8\u09af\u09cb\u0997\u09cd\u09af \u09b9\u09df\u0964'
+        + "\n\n"
+        + '\u09b8\u09ac\u09b6\u09c7\u09b7\u09c7, SEO-friendly \u09b2\u09c7\u0996\u09be \u09ae\u09be\u09a8\u09c7 \u098f\u0995\u0987 \u09b6\u09ac\u09cd\u09a6 \u09ac\u09be\u09b0\u09ac\u09be\u09b0 \u09ac\u09b8\u09be\u09a8\u09cb \u09a8\u09df\u0964 \u09b6\u09bf\u09b0\u09cb\u09a8\u09be\u09ae\u09c7\u09b0 \u09b8\u0999\u09cd\u0997\u09c7 \u09b8\u09ae\u09cd\u09aa\u09b0\u09cd\u0995\u09bf\u09a4 \u09aa\u09cd\u09b0\u09b6\u09cd\u09a8\u09c7\u09b0 \u0989\u09a4\u09cd\u09a4\u09b0 \u09a6\u09c7\u0993\u09df\u09be, \u09b8\u09cd\u09ac\u09be\u09ad\u09be\u09ac\u09bf\u0995 \u09ad\u09be\u09b7\u09be\u09df \u0997\u09c1\u09b0\u09c1\u09a4\u09cd\u09ac\u09aa\u09c2\u09b0\u09cd\u09a3 \u09b6\u09ac\u09cd\u09a6 \u09ac\u09cd\u09af\u09ac\u09b9\u09be\u09b0 \u0995\u09b0\u09be \u098f\u09ac\u0982 \u09aa\u09be\u09a0\u0995\u09c7\u09b0 \u099c\u09a8\u09cd\u09af \u09aa\u09b0\u09bf\u09b7\u09cd\u0995\u09be\u09b0 \u09ae\u09c2\u09b2\u09cd\u09af \u09a4\u09c8\u09b0\u09bf \u0995\u09b0\u09be\u0987 \u09ad\u09be\u09b2\u09cb \u0995\u09a8\u099f\u09c7\u09a8\u09cd\u099f\u09c7\u09b0 \u0986\u09b8\u09b2 \u09b6\u0995\u09cd\u09a4\u09bf\u0964'
+        + "\n\n"
+        + '\u09b2\u09c7\u0996\u09be\u09b0 \u09ae\u09a7\u09cd\u09af\u09c7 \u0985\u09af\u09a5\u09be \u09ac\u09dc \u09a6\u09be\u09ac\u09bf \u09a8\u09be \u0995\u09b0\u09c7 \u09ac\u09be\u09b8\u09cd\u09a4\u09ac \u09a4\u09a5\u09cd\u09af \u09b0\u09be\u0996\u09be \u099c\u09b0\u09c1\u09b0\u09bf\u0964 \u09aa\u09be\u09a0\u0995 \u09af\u09c7\u09a8 \u09ac\u09c1\u099d\u09a4\u09c7 \u09aa\u09be\u09b0\u09c7 \u09ac\u09bf\u09b7\u09df\u099f\u09bf \u0995\u09c7\u09a8 \u09a6\u09b0\u0995\u09be\u09b0, \u0995\u09c0\u09ad\u09be\u09ac\u09c7 \u09b6\u09c1\u09b0\u09c1 \u0995\u09b0\u09be \u09af\u09be\u09df \u098f\u09ac\u0982 \u0995\u09cb\u09a8 \u09ad\u09c1\u09b2\u0997\u09c1\u09b2\u09cb \u098f\u09dc\u09bf\u09df\u09c7 \u099a\u09b2\u09be \u09ad\u09be\u09b2\u09cb\u0964 \u098f\u09a4\u09c7 \u09aa\u09cb\u09b8\u09cd\u099f\u099f\u09bf \u09b6\u09c1\u09a7\u09c1 \u09aa\u09dc\u09be\u09b0 \u09ae\u09a4\u09cb \u09a8\u09df, \u0995\u09be\u099c\u09c7 \u09b2\u09be\u0997\u09be\u09a8\u09cb\u09b0 \u09ae\u09a4\u09cb\u0993 \u09b9\u09df\u0964'
+        + "\n\n"
+        + '\u09aa\u09cd\u09b0\u09df\u09cb\u099c\u09a8\u09c7 \u099b\u09cb\u099f \u0989\u09a6\u09be\u09b9\u09b0\u09a3, \u09ac\u09cd\u09af\u09ac\u09b9\u09be\u09b0 \u0995\u09b0\u09be\u09b0 \u09a7\u09be\u09aa \u098f\u09ac\u0982 \u09b8\u09a4\u09b0\u09cd\u0995\u09a4\u09be\u09b0 \u0995\u09a5\u09be \u09af\u09cb\u0997 \u0995\u09b0\u09b2\u09c7 \u0995\u09a8\u099f\u09c7\u09a8\u09cd\u099f \u0986\u09b0\u0993 \u09b6\u0995\u09cd\u09a4\u09bf\u09b6\u09be\u09b2\u09c0 \u09b9\u09df\u0964 \u098f\u0995\u0987 \u0995\u09a5\u09be \u0998\u09c1\u09b0\u09bf\u09df\u09c7 \u09a8\u09be \u09b2\u09bf\u0996\u09c7 \u09aa\u09cd\u09b0\u09a4\u09bf\u099f\u09bf \u0985\u09a8\u09c1\u099a\u09cd\u099b\u09c7\u09a6\u09c7 \u09a8\u09a4\u09c1\u09a8 \u09a4\u09a5\u09cd\u09af \u09a6\u09bf\u09b2\u09c7 \u09aa\u09be\u09a0\u0995\u09c7\u09b0 \u0986\u0997\u09cd\u09b0\u09b9 \u09a5\u09be\u0995\u09c7 \u098f\u09ac\u0982 \u09b8\u09be\u09b0\u09cd\u099a\u09c7\u09b0 \u099c\u09a8\u09cd\u09af\u0993 \u09b2\u09c7\u0996\u09be \u09b8\u09cd\u09ac\u09be\u09ad\u09be\u09ac\u09bf\u0995\u09ad\u09be\u09ac\u09c7 \u09ad\u09be\u09b2\u09cb \u09b9\u09df\u0964'
+
     )
 
 
@@ -531,7 +568,7 @@ def _ensure_title_heading(article, title):
     if not article or not title:
         return article
     lines = [line.strip() for line in article.splitlines()]
-    while lines and _normalize_for_count(lines[0]) in {"heading", "title", "headline", "?????", "???????"}:
+    while lines and _normalize_for_count(lines[0]) in {"heading", "title", "headline"}:
         lines.pop(0)
     while lines and not lines[0]:
         lines.pop(0)
@@ -681,13 +718,7 @@ def _generate_article(settings):
 
 
 def _tag_stop_words():
-    return {
-        "a", "an", "the", "and", "or", "for", "to", "of", "in", "on", "with", "by", "from", "how", "what", "why", "when", "where", "is", "are", "be", "best", "top",
-        "??", "??", "??", "???", "???", "???", "???", "????", "?????", "????", "????", "????", "?????", "???", "???", "???", "????", "??", "??", "??", "???",
-        "??????", "????", "???", "????", "???", "???", "???", "????", "????", "???", "????", "????", "????", "????", "???", "??", "??", "??", "????",
-        "???", "????", "?????", "?????", "?????", "????", "???", "??????", "????", "???", "?????", "???????", "????", "???", "?????", "???????",
-        "????", "????", "?????", "????", "???", "???", "??????", "?????", "?????", "????", "????", "????", "??", "??????"
-    }
+    return set(['a', 'an', 'the', 'and', 'or', 'for', 'to', 'of', 'in', 'on', 'with', 'by', 'from', 'how', 'what', 'why', 'when', 'where', 'is', 'are', 'be', 'best', 'top', 'this', 'that', 'these', 'those', 'most', 'very', 'usefull', 'useful', '\u0986\u09aa\u09a8\u09bf', '\u098f\u0997\u09c1\u09b2\u09cb', '\u099c\u09be\u09a8\u09b2\u09c7', '\u099c\u09a8\u09cd\u09af', '\u098f\u09b0', '\u098f\u0987'])
 
 
 def _keyword_candidates(title, article):
@@ -746,39 +777,23 @@ def _title_keyword_phrases(title):
 
 
 def _topic_keyword_phrases(title, article):
-    text = (title or "").lower()
+    text = f"{title or ''} {article or ''}".lower()
     profiles = [
-        (["skin", "skincare", "oily", "acne", "????", "???????", "????"], [
-            "best skincare routine", "skincare routine for oily skin", "oily skin care tips", "acne prone skin care", "face wash for oily skin", "moisturizer for oily skin", "sunscreen for oily skin", "skin care routine Bangla", "??????? ?????? ????", "?????????? ????"
-        ]),
-        (["business", "online business", "startup", "marketing", "??????"], [
-            "online business ideas", "small business growth tips", "digital marketing strategy", "business growth tips", "online business guide", "startup marketing tips", "?????? ??????? ????", "?????? ?????? ????"
-        ]),
-        (["smartphone", "phone", "mobile", "android", "iphone", "laptop", "gadgets"], [
-            "best smartphone", "smartphone buying guide", "budget smartphone", "phone review", "android phone tips", "laptop buying guide", "best laptop", "tech review Bangla", "?????? ?????", "??????? ????? ????"
-        ]),
-        (["youtube", "video", "creator", "content creator", "description"], [
-            "YouTube SEO", "YouTube video description", "YouTube content ideas", "video SEO tips", "content creator tools", "YouTube growth tips", "YouTube description template", "?????? ????", "????? ??????? ??????"
-        ]),
-        (["facebook", "page", "social media", "instagram", "tiktok"], [
-            "Facebook page growth", "social media marketing", "Facebook content ideas", "page engagement tips", "social media content strategy", "Instagram content tips", "?????? ??? ?????", "??????? ?????? ?????????"
-        ]),
-        (["ai", "chatgpt", "artificial intelligence", "tools"], [
-            "AI tools", "best AI tools", "AI tools for content creators", "ChatGPT alternatives", "AI content writing tools", "free AI tools", "AI productivity tools", "??? ????", "??????? ???????? ????"
-        ]),
-        (["breakfast", "food", "recipe", "healthy", "diet", "workout", "fitness", "health"], [
-            "healthy breakfast ideas", "easy breakfast recipes", "healthy food tips", "diet tips", "home workout plan", "fitness tips for beginners", "health tips Bangla", "????????? ????", "??? ??????"
-        ]),
-        (["travel", "cox", "bazar", "tour", "hotel", "guide"], [
-            "travel guide", "Cox's Bazar travel guide", "tour plan", "hotel booking tips", "budget travel tips", "Bangladesh travel guide", "????????? ?????", "??????? ????"
-        ]),
+        (['windows', 'win 11', 'windows 11', 'shortcut', 'shortcuts', 'hotkey', 'keyboard', 'useful', 'usefull', '\u09b6\u09b0\u09cd\u099f\u0995\u09be\u099f', '\u0995\u09bf\u09ac\u09cb\u09b0\u09cd\u09a1'], ['Windows 11 shortcuts', 'Windows 11 keyboard shortcuts', 'most useful Windows 11 shortcuts', 'Windows 11 shortcut keys', 'keyboard shortcuts for Windows 11', 'Windows shortcut keys', 'Windows 11 hotkeys', 'Windows key shortcuts', 'Windows 11 tips and tricks', 'Windows 11 productivity shortcuts', 'Windows 11 shortcut keys Bangla', '\u0989\u0987\u09a8\u09cd\u09a1\u09cb\u099c \u09e7\u09e7 \u09b6\u09b0\u09cd\u099f\u0995\u09be\u099f', '\u0995\u09bf\u09ac\u09cb\u09b0\u09cd\u09a1 \u09b6\u09b0\u09cd\u099f\u0995\u09be\u099f']),
+        (['skin', 'skincare', 'oily', 'acne', 'face wash', 'sunscreen'], ['best skincare routine', 'skincare routine for oily skin', 'oily skin care tips', 'acne prone skin care', 'face wash for oily skin', 'moisturizer for oily skin', 'sunscreen for oily skin', 'skin care routine Bangla']),
+        (['business', 'online business', 'startup', 'marketing'], ['online business ideas', 'small business growth tips', 'digital marketing strategy', 'business growth tips', 'online business guide', 'startup marketing tips']),
+        (['smartphone', 'phone', 'mobile', 'android', 'iphone', 'laptop', 'gadgets'], ['best smartphone', 'smartphone buying guide', 'budget smartphone', 'phone review', 'android phone tips', 'laptop buying guide', 'best laptop', 'tech review Bangla']),
+        (['youtube', 'video', 'creator', 'content creator', 'description'], ['YouTube SEO', 'YouTube video description', 'YouTube content ideas', 'video SEO tips', 'content creator tools', 'YouTube growth tips', 'YouTube description template']),
+        (['facebook', 'page', 'social media', 'instagram', 'tiktok'], ['Facebook page growth', 'social media marketing', 'Facebook content ideas', 'page engagement tips', 'social media content strategy', 'Instagram content tips']),
+        (['ai', 'chatgpt', 'artificial intelligence', 'tools'], ['AI tools', 'best AI tools', 'AI tools for content creators', 'ChatGPT alternatives', 'AI content writing tools', 'free AI tools', 'AI productivity tools']),
+        (['breakfast', 'food', 'recipe', 'healthy', 'diet', 'workout', 'fitness', 'health'], ['healthy breakfast ideas', 'easy breakfast recipes', 'healthy food tips', 'diet tips', 'home workout plan', 'fitness tips for beginners', 'health tips Bangla']),
+        (['travel', 'cox', 'bazar', 'tour', 'hotel', 'guide'], ['travel guide', 'Coxs Bazar travel guide', 'tour plan', 'hotel booking tips', 'budget travel tips', 'Bangladesh travel guide']),
     ]
     phrases = []
     for triggers, keywords in profiles:
         if any(trigger.lower() in text for trigger in triggers):
             phrases.extend(keywords)
     return phrases
-
 
 def _generic_seo_modifiers(title):
     base = _clean_tag_phrase(title)
@@ -796,9 +811,9 @@ def _generic_seo_modifiers(title):
 
 def _keyword_tags(title, article):
     tags = []
-    for phrase in _title_keyword_phrases(title):
-        _add_tag(tags, phrase)
     for phrase in _topic_keyword_phrases(title, article):
+        _add_tag(tags, phrase)
+    for phrase in _title_keyword_phrases(title):
         _add_tag(tags, phrase)
     for phrase in _generic_seo_modifiers(title):
         _add_tag(tags, phrase)
