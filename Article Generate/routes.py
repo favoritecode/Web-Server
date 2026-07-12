@@ -681,7 +681,13 @@ def _generate_article(settings):
 
 
 def _tag_stop_words():
-    return set(['\u098f\u0987', '\u0993\u0987', '\u0986\u09b0', '\u09b9\u09ac\u09c7', '\u09b9\u09b2\u09c7', '\u0995\u09b0\u09c7', '\u0995\u09b0\u09be', '\u0995\u09b0\u09b2\u09c7', '\u0995\u09b0\u09b2\u09c7\u0987', '\u099c\u09a8\u09cd\u09af', '\u09b8\u09be\u09a5\u09c7', '\u09a5\u09c7\u0995\u09c7', '\u09a4\u09be\u09a6\u09c7\u09b0', '\u09a4\u09be\u09b0', '\u09a4\u09be\u0987', '\u09af\u09be\u09df', '\u09aa\u09be\u09b0\u09c7', '\u09b9\u09df', '\u09a8\u09be', '\u09ac\u09be', '\u098f\u09ac\u0982', '\u0995\u09c0\u09ad\u09be\u09ac\u09c7', '\u09a8\u09bf\u09df\u09c7', '\u09a6\u09c7\u09df', '\u09a6\u09bf\u09df\u09c7', '\u098f\u099f\u09bf', '\u098f\u099f\u09be', '\u098f\u0996\u09a8', '\u09a8\u09bf\u099c\u09c7', '\u09a8\u09a4\u09c1\u09a8', '\u09b9\u09df\u09c7', '\u09a5\u09be\u0995\u09c7', '\u09a5\u09be\u0995\u09be', '\u09a6\u09c7\u0996\u09be', '\u09a6\u09c7\u0996\u09c7', '\u09b8\u09c7\u0987', '\u09b8\u09ac', '\u09af\u09be', '\u09af\u09c7', '\u09af\u09be\u09a4\u09c7', '\u09ae\u09a4\u09cb', '\u09a8\u09bf\u09b2\u09c7', '\u09a6\u09c7\u0993\u09df\u09be', '\u09a8\u09c7\u0993\u09df\u09be', '\u09aa\u09be\u0993\u09df\u09be', '\u09b9\u09be\u09a4\u09c7', '\u09b8\u09ae\u09df', '\u09b8\u09c1\u09ac\u09bf\u09a7\u09be', '\u099c\u09a8\u09cd\u09af\u0993', '\u0985\u09a8\u09c7\u0995', '\u09ac\u09cd\u09af\u09ac\u09b8\u09cd\u09a5\u09be', '\u09ac\u09cd\u09af\u09ac\u09b9\u09be\u09b0\u09bf\u0995', '\u09ac\u09be\u09ac\u09be', '\u09ae\u09be', '\u09b8\u09a8\u09cd\u09a4\u09be\u09a8\u09c7\u09b0', '\u09aa\u09be\u09b0\u09c7\u09a8', '\u09b8\u09b9\u099c', '\u09ac\u09bf\u09b6\u09c7\u09b7', '\u09aa\u09cd\u09b0\u09a4\u09bf\u099f\u09bf', '\u09aa\u09be\u09b6\u09c7', '\u09ae\u09cb\u09ac\u09be\u0987\u09b2', '\u09a6\u09bf\u09a8', '\u09b8\u09ae\u09b8\u09cd\u09af\u09be', '\u0986\u09ac\u09be\u09b0', '\u09b8\u0999\u09cd\u0997\u09c7', '\u0997\u09c7\u09b2\u09c7', '\u098f\u0995\u0987', '\u098f\u09a4\u09c7', '\u0995\u09b0\u09ac\u09c7', '\u0995\u09cb\u09a8\u09cb', '\u09a8\u09bf\u09a4\u09c7', '\u09a6\u09b0\u0995\u09be\u09b0', '\u09a4\u0996\u09a8', '\u09ab\u09b2\u09c7', '\u0985\u09a8\u09c1\u09af\u09be\u09df\u09c0', '\u099a\u09be\u0987\u09b2\u09c7', '\u09b6\u09c1\u09a7\u09c1', '\u09b9\u09af\u09bc', '\u09af\u09be\u09af\u09bc', '\u098f\u0995\u099f\u09bf', '\u09a4\u09ac\u09c7', '\u09a8\u09af\u09bc', '\u09a8\u09bf\u099c\u09c7\u09b0', '\u09ac\u09a1\u09bc', '\u099a\u09c7\u09b7\u09cd\u099f\u09be', '\u09ad\u09bf\u09a8\u09cd\u09a8\u09ad\u09be\u09ac\u09c7', '\u09b8\u09be\u09ae\u09a8\u09c7', '\u099a\u09b2\u09c7', '\u0986\u09b8\u09c7', '????', '????', '?????', '????', '???', '???', '????', '??????', '????', '?????', '???????', '?????', '?????', '????', '????'])
+    return {
+        "a", "an", "the", "and", "or", "for", "to", "of", "in", "on", "with", "by", "from", "how", "what", "why", "when", "where", "is", "are", "be", "best", "top",
+        "??", "??", "??", "???", "???", "???", "???", "????", "?????", "????", "????", "????", "?????", "???", "???", "???", "????", "??", "??", "??", "???",
+        "??????", "????", "???", "????", "???", "???", "???", "????", "????", "???", "????", "????", "????", "????", "???", "??", "??", "??", "????",
+        "???", "????", "?????", "?????", "?????", "????", "???", "??????", "????", "???", "?????", "???????", "????", "???", "?????", "???????",
+        "????", "????", "?????", "????", "???", "???", "??????", "?????", "?????", "????", "????", "????", "??", "??????"
+    }
 
 
 def _keyword_candidates(title, article):
@@ -691,36 +697,117 @@ def _keyword_candidates(title, article):
     title_words = set(_meaningful_title_words(title))
     scores = {}
     for word in re.findall(r"[A-Za-z0-9]+|[\u0980-\u09ff]+", norm):
-        if len(word) < 3 or word in stop:
+        if len(word) < 3 or word in stop or word == "????":
             continue
         if word.isdigit():
             continue
-        scores[word] = scores.get(word, 0) + (4 if word in title_words else 1)
+        scores[word] = scores.get(word, 0) + (5 if word in title_words else 1)
     return scores
 
 
-def _keyword_tags(title, article):
-    combined = f"{title} {article}"
-    scores = _keyword_candidates(title, article)
-    tags = []
-    for phrase in ["SEO friendly content", "YouTube description", "Facebook caption", "digital marketing", "online business", "product review", "how to guide", "social media content"]:
-        if _contains_any(combined, [phrase]):
-            tags.append(phrase)
-    common_stop = _tag_stop_words()
-    title_words = [w for w in _meaningful_title_words(title) if w not in common_stop]
-    for left, right in zip(title_words, title_words[1:]):
-        phrase = f"{left} {right}"
-        if phrase.lower() not in {tag.lower() for tag in tags}:
-            tags.append(phrase)
-    scored_words = [word for word, _score in sorted(scores.items(), key=lambda item: (-item[1], item[0]))]
-    for word in scored_words:
-        if word.lower() in {tag.lower() for tag in tags}:
+def _clean_tag_phrase(phrase):
+    phrase = re.sub(r"[^A-Za-z0-9\u0980-\u09ff+#.\s-]+", " ", str(phrase or ""))
+    phrase = re.sub(r"\s+", " ", phrase).strip(" -_")
+    if not phrase or "????" in phrase:
+        return ""
+    words = re.findall(r"[A-Za-z0-9]+|[\u0980-\u09ff]+", phrase.lower())
+    if not words or len(words) > 7:
+        return ""
+    stop = _tag_stop_words()
+    meaningful = [word for word in words if word not in stop and len(word) >= 3]
+    if not meaningful:
+        return ""
+    return phrase[:80]
+
+
+def _add_tag(tags, phrase):
+    phrase = _clean_tag_phrase(phrase)
+    if not phrase:
+        return
+    existing = {tag.lower() for tag in tags}
+    if phrase.lower() not in existing:
+        tags.append(phrase)
+
+
+def _title_keyword_phrases(title):
+    stop = _tag_stop_words() - {"best", "top"}
+    words = [word.lower() if re.match(r"^[A-Za-z0-9]+$", word) else word for word in re.findall(r"[A-Za-z0-9]+|[\u0980-\u09ff]+", title or "")]
+    phrases = [title]
+    clean_words = [word for word in words if word not in stop and len(word) >= 2]
+    if len(clean_words) >= 2:
+        phrases.append(" ".join(clean_words))
+    for size in range(min(4, len(words)), 1, -1):
+        for index in range(0, len(words) - size + 1):
+            chunk = words[index:index + size]
+            if any(word in stop for word in chunk):
+                continue
+            phrases.append(" ".join(chunk))
+    return phrases
+
+
+def _topic_keyword_phrases(title, article):
+    text = (title or "").lower()
+    profiles = [
+        (["skin", "skincare", "oily", "acne", "????", "???????", "????"], [
+            "best skincare routine", "skincare routine for oily skin", "oily skin care tips", "acne prone skin care", "face wash for oily skin", "moisturizer for oily skin", "sunscreen for oily skin", "skin care routine Bangla", "??????? ?????? ????", "?????????? ????"
+        ]),
+        (["business", "online business", "startup", "marketing", "??????"], [
+            "online business ideas", "small business growth tips", "digital marketing strategy", "business growth tips", "online business guide", "startup marketing tips", "?????? ??????? ????", "?????? ?????? ????"
+        ]),
+        (["smartphone", "phone", "mobile", "android", "iphone", "laptop", "gadgets"], [
+            "best smartphone", "smartphone buying guide", "budget smartphone", "phone review", "android phone tips", "laptop buying guide", "best laptop", "tech review Bangla", "?????? ?????", "??????? ????? ????"
+        ]),
+        (["youtube", "video", "creator", "content creator", "description"], [
+            "YouTube SEO", "YouTube video description", "YouTube content ideas", "video SEO tips", "content creator tools", "YouTube growth tips", "YouTube description template", "?????? ????", "????? ??????? ??????"
+        ]),
+        (["facebook", "page", "social media", "instagram", "tiktok"], [
+            "Facebook page growth", "social media marketing", "Facebook content ideas", "page engagement tips", "social media content strategy", "Instagram content tips", "?????? ??? ?????", "??????? ?????? ?????????"
+        ]),
+        (["ai", "chatgpt", "artificial intelligence", "tools"], [
+            "AI tools", "best AI tools", "AI tools for content creators", "ChatGPT alternatives", "AI content writing tools", "free AI tools", "AI productivity tools", "??? ????", "??????? ???????? ????"
+        ]),
+        (["breakfast", "food", "recipe", "healthy", "diet", "workout", "fitness", "health"], [
+            "healthy breakfast ideas", "easy breakfast recipes", "healthy food tips", "diet tips", "home workout plan", "fitness tips for beginners", "health tips Bangla", "????????? ????", "??? ??????"
+        ]),
+        (["travel", "cox", "bazar", "tour", "hotel", "guide"], [
+            "travel guide", "Cox's Bazar travel guide", "tour plan", "hotel booking tips", "budget travel tips", "Bangladesh travel guide", "????????? ?????", "??????? ????"
+        ]),
+    ]
+    phrases = []
+    for triggers, keywords in profiles:
+        if any(trigger.lower() in text for trigger in triggers):
+            phrases.extend(keywords)
+    return phrases
+
+
+def _generic_seo_modifiers(title):
+    base = _clean_tag_phrase(title)
+    if not base:
+        return []
+    modifiers = ["tips", "guide", "Bangla", "review", "ideas", "tutorial"]
+    lower_base = base.lower()
+    phrases = []
+    for modifier in modifiers:
+        if lower_base.endswith(" " + modifier.lower()):
             continue
-        tags.append(word)
-        if len(tags) >= 80:
-            break
-    if not tags:
-        tags = ['\u09b6\u09bf\u0995\u09cd\u09b7\u09be']
+        phrases.append(f"{base} {modifier}")
+    return phrases
+
+
+def _keyword_tags(title, article):
+    tags = []
+    for phrase in _title_keyword_phrases(title):
+        _add_tag(tags, phrase)
+    for phrase in _topic_keyword_phrases(title, article):
+        _add_tag(tags, phrase)
+    for phrase in _generic_seo_modifiers(title):
+        _add_tag(tags, phrase)
+
+    # Add standalone title words only for very short/one-word titles.
+    if len(tags) < 6:
+        for word in _meaningful_title_words(title):
+            _add_tag(tags, word)
+
     limited = []
     total_words = 0
     for tag in tags:
@@ -729,7 +816,7 @@ def _keyword_tags(title, article):
             break
         limited.append(tag)
         total_words += tag_words
-    return limited
+    return limited or ["SEO friendly content", "YouTube description", "Bangla content"]
 
 
 def _hashtags(title, article, tags=None):

@@ -64,6 +64,17 @@ class ArticleGeneratorTests(unittest.TestCase):
                 self.assertLessEqual(routes._word_count(" ".join(package["tags"])), 200)
                 self.assertTrue(package["hashtags"])
 
+
+    def test_tags_are_seo_keyword_phrases(self):
+        package = self.make_package("Best skincare routine for oily skin")
+        tags = [tag.lower() for tag in package["tags"]]
+        joined = ", ".join(tags)
+        self.assertIn("best skincare routine", joined)
+        self.assertIn("skincare routine for oily skin", joined)
+        self.assertIn("oily skin care tips", joined)
+        self.assertLessEqual(routes._word_count(" ".join(package["tags"])), 200)
+        self.assertTrue(all(routes._word_count(tag) <= 7 for tag in package["tags"]))
+
     def test_validator_catches_banned_generic_copy(self):
         bad = "This draft uses trusted source, better engagement and long-term result as generic filler."
         result = routes.validate_article(bad, TEST_TITLES[0], min_words=10)
