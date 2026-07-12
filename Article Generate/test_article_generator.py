@@ -57,7 +57,8 @@ class ArticleGeneratorTests(unittest.TestCase):
                 package = self.make_package(title)
                 validation = package["validation"]
                 self.assertTrue(validation["isValid"], validation)
-                self.assertGreaterEqual(validation["wordCount"], 500)
+                self.assertGreaterEqual(validation["wordCount"], 60)
+                self.assertLessEqual(validation["wordCount"], 500)
                 self.assertLessEqual(validation["titleRepetitionCount"], 3)
                 self.assertIn("QR", package["article"])
                 self.assertIn("ভিডিও শিক্ষক", package["article"])

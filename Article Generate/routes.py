@@ -21,7 +21,7 @@ DEFAULT_NVIDIA_API_URL = "https://integrate.api.nvidia.com/v1/chat/completions"
 DEFAULT_CATEGORY = "শিক্ষা"
 DEFAULT_TARGET_AUDIENCE = "শিক্ষার্থী ও অভিভাবক"
 DEFAULT_TONE = "সহজ, প্রাঞ্জল, বিশ্বাসযোগ্য ও হালকা প্রচারণামূলক"
-DEFAULT_WORD_COUNT = "500 থেকে 700 বাংলা শব্দ"
+DEFAULT_WORD_COUNT = '150 থেকে 250 বাংলা শব্দ'
 DEFAULT_PRODUCT_CONTEXT = (
     "ইজি সিরিজ / Technique Easy Education বইয়ের বিভিন্ন অধ্যায়, প্রশ্ন ও সমাধানের পাশে QR কোড থাকে। "
     "QR কোড মোবাইল দিয়ে scan করলে সংশ্লিষ্ট ভিডিও শিক্ষক পাওয়া যায়। ভিডিওতে কঠিন বিষয় ও সমাধান ধাপে ধাপে বুঝিয়ে দেওয়া হয়। "
@@ -131,9 +131,9 @@ def cloudflare_system_prompt():
         "Write natural Bangla in Bengali script for students and parents. "
         "Focus on Easy Series / Technique Easy Education: books have QR codes beside chapters, questions and solutions; scanning opens a related video teacher; students can pause, replay and learn difficult solutions step by step. "
         "The video teacher supports school teachers; it does not guarantee results or replace reading, practice, or teacher guidance. "
-        "Return only the final article. Use the exact title only once as H1. Do not use keyword stuffing, generic SEO filler, repeated title, unsupported guarantees, or unnecessary English words. "
+        "Return only the final post body. Use the exact title only once as H1. Do not put tags or hashtags inside the body. Do not use keyword stuffing, generic SEO filler, repeated title, unsupported guarantees, or unnecessary English words. "
         "Avoid these phrases: trusted source, better engagement, long-term result, budget, checklist, comparison. "
-        "Write 650 to 750 Bengali words in 7 to 9 substantial paragraphs."
+        "Write a short SEO and YouTube-friendly Bengali post: 150 to 250 Bengali words, maximum 500 words, in 2 to 4 tight paragraphs."
     )
 
 
@@ -189,7 +189,7 @@ def _education_title(title):
     return _contains_any(title, ["বই", "শিক্ষক", "লেখাপড়া", "পড়াশোনা", "পড়াশোনা", "সমাধান", "অঙ্ক", "QR", "কোড", "ইজি", "শিক্ষা", "কোচিং", "স্বশিক্ষা", "অভিভাবক"])
 
 
-def validate_article(article, title, min_words=450):
+def validate_article(article, title, min_words=60, max_words=500):
     article = article or ""
     reasons = []
     banned = [phrase for phrase in BANNED_PHRASES if phrase.lower() in article.lower()]
@@ -199,7 +199,12 @@ def validate_article(article, title, min_words=450):
 
     wc = _word_count(article)
     if wc < min_words:
-        reasons.append(f"Article is too short: {wc} words")
+        reasons.append(f"Post is too short: {wc} words")
+    if max_words and wc > max_words:
+        reasons.append(f"Post is too long: {wc} words")
+
+    if title and not article.lstrip().startswith(f"# {title}"):
+        reasons.append("Missing exact title H1 heading")
 
     title_count = _title_repetition_count(title, article)
     if title_count > 3:
@@ -305,16 +310,16 @@ def _build_compact_user_prompt(settings, validation_reasons=None):
         f"Category: {settings['category']}\n"
         f"Target audience: {settings['targetAudience']}\n"
         f"Tone: {settings['tone']}\n"
-        "Length: 650 to 750 Bengali words in 7 to 9 substantial paragraphs.\n\n"
+        "Length: 150 to 250 Bengali words, maximum 500 words, in 2 to 4 tight paragraphs.\n\n"
         f"Product context:\n{settings['productContext']}\n\n"
-        "Write a complete Bengali article. Use the exact title only once as H1. "
+        "Write a short SEO and YouTube-friendly Bengali post. Use the exact title only once as H1. "
         "Make every paragraph directly relevant to the title and Easy Series QR/video teacher context. "
         "Avoid generic SEO filler, repeated title, keyword stuffing, unsupported guarantees, and unnecessary English words. "
-        "Return only the final article."
+        "Return only the final post body. Do not include tags or hashtags in the body."
     )
     if validation_reasons:
         prompt += "\n\nPrevious draft failed validation: " + "; ".join(validation_reasons)
-        prompt += " Rewrite the full article with more specific, title-relevant detail."
+        prompt += " Rewrite the short post with more specific, title-relevant detail. Keep it under 500 words."
     return prompt
 
 
@@ -325,16 +330,16 @@ def _build_user_prompt(settings, validation_reasons=None):
         f"Target audience: {settings['targetAudience']}\n"
         f"Tone: {settings['tone']}\n"
         f"Desired length: {settings['wordCount']}\n"
-        "Hard length requirement: write 800 to 900 Bengali words, not a short summary. Use 8 substantial paragraphs.\n\n"
+        "Hard length requirement: write 150 to 250 Bengali words, maximum 500 words. Use 2 to 4 tight paragraphs.\n\n"
         f"Product context:\n{settings['productContext']}\n\n"
-        "এই title নিয়ে একটি সম্পূর্ণ article লেখো। Title-এর প্রকৃত অর্থ বুঝে লিখবে। "
+        "Write a short SEO and YouTube-friendly Bengali post from this title. Understand the real meaning before writing. "
         "Use the exact title only once as the H1 heading; do not repeat the full title in body paragraphs. "
-        "Write at least 650 Bengali words in Bengali script, in 7 to 9 substantial paragraphs. Do not stop early. "
-        "Generic SEO filler, keyword stuffing, repeated title এবং অপ্রয়োজনীয় English শব্দ ব্যবহার করবে না।"
+        "Write 150 to 250 Bengali words in Bengali script, never more than 500 words. Keep it useful, direct, and ready to copy. "
+        "Do not use generic SEO filler, keyword stuffing, repeated title, unnecessary English words, tags, or hashtags inside the body."
     )
     if validation_reasons:
         prompt += "\n\nThe previous draft failed validation for these reasons: " + "; ".join(validation_reasons)
-        prompt += " Rewrite the full article. Remove all generic filler, repetition and keyword stuffing. Make every paragraph directly relevant to the title and product context."
+        prompt += " Rewrite the full short post. Remove generic filler, repetition and keyword stuffing. Keep every paragraph directly relevant to the title and product context, under 500 words."
     return prompt
 
 
@@ -381,7 +386,7 @@ def _call_chat_completions(api_url, api_key, model, prompt, extra_headers=None):
         ],
         "temperature": 0.55,
         "top_p": 0.9,
-        "max_tokens": 2600,
+        "max_tokens": 900,
     }
     headers = {
         "Authorization": f"Bearer {api_key}",
@@ -476,8 +481,8 @@ def _call_cloudflare_ai(prompt):
         ],
         "temperature": 0.55,
         "top_p": 0.9,
-        "max_tokens": 3200,
-        "max_completion_tokens": 3200,
+        "max_tokens": 900,
+        "max_completion_tokens": 900,
     }
     text = _run_cloudflare_payload(api_url, api_token, messages_payload)
     if text:
@@ -486,8 +491,8 @@ def _call_cloudflare_ai(prompt):
         "prompt": f"{cloudflare_system_prompt()}\n\n{prompt}",
         "temperature": 0.55,
         "top_p": 0.9,
-        "max_tokens": 3200,
-        "max_completion_tokens": 3200,
+        "max_tokens": 900,
+        "max_completion_tokens": 900,
     }
     return _run_cloudflare_payload(api_url, api_token, fallback_payload)
 
@@ -513,7 +518,7 @@ def _call_gemini(prompt):
     payload = {
         "systemInstruction": {"parts": [{"text": cloudflare_system_prompt()}]},
         "contents": [{"role": "user", "parts": [{"text": prompt}]}],
-        "generationConfig": {"temperature": 0.55, "topP": 0.9, "maxOutputTokens": 3200},
+        "generationConfig": {"temperature": 0.65, "topP": 0.9, "maxOutputTokens": 900},
     }
     req = urllib.request.Request(
         api_url,
@@ -587,6 +592,34 @@ def _personalize_fallback_article(article, title):
     return "\n\n".join([heading, focus] + paragraphs)
 
 
+def _ensure_title_heading(article, title):
+    article = (article or "").strip()
+    title = (title or "").strip()
+    if not article or not title:
+        return article
+    lines = [line.strip() for line in article.splitlines()]
+    while lines and _normalize_for_count(lines[0]) in {"heading", "title", "headline", "?????", "???????"}:
+        lines.pop(0)
+    while lines and not lines[0]:
+        lines.pop(0)
+    if lines and lines[0].startswith("#"):
+        lines[0] = f"# {title}"
+    elif lines and _normalize_for_count(lines[0]) == _normalize_for_count(title):
+        lines[0] = f"# {title}"
+    else:
+        lines.insert(0, f"# {title}")
+    cleaned = [lines[0]]
+    title_norm = _normalize_for_count(title)
+    for line in lines[1:]:
+        plain_line = re.sub(r"</?h[1-6][^>]*>", "", line, flags=re.I).strip()
+        if _normalize_for_count(plain_line.lstrip("# ")) == title_norm:
+            continue
+        cleaned.append(line)
+    result = "\n".join(cleaned).strip()
+    result = re.sub(r"</?h[1-6][^>]*>", "", result, flags=re.I)
+    return result.strip()
+
+
 def _reduce_title_repetition(article, title, max_repeats=3):
     if not article or not title:
         return article
@@ -619,19 +652,46 @@ def _dedupe_sentences(article):
     return "\n\n".join(cleaned)
 
 
+def _shorten_to_word_limit(article, max_words=260):
+    if not article:
+        return article
+    parts = [p.strip() for p in article.split("\n\n") if p.strip()]
+    if not parts:
+        return article
+    heading = parts[0] if parts[0].lstrip().startswith("#") else ""
+    body_parts = parts[1:] if heading else parts
+    kept = []
+    count = _word_count(heading)
+    for part in body_parts:
+        part_count = _word_count(part)
+        if kept and count + part_count > max_words:
+            break
+        kept.append(part)
+        count += part_count
+        if count >= 150:
+            break
+    if not kept and body_parts:
+        words = re.findall(r"\S+", body_parts[0])[:max_words]
+        kept = [" ".join(words).strip()]
+    return "\n\n".join([p for p in [heading] + kept if p]).strip()
+
+
 def _provider_expansion(settings):
     fallback = _education_fallback_article(settings)
     paragraphs = [p.strip() for p in fallback.split("\n\n") if p.strip() and not p.lstrip().startswith("#")]
-    return "\n\n" + "\n\n".join(paragraphs[-3:])
+    return "\n\n" + "\n\n".join(paragraphs[:2])
 
 
 def _repair_provider_article(article, settings):
-    repaired = _reduce_title_repetition(article or "", settings["title"])
+    repaired = _ensure_title_heading(article or "", settings["title"])
+    repaired = _reduce_title_repetition(repaired, settings["title"])
     repaired = _dedupe_sentences(repaired)
+    repaired = _shorten_to_word_limit(repaired, 280)
     validation = validate_article(repaired, settings["title"])
-    if validation["wordCount"] < 500:
+    if validation["wordCount"] < 60:
         repaired = (repaired.rstrip() + _provider_expansion(settings)).strip()
         repaired = _dedupe_sentences(repaired)
+        repaired = _shorten_to_word_limit(repaired, 280)
         validation = validate_article(repaired, settings["title"])
     return repaired, validation
 
@@ -643,9 +703,6 @@ def _generate_with_provider(settings, provider_name, caller):
         draft = caller(prompt_builder(settings, validation["reasons"] if validation else None))
         if not draft:
             break
-        validation = validate_article(draft, settings["title"])
-        if validation["isValid"]:
-            return draft, provider_name, validation
         repaired, repaired_validation = _repair_provider_article(draft, settings)
         if repaired_validation["isValid"]:
             return repaired, provider_name, repaired_validation
@@ -673,11 +730,49 @@ def _generate_article(settings):
         if LAST_CLOUDFLARE_ERROR and not (_secret_value("GEMINI_API_KEY") or _secret_value("GOOGLE_AI_API_KEY") or _secret_value("NVIDIA_API_KEY") or _secret_value("NVIDIA_NIM_API_KEY") or _secret_value("OPENAI_API_KEY")):
             return "", "cloudflare-error", {"isValid": False, "reasons": [LAST_CLOUDFLARE_ERROR], "wordCount": 0, "titleRepetitionCount": 0, "bannedPhrasesFound": []}
     draft = _personalize_fallback_article(_education_fallback_article(settings), settings["title"])
+    draft = _ensure_title_heading(draft, settings["title"])
+    draft = _shorten_to_word_limit(draft, 260)
     validation = validate_article(draft, settings["title"])
     if not validation["isValid"] and any("Title repeated too many times" in reason for reason in validation["reasons"]):
         draft = _reduce_title_repetition(draft, settings["title"])
+        draft = _ensure_title_heading(draft, settings["title"])
+        draft = _shorten_to_word_limit(draft, 260)
         validation = validate_article(draft, settings["title"])
     return draft, "local-education", validation
+
+
+def _keyword_tags(title):
+    base = ['\u0987\u099c\u09bf \u09b8\u09bf\u09b0\u09bf\u099c', 'QR \u0995\u09cb\u09a1', '\u09ad\u09bf\u09a1\u09bf\u0993 \u09b6\u09bf\u0995\u09cd\u09b7\u0995', '\u09ac\u09be\u0982\u09b2\u09be \u09b6\u09bf\u0995\u09cd\u09b7\u09be', 'Technique Easy Education']
+    extras = []
+    for word in _meaningful_title_words(title):
+        clean = word.strip()
+        if len(clean) < 3:
+            continue
+        if clean.lower() in {item.lower() for item in base + extras}:
+            continue
+        extras.append(clean)
+        if len(extras) >= 5:
+            break
+    return (base + extras)[:10]
+
+
+def _hashtags(title):
+    tags = ['#\u0987\u099c\u09bf_\u09b8\u09bf\u09b0\u09bf\u099c', '#QREducation', '#\u09ad\u09bf\u09a1\u09bf\u0993_\u09b6\u09bf\u0995\u09cd\u09b7\u0995', '#\u09ac\u09be\u0982\u09b2\u09be_\u09b6\u09bf\u0995\u09cd\u09b7\u09be']
+    if _contains_any(title, ['\u0995\u09cb\u099a\u09bf\u0982', '\u0996\u09b0\u099a']):
+        tags.append("#StudySmart")
+    elif _contains_any(title, ['\u0985\u0999\u09cd\u0995', '\u09b8\u09ae\u09be\u09a7\u09be\u09a8']):
+        tags.append('#\u09a7\u09be\u09aa\u09c7_\u09a7\u09be\u09aa\u09c7_\u09b6\u09c7\u0996\u09be')
+    else:
+        tags.append("#TechniqueEasyEducation")
+    return tags[:5]
+
+
+def _caption_from_article(article, meta_description):
+    first_para = " ".join([p.strip("# \n\r\t") for p in (article or "").split("\n\n") if p.strip() and not p.lstrip().startswith("#")][:1])
+    caption = re.sub(r"\s+", " ", first_para or meta_description or "").strip()
+    if len(caption) > 180:
+        caption = caption[:179].rsplit(" ", 1)[0] + "\u0964"
+    return caption
 
 
 def generate_article_package(settings):
@@ -699,9 +794,9 @@ def generate_article_package(settings):
         "slug": meta["slug"],
         "seo_title": meta["metaTitle"],
         "meta_description": meta["metaDescription"],
-        "tags": ["ইজি সিরিজ", "QR কোড", "ভিডিও শিক্ষক", "শিক্ষার্থী", "অভিভাবক", "স্বশিক্ষা"],
-        "hashtags": ["#ইজি_সিরিজ", "#QREducation", "#ভিডিও_শিক্ষক", "#বাংলা_শিক্ষা", "#TechniqueEasyEducation"],
-        "caption": meta["metaDescription"],
+        "tags": _keyword_tags(settings["title"]),
+        "hashtags": _hashtags(settings["title"]),
+        "caption": _caption_from_article(article, meta["metaDescription"]),
     }
 
 
