@@ -48,7 +48,7 @@ class ArticleGeneratorTests(unittest.TestCase):
         self.assertEqual(validation["bannedPhrasesFound"], [])
         self.assertLessEqual(validation["titleRepetitionCount"], 3)
         self.assertGreaterEqual(validation["wordCount"], 200)
-        self.assertLessEqual(validation["wordCount"], 500)
+        self.assertLessEqual(validation["wordCount"], 900)
         self.assertNotIn("FixedBrandExample", article)
         for unsafe in routes.UNSAFE_CLAIMS:
             self.assertNotIn(unsafe, article)
@@ -60,7 +60,7 @@ class ArticleGeneratorTests(unittest.TestCase):
                 validation = package["validation"]
                 self.assertTrue(validation["isValid"], validation)
                 self.assertGreaterEqual(validation["wordCount"], 200)
-                self.assertLessEqual(validation["wordCount"], 500)
+                self.assertLessEqual(validation["wordCount"], 900)
                 self.assertLessEqual(validation["titleRepetitionCount"], 3)
                 self.assertTrue(package["article"].startswith(f"# {title}"))
                 self.assertTrue(package["tags"])
@@ -117,6 +117,18 @@ class ArticleGeneratorTests(unittest.TestCase):
         self.assertIn("World Cup 2026 schedule", tags)
         self.assertTrue(all("," not in tag for tag in tags))
         self.assertTrue(all(routes._word_count(tag) <= 7 for tag in tags))
+
+
+    def test_ai_article_cleanup_preserves_full_length(self):
+        title = "AI style article quality check"
+        body = " ".join(f"word{i}" for i in range(620))
+        article = f"# {title}\n\n{body}"
+        cleaned = routes._shorten_to_word_limit(article, 900, 500)
+        self.assertGreater(routes._word_count(cleaned), 600)
+        noisy = "Here is the article:\n# AI style article quality check\n\n" + body + "\n\nTags: bad, tags"
+        stripped = routes._strip_model_noise(noisy)
+        self.assertNotIn("Here is the article", stripped)
+        self.assertNotIn("Tags:", stripped)
 
     def test_validator_catches_banned_generic_copy(self):
         bad = "This draft uses trusted source, better engagement and long-term result as generic filler."

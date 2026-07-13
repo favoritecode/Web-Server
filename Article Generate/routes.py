@@ -21,7 +21,7 @@ DEFAULT_NVIDIA_API_URL = "https://integrate.api.nvidia.com/v1/chat/completions"
 DEFAULT_CATEGORY = "general"
 DEFAULT_TARGET_AUDIENCE = "general readers and viewers"
 DEFAULT_TONE = "clear, useful, trustworthy, and engaging"
-DEFAULT_WORD_COUNT = '250 \u09a5\u09c7\u0995\u09c7 350 \u09ac\u09be\u0982\u09b2\u09be \u09b6\u09ac\u09cd\u09a6'
+DEFAULT_WORD_COUNT = '500 \u09a5\u09c7\u0995\u09c7 800 \u09ac\u09be\u0982\u09b2\u09be \u09b6\u09ac\u09cd\u09a6'
 DEFAULT_PRODUCT_CONTEXT = "No fixed brand or product context. Understand the user title and write for the likely audience. If the title mentions a brand, product, service, tutorial, review, news, offer, lifestyle, education, technology, health, entertainment, or business topic, follow that topic only."
 BANNED_PHRASES = [
     "পরিষ্কার ধারণা থাকলে সিদ্ধান্ত নেওয়া",
@@ -38,20 +38,21 @@ BANNED_PHRASES = [
 UNSAFE_CLAIMS = ["নিশ্চিত A+", "১০০% ফল", "100% ফল", "সব সমস্যা শেষ", "কোচিং সম্পূর্ণ অপ্রয়োজনীয়", "কোচিং সম্পূর্ণ অপ্রয়োজনীয়"]
 ALLOWED_ENGLISH_WORDS = {"qr", "scan", "pause", "replay", "video", "technique", "easy", "education", "h1", "seo", "url"}
 
-DEFAULT_SYSTEM_PROMPT = """You are a Bangladesh-focused Bengali content writer for general SEO, social posts, and YouTube-friendly descriptions.
+DEFAULT_SYSTEM_PROMPT = """You are a premium Bengali article writer for Bangladesh and global Bengali readers.
 
-You are not tied to any fixed brand, company, product, or education topic. First understand the user's title, then infer the likely audience, search intent, and content format.
+Write like a strong Gemini/ChatGPT/DeepSeek response: natural, specific, useful, and topic-aware. You are not tied to any fixed brand or niche. First understand the user's title, audience, search intent, and content format, then write the article.
 
-Rules:
-- Output only the final post body.
+Strict rules:
+- Output only the final article body.
 - Use the exact title once as an H1 heading.
-- Write 250 to 350 Bangla words; never exceed 500 words.
-- Use 3 to 5 focused paragraphs.
-- Do not include tags or hashtags inside the post body.
-- Do not use keyword stuffing, comma-separated keyword lists, unsupported guarantees, or unnecessary English words.
-- If the title asks for shortcuts, tips, tools, list, tutorial, how-to, or useful tricks, give concrete examples and actionable points.
+- Write a complete article, normally 500 to 800 Bangla words; never exceed 900 words unless the user explicitly asks.
+- Use natural Bangla script. English technical words are allowed only when they are normal for the topic.
+- Use short sections with meaningful Markdown headings when they help readability.
+- Do not include tags, hashtags, meta title, slug, notes, analysis, or apologies inside the article body.
+- Do not use generic SEO filler, repeated title, comma-separated keyword lists, robotic template language, or unsupported guarantees.
+- If the title asks for shortcuts, tips, tools, list, tutorial, how-to, news, review, or comparison, give concrete examples, current-sounding context, and practical details.
 - For Windows shortcut titles, mention relevant examples such as Win + E, Win + D, Win + V, Win + Shift + S, Alt + Tab, Ctrl + Shift + Esc, and Win + L when useful.
-- Keep the writing useful for website posts, Facebook captions, and YouTube descriptions.
+- Every paragraph must add new information directly related to the title.
 """
 
 
@@ -80,15 +81,15 @@ def system_prompt():
 
 def cloudflare_system_prompt():
     return (
-        "You are a professional Bengali content writer for Bangladesh. "
-        "You are not tied to any fixed brand, company, product, or education topic. "
-        "Understand the given title first, infer the likely audience and search intent, then write a useful SEO and YouTube-friendly Bengali post. "
-        "Return only the final post body. Use the exact title only once as H1. Do not put tags or hashtags inside the body. "
-        "If the title asks for shortcuts, tips, tools, how-to, list, tutorial, or tricks, include concrete examples and practical steps. "
-        "For Windows shortcut titles, include real shortcuts such as Win + E, Win + D, Win + V, Win + Shift + S, Alt + Tab, Ctrl + Shift + Esc, and Win + L where relevant. "
-        "Do not use keyword stuffing, generic filler, repeated title, unsupported guarantees, or unnecessary English words. "
-        "Avoid these phrases: trusted source, better engagement, long-term result, budget, checklist, comparison. "
-        "Write 250 to 350 Bengali words, maximum 500 words, in 3 to 5 focused paragraphs."
+        "You are a premium Bengali article writer for Bangladesh and global Bengali readers. "
+        "Write like a strong Gemini, ChatGPT, or DeepSeek answer: natural, specific, useful, and topic-aware. "
+        "Understand the title, audience, search intent, and format before writing. "
+        "Return only the final article body with the exact title once as H1. "
+        "Write 500 to 800 Bengali words, maximum 900 words. "
+        "Use meaningful Markdown section headings when helpful. "
+        "Do not include tags, hashtags, meta, slug, notes, apologies, or analysis. "
+        "Avoid generic SEO filler, keyword stuffing, repeated title, robotic template language, and unsupported guarantees. "
+        "For shortcuts, tips, tools, listicles, tutorials, news, reviews, or comparisons, include concrete examples and practical details."
     )
 
 
@@ -141,7 +142,7 @@ def _contains_any(text, variants):
 
 
 
-def validate_article(article, title, min_words=200, max_words=500):
+def validate_article(article, title, min_words=180, max_words=900):
     article = article or ""
     reasons = []
     banned = [phrase for phrase in BANNED_PHRASES if phrase.lower() in article.lower()]
@@ -298,18 +299,18 @@ def _build_compact_user_prompt(settings, validation_reasons=None):
         f"Category: {settings['category']}\n"
         f"Target audience: {settings['targetAudience']}\n"
         f"Tone: {settings['tone']}\n"
-        "Length: 250 to 350 Bengali words, maximum 500 words, in 3 to 5 focused paragraphs.\n\n"
+        "Length: 500 to 800 Bengali words, maximum 900 words, in a complete useful article.\n\n"
         f"Additional context:\n{settings['productContext']}\n\n"
-        "Write a short SEO and YouTube-friendly Bengali post. Use the exact title only once as H1. "
+        "Write a complete, natural, SEO-friendly Bengali article. Use the exact title only once as H1. "
         "First understand the title's real topic, audience, and search intent. "
         "If the title asks for shortcuts, tips, tools, list, tutorial, or how-to, give concrete examples and practical points; for Windows shortcuts include useful key combinations when relevant. "
         "Make every paragraph directly relevant to the title, category, audience, and context. "
         "Avoid generic SEO filler, repeated title, keyword stuffing, unsupported guarantees, and unnecessary English words. "
-        "Return only the final post body. Do not include tags or hashtags in the body."
+        "Return only the final article body. Do not include tags, hashtags, meta title, slug, or notes in the body."
     )
     if validation_reasons:
         prompt += "\n\nPrevious draft failed validation: " + "; ".join(validation_reasons)
-        prompt += " Rewrite the short post with more specific, title-relevant detail. Write 250 to 350 Bengali words, under 500 words."
+        prompt += " Rewrite the full article with more specific, title-relevant detail. Write 500 to 800 Bengali words, under 900 words."
     return prompt
 
 
@@ -320,18 +321,18 @@ def _build_user_prompt(settings, validation_reasons=None):
         f"Target audience: {settings['targetAudience']}\n"
         f"Tone: {settings['tone']}\n"
         f"Desired length: {settings['wordCount']}\n"
-        "Hard length requirement: write 250 to 350 Bengali words, maximum 500 words. Use 3 to 5 focused paragraphs.\n\n"
+        "Hard length requirement: write 500 to 800 Bengali words, maximum 900 words. Use a complete article structure with useful sections when helpful.\n\n"
         f"Additional context:\n{settings['productContext']}\n\n"
-        "Write a short SEO and YouTube-friendly Bengali post from this title. Understand the real meaning, likely reader problem, and search intent before writing. "
+        "Write a complete, natural, SEO-friendly Bengali article from this title. Understand the real meaning, likely reader problem, and search intent before writing. "
         "Use the exact title only once as the H1 heading; do not repeat the full title in body paragraphs. "
         "For shortcut, tips, tools, listicle, tutorial, or how-to titles, write concrete examples and useful steps instead of generic motivation. "
         "For Windows 11 shortcut titles, mention real shortcut examples like Win + E, Win + D, Win + V, Win + Shift + S, Alt + Tab, Ctrl + Shift + Esc, and Win + L when relevant. "
-        "Write 250 to 350 words in Bengali script, never more than 500 words. Keep it useful, direct, and ready to copy. "
-        "Do not use generic SEO filler, keyword stuffing, repeated title, unnecessary English words, tags, or hashtags inside the body."
+        "Write 500 to 800 words in Bengali script, never more than 900 words. Keep it useful, direct, and ready to publish. "
+        "Do not use generic SEO filler, keyword stuffing, repeated title, unnecessary English words, tags, hashtags, meta title, slug, notes, or apologies inside the body."
     )
     if validation_reasons:
         prompt += "\n\nThe previous draft failed validation for these reasons: " + "; ".join(validation_reasons)
-        prompt += " Rewrite the full short post. Remove generic filler, repetition and keyword stuffing. Keep every paragraph directly relevant to the title and given context. Write 250 to 350 words, under 500 words."
+        prompt += " Rewrite the full article. Remove generic filler, repetition and keyword stuffing. Keep every paragraph directly relevant to the title and given context. Write 500 to 800 words, under 900 words."
     return prompt
 
 
@@ -373,7 +374,7 @@ def _call_chat_completions(api_url, api_key, model, prompt, extra_headers=None, 
     payload = {
         "model": model,
         "messages": [
-            {"role": "system", "content": system_content or cloudflare_system_prompt()},
+            {"role": "system", "content": system_content or system_prompt()},
             {"role": "user", "content": prompt},
         ],
         "temperature": temperature,
@@ -471,20 +472,20 @@ def _call_cloudflare_ai(prompt):
             {"role": "system", "content": system_prompt()},
             {"role": "user", "content": prompt},
         ],
-        "temperature": 0.55,
-        "top_p": 0.9,
-        "max_tokens": 1300,
-        "max_completion_tokens": 1300,
+        "temperature": 0.72,
+        "top_p": 0.92,
+        "max_tokens": 2600,
+        "max_completion_tokens": 2600,
     }
     text = _run_cloudflare_payload(api_url, api_token, messages_payload)
     if text:
         return text
     fallback_payload = {
         "prompt": f"{cloudflare_system_prompt()}\n\n{prompt}",
-        "temperature": 0.55,
-        "top_p": 0.9,
-        "max_tokens": 1300,
-        "max_completion_tokens": 1300,
+        "temperature": 0.72,
+        "top_p": 0.92,
+        "max_tokens": 2600,
+        "max_completion_tokens": 2600,
     }
     return _run_cloudflare_payload(api_url, api_token, fallback_payload)
 
@@ -508,9 +509,9 @@ def _call_gemini(prompt):
         urllib.parse.quote(api_key, safe=""),
     )
     payload = {
-        "systemInstruction": {"parts": [{"text": cloudflare_system_prompt()}]},
+        "systemInstruction": {"parts": [{"text": system_prompt()}]},
         "contents": [{"role": "user", "parts": [{"text": prompt}]}],
-        "generationConfig": {"temperature": 0.65, "topP": 0.9, "maxOutputTokens": 1300},
+        "generationConfig": {"temperature": 0.75, "topP": 0.92, "maxOutputTokens": 2600},
     }
     req = urllib.request.Request(
         api_url,
@@ -531,7 +532,7 @@ def _call_nvidia(prompt):
         return None
     api_url = _normalize_chat_api_url(_secret_value("NVIDIA_API_URL", DEFAULT_NVIDIA_API_URL) or DEFAULT_NVIDIA_API_URL)
     model = (_secret_value("NVIDIA_MODEL", DEFAULT_NVIDIA_MODEL) or DEFAULT_NVIDIA_MODEL).strip()
-    return _call_chat_completions(api_url, api_key, model, prompt)
+    return _call_chat_completions(api_url, api_key, model, prompt, max_tokens=2600, temperature=0.72)
 
 
 def _call_openai(prompt):
@@ -539,7 +540,7 @@ def _call_openai(prompt):
     if not api_key:
         return None
     model = _secret_value("OPENAI_TEXT_MODEL", "gpt-5.6")
-    payload = {"model": model, "reasoning": {"effort": "low"}, "instructions": system_prompt(), "input": prompt}
+    payload = {"model": model, "reasoning": {"effort": "low"}, "instructions": system_prompt(), "input": prompt, "max_output_tokens": 2600}
     req = urllib.request.Request(
         "https://api.openai.com/v1/responses",
         data=json.dumps(payload).encode("utf-8"),
@@ -547,7 +548,7 @@ def _call_openai(prompt):
         method="POST",
     )
     try:
-        with urllib.request.urlopen(req, timeout=65) as resp:
+        with urllib.request.urlopen(req, timeout=90) as resp:
             return _extract_output_text(json.loads(resp.read().decode("utf-8", errors="replace")))
     except (urllib.error.URLError, TimeoutError, ValueError):
         return None
@@ -674,7 +675,19 @@ def _dedupe_sentences(article):
     return "\n\n".join(cleaned)
 
 
-def _shorten_to_word_limit(article, max_words=420, min_words=260):
+def _strip_model_noise(article):
+    article = (article or "").strip()
+    article = re.sub(r"^```(?:markdown|md|html)?\s*|\s*```$", "", article, flags=re.I | re.S).strip()
+    article = re.sub(r"^(?:Here is|Here are|Sure,|Below is|Draft:)\b.*?\n+", "", article, flags=re.I).strip()
+    cut_patterns = [
+        r"\n\s*(?:Tags?|Hashtags?|Meta Title|Meta Description|Slug|SEO Tags?)\s*[:?].*",
+    ]
+    for pattern in cut_patterns:
+        article = re.sub(pattern, "", article, flags=re.I | re.S).strip()
+    return article
+
+
+def _shorten_to_word_limit(article, max_words=900, min_words=500):
     if not article:
         return article
     parts = [p.strip() for p in article.split("\n\n") if p.strip()]
@@ -689,15 +702,13 @@ def _shorten_to_word_limit(article, max_words=420, min_words=260):
         if kept and count + part_count > max_words:
             break
         if not kept and count + part_count > max_words:
-            remaining = max(max_words - count, 80)
+            remaining = max(max_words - count, 120)
             words = re.findall(r"\S+", part)[:remaining]
             kept.append(" ".join(words).strip())
             count = max_words
             break
         kept.append(part)
         count += part_count
-        if count >= min_words:
-            break
     if not kept and body_parts:
         words = re.findall(r"\S+", body_parts[0])[:max_words]
         kept = [" ".join(words).strip()]
@@ -711,30 +722,32 @@ def _provider_expansion(settings):
 
 
 def _repair_provider_article(article, settings):
-    repaired = _ensure_title_heading(article or "", settings["title"])
+    repaired = _strip_model_noise(article)
+    repaired = _ensure_title_heading(repaired or "", settings["title"])
     repaired = _reduce_title_repetition(repaired, settings["title"])
     repaired = _dedupe_sentences(repaired)
-    repaired = _shorten_to_word_limit(repaired, 440, 300)
-    validation = validate_article(repaired, settings["title"])
-    if validation["wordCount"] < 200:
-        repaired = (repaired.rstrip() + _provider_expansion(settings)).strip()
-        repaired = _dedupe_sentences(repaired)
-        repaired = _shorten_to_word_limit(repaired, 440, 300)
-        validation = validate_article(repaired, settings["title"])
+    if _word_count(repaired) > 900:
+        repaired = _shorten_to_word_limit(repaired, 900, 650)
+    validation = validate_article(repaired, settings["title"], min_words=180, max_words=900)
     return repaired, validation
 
 
 def _generate_with_provider(settings, provider_name, caller):
     validation = None
+    best = None
     for attempt in range(3):
-        prompt_builder = _build_compact_user_prompt if provider_name in {"gemini", "nvidia-nim"} else _build_user_prompt
-        draft = caller(prompt_builder(settings, validation["reasons"] if validation else None))
+        draft = caller(_build_user_prompt(settings, validation["reasons"] if validation else None))
         if not draft:
             break
         repaired, repaired_validation = _repair_provider_article(draft, settings)
+        best = (repaired, provider_name, repaired_validation)
         if repaired_validation["isValid"]:
-            return repaired, provider_name, repaired_validation
+            return best
         validation = repaired_validation
+    if best and best[2]["wordCount"] >= 160 and not best[2]["bannedPhrasesFound"]:
+        relaxed = validate_article(best[0], settings["title"], min_words=150, max_words=950)
+        if relaxed["isValid"]:
+            return best[0], provider_name, relaxed
     return None
 
 
@@ -755,16 +768,14 @@ def _generate_article(settings):
         result = _generate_with_provider(settings, "cloudflare-ai", _call_cloudflare_ai)
         if result:
             return result
-        if LAST_CLOUDFLARE_ERROR and not (_secret_value("GEMINI_API_KEY") or _secret_value("GOOGLE_AI_API_KEY") or _secret_value("NVIDIA_API_KEY") or _secret_value("NVIDIA_NIM_API_KEY") or _secret_value("OPENAI_API_KEY")):
-            return "", "cloudflare-error", {"isValid": False, "reasons": [LAST_CLOUDFLARE_ERROR], "wordCount": 0, "titleRepetitionCount": 0, "bannedPhrasesFound": []}
     draft = _education_fallback_article(settings)
     draft = _ensure_title_heading(draft, settings["title"])
-    draft = _shorten_to_word_limit(draft, 420, 280)
+    draft = _shorten_to_word_limit(draft, 900, 500)
     validation = validate_article(draft, settings["title"])
     if not validation["isValid"] and any("Title repeated too many times" in reason for reason in validation["reasons"]):
         draft = _reduce_title_repetition(draft, settings["title"])
         draft = _ensure_title_heading(draft, settings["title"])
-        draft = _shorten_to_word_limit(draft, 420, 280)
+        draft = _shorten_to_word_limit(draft, 900, 500)
         validation = validate_article(draft, settings["title"])
     return draft, "local-generic", validation
 
