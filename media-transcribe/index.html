@@ -22,9 +22,22 @@
 .media-preview { position:relative; margin-top:16px; border-radius:16px; overflow:hidden; background:#020617; border:1px solid rgba(148,163,184,.12); min-height:230px; display:grid; place-items:center; }
 .media-preview video, .media-preview audio { width:100%; max-height:480px; display:block; }
 .media-preview audio { padding:42px 24px; }
-.caption-overlay { position:absolute; left:7%; right:7%; bottom:8%; text-align:center; pointer-events:none; color:#fff; font-weight:900; font-size:34px; line-height:1.2; text-shadow:0 3px 0 #0f172a, 0 0 18px rgba(56,189,248,.55); overflow-wrap:anywhere; }
+.caption-overlay { position:absolute; left:7%; right:7%; bottom:8%; text-align:center; pointer-events:none; color:#fff; font-weight:900; font-size:34px; line-height:1.2; text-shadow:0 3px 0 #0f172a, 0 0 18px rgba(56,189,248,.55); overflow-wrap:anywhere; white-space:pre-line; }
 .caption-overlay.top { top:8%; bottom:auto; }
 .caption-overlay.center { top:50%; bottom:auto; transform:translateY(-50%); }
+.caption-line { display:block; width:max-content; max-width:100%; margin:4px auto; padding:2px 8px; border-radius:6px; }
+.caption-word { display:inline-block; transition:color .12s ease, background .12s ease, transform .12s ease; }
+.caption-word.active { color:var(--caption-accent); transform:scale(1.08); }
+.preset-classic .caption-line { background:rgba(2,6,23,.72); text-shadow:0 2px 3px #000; }
+.preset-highlight .caption-word.active { color:#07111f; background:var(--caption-accent); border-radius:5px; padding:0 5px; }
+.preset-lower .caption-line { background:rgba(2,6,23,.86); border-left:5px solid var(--caption-accent); padding:7px 12px; }
+.preset-karaoke .caption-word.active { color:var(--caption-accent); text-shadow:0 0 14px var(--caption-accent); }
+.anim-fade { animation:captionFade .38s ease both; }
+.anim-pop { animation:captionPop .32s cubic-bezier(.2,.8,.2,1.2) both; }
+.center.anim-pop { animation:centerCaptionPop .32s cubic-bezier(.2,.8,.2,1.2) both; }
+@keyframes captionFade { from { opacity:0; filter:blur(4px); } to { opacity:1; filter:blur(0); } }
+@keyframes captionPop { from { opacity:0; transform:translateY(12px) scale(.82); } to { opacity:1; transform:translateY(0) scale(1); } }
+@keyframes centerCaptionPop { from { opacity:0; transform:translateY(-50%) scale(.82); } to { opacity:1; transform:translateY(-50%) scale(1); } }
 .control-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; margin-top:14px; }
 .control { display:grid; gap:7px; min-width:0; }
 .control label { color:#8ea1bd; font-size:12px; font-weight:900; text-transform:uppercase; letter-spacing:.06em; }
@@ -52,6 +65,8 @@
 .word-chip.active { border-color:rgba(34,211,238,.52); background:rgba(34,211,238,.18); color:#fff; }
 .style-card { display:grid; gap:12px; padding:12px; border:1px solid rgba(148,163,184,.12); border-radius:14px; background:rgba(255,255,255,.04); }
 .style-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+.layout-grid { grid-template-columns:1fr 1fr minmax(150px,.8fr); }
+.layout-action { align-self:end; min-height:42px; border-radius:12px; }
 .help { color:#8ea1bd; font-size:12px; line-height:1.55; }
 .download-link { display:none; text-align:center; line-height:44px; }
 @media (max-width: 980px) { .transcribe-grid { grid-template-columns:1fr; } .side-panel { position:static; } .control-grid { grid-template-columns:1fr 1fr; } }
@@ -83,6 +98,12 @@
           <div class="control"><label for="positionSelect">Position</label><select id="positionSelect"><option value="bottom">Bottom</option><option value="center">Center</option><option value="top">Top</option></select></div>
         </div>
 
+        <div class="control-grid layout-grid">
+          <div class="control"><label for="wordsPerLine">Words per line</label><input id="wordsPerLine" type="number" min="1" max="12" value="4"></div>
+          <div class="control"><label for="maxCaptionLines">Lines per caption</label><input id="maxCaptionLines" type="number" min="1" max="3" value="2"></div>
+          <div class="control"><label>Caption layout</label><button class="btn secondary layout-action" id="layoutBtn" type="button" disabled>Apply Layout</button></div>
+        </div>
+
         <div class="action-row">
           <button class="btn primary" id="transcribeBtn" type="button" disabled>Transcribe</button>
           <button class="btn secondary" id="srtBtn" type="button" disabled>Download SRT</button>
@@ -110,7 +131,7 @@
             <div class="control"><label for="textColor">Text</label><input id="textColor" type="color" value="#ffffff"></div>
             <div class="control"><label for="accentColor">Accent</label><input id="accentColor" type="color" value="#38bdf8"></div>
             <div class="control"><label for="outlineColor">Outline</label><input id="outlineColor" type="color" value="#0f172a"></div>
-            <div class="control"><label for="fontName">Font</label><input id="fontName" type="text" value="Arial"></div>
+            <div class="control"><label for="fontName">Font</label><input id="fontName" type="text" value="Nirmala UI"></div>
           </div>
           <p class="help">Click any caption line to edit it. Click words to mark them for accent styling in karaoke/highlight exports.</p>
         </div>
@@ -125,6 +146,7 @@ const fileInfo = document.getElementById("fileInfo");
 const transcribeBtn = document.getElementById("transcribeBtn");
 const srtBtn = document.getElementById("srtBtn");
 const exportBtn = document.getElementById("exportBtn");
+const layoutBtn = document.getElementById("layoutBtn");
 const videoDownload = document.getElementById("videoDownload");
 const statusBox = document.getElementById("status");
 const progressWrap = document.getElementById("progressWrap");
@@ -176,6 +198,7 @@ function chooseFile(file) {
   renderSegments();
   srtBtn.disabled = true;
   exportBtn.disabled = true;
+  layoutBtn.disabled = true;
   videoDownload.style.display = "none";
   renderPreview(file);
   setStatus("Ready to transcribe.");
@@ -196,32 +219,134 @@ function stylePayload() {
     textColor: document.getElementById("textColor").value,
     accentColor: document.getElementById("accentColor").value,
     outlineColor: document.getElementById("outlineColor").value,
-    font: document.getElementById("fontName").value || "Arial"
+    font: document.getElementById("fontName").value || "Nirmala UI"
   };
 }
-function updateOverlay() {
+function layoutPayload() {
+  return {
+    wordsPerLine: Math.min(12, Math.max(1, Number(document.getElementById("wordsPerLine").value) || 4)),
+    maxLines: Math.min(3, Math.max(1, Number(document.getElementById("maxCaptionLines").value) || 2))
+  };
+}
+function makeClientWords(text, start, end) {
+  const tokens = [];
+  String(text || "").split(/\r?\n/).forEach((lineText, line) => {
+    lineText.trim().split(/\s+/).filter(Boolean).forEach(word => tokens.push({ word, line }));
+  });
+  if (!tokens.length) return [];
+  const step = Math.max(0.08, (end - start) / tokens.length);
+  return tokens.map((token, index) => ({
+    start: start + step * index,
+    end: Math.min(end, start + step * (index + 1)),
+    word: token.word,
+    line: token.line,
+    selected: false
+  }));
+}
+function reflowSegments(source) {
+  const { wordsPerLine, maxLines } = layoutPayload();
+  const maxWords = wordsPerLine * maxLines;
+  const allWords = [];
+  source.forEach(seg => {
+    const words = (seg.words && seg.words.length) ? seg.words : makeClientWords(seg.text, Number(seg.start), Number(seg.end));
+    words.forEach(word => allWords.push({
+      start: Number(word.start ?? seg.start),
+      end: Number(word.end ?? seg.end),
+      word: String(word.word || "").trim(),
+      selected: Boolean(word.selected)
+    }));
+  });
+  const output = [];
+  let cue = [];
+  const flush = () => {
+    if (!cue.length) return;
+    const words = cue.map((word, index) => ({ ...word, line: Math.floor(index / wordsPerLine) }));
+    const lines = [];
+    for (let i = 0; i < words.length; i += wordsPerLine) lines.push(words.slice(i, i + wordsPerLine).map(item => item.word).join(" "));
+    output.push({ id:output.length + 1, start:words[0].start, end:words[words.length - 1].end, text:lines.join("\n"), words });
+    cue = [];
+  };
+  allWords.filter(word => word.word).sort((a, b) => a.start - b.start).forEach(word => {
+    const previous = cue[cue.length - 1];
+    if (cue.length >= maxWords || (previous && word.start - previous.end > 1.25)) flush();
+    cue.push(word);
+  });
+  flush();
+  return output;
+}
+function applyCaptionLayout(showMessage = true) {
+  if (!segments.length) return;
+  segments = reflowSegments(segments);
+  activeIndex = segments.length ? 0 : -1;
+  renderSegments();
+  updateOverlay(true);
+  if (showMessage) setStatus(`Layout applied: ${layoutPayload().wordsPerLine} words per line, up to ${layoutPayload().maxLines} lines.`);
+}
+function renderOverlayContent(target, seg, currentTime, style) {
+  target.replaceChildren();
+  if (!seg) return;
+  const words = seg.words || [];
+  if (!words.length) {
+    target.textContent = seg.text || "";
+    return;
+  }
+  let currentLine = -1;
+  let lineEl = null;
+  words.forEach((word, index) => {
+    const line = Number.isFinite(Number(word.line)) ? Number(word.line) : 0;
+    if (!lineEl || line !== currentLine) {
+      lineEl = document.createElement("span");
+      lineEl.className = "caption-line";
+      target.appendChild(lineEl);
+      currentLine = line;
+    } else {
+      lineEl.appendChild(document.createTextNode(" "));
+    }
+    const wordEl = document.createElement("span");
+    const timedActive = currentTime >= Number(word.start) && currentTime <= Number(word.end);
+    const shouldHighlight = Boolean(word.selected) || ((style.preset === "highlight" || style.preset === "karaoke" || style.animation === "karaoke") && timedActive);
+    wordEl.className = "caption-word" + (shouldHighlight ? " active" : "");
+    wordEl.textContent = word.word;
+    lineEl.appendChild(wordEl);
+  });
+}
+function updateOverlay(restartAnimation = false) {
   const target = document.getElementById("captionOverlay");
   if (!target) return;
   const style = stylePayload();
   const seg = segments[activeIndex] || segments[0];
-  target.textContent = seg ? seg.text : "";
-  target.className = "caption-overlay " + style.position;
+  const media = document.getElementById("mediaEl");
+  const currentTime = media ? media.currentTime : Number(seg?.start || 0);
+  const animation = style.animation === "karaoke" ? "none" : style.animation;
+  target.className = `caption-overlay ${style.position} preset-${style.preset}`;
+  if (animation !== "none") target.classList.add(`anim-${animation}`);
+  if (restartAnimation && animation !== "none") {
+    target.classList.remove(`anim-${animation}`);
+    void target.offsetWidth;
+    target.classList.add(`anim-${animation}`);
+  }
+  renderOverlayContent(target, seg, currentTime, style);
   target.style.fontSize = Math.round(style.fontSize * 0.72) + "px";
   target.style.color = style.textColor;
   target.style.fontFamily = style.font;
   target.style.textShadow = `0 3px 0 ${style.outlineColor}, 0 0 18px ${style.accentColor}`;
+  target.style.setProperty("--caption-accent", style.accentColor);
 }
 function syncActiveCaption(e) {
   const current = e.target.currentTime;
   const found = segments.findIndex(seg => current >= seg.start && current <= seg.end);
   if (found !== -1 && found !== activeIndex) {
     activeIndex = found;
-    updateOverlay();
+    updateOverlay(true);
     document.querySelectorAll(".segment").forEach((el, i) => el.classList.toggle("active", i === activeIndex));
+  } else if (found !== -1) {
+    const style = stylePayload();
+    if (style.preset === "highlight" || style.preset === "karaoke" || style.animation === "karaoke") updateOverlay(false);
   }
 }
 function renderSegments() {
-  captionStats.textContent = `${segments.length} lines`;
+  const lineCount = segments.reduce((total, seg) => total + Math.max(1, String(seg.text || "").split(/\r?\n/).length), 0);
+  captionStats.textContent = `${segments.length} captions / ${lineCount} lines`;
   segmentList.innerHTML = "";
   if (!segments.length) {
     segmentList.innerHTML = '<p class="help">Transcribed captions will appear here.</p>';
@@ -241,15 +366,21 @@ function renderSegments() {
     const inputs = card.querySelectorAll("input");
     inputs[0].addEventListener("input", () => { seg.start = Number(inputs[0].value || 0); });
     inputs[1].addEventListener("input", () => { seg.end = Number(inputs[1].value || seg.start + 1); });
-    card.querySelector("textarea").addEventListener("input", event => { seg.text = event.target.value; updateOverlay(); });
-    card.addEventListener("click", () => { activeIndex = index; renderSegments(); updateOverlay(); });
+    card.querySelector("textarea").addEventListener("input", event => {
+      seg.text = event.target.value;
+      const selected = (seg.words || []).map(word => Boolean(word.selected));
+      seg.words = makeClientWords(seg.text, Number(seg.start), Number(seg.end));
+      seg.words.forEach((word, wordIndex) => { word.selected = selected[wordIndex] || false; });
+      updateOverlay();
+    });
+    card.addEventListener("click", () => { activeIndex = index; renderSegments(); updateOverlay(true); });
     const wordList = card.querySelector(".word-list");
     (seg.words || []).forEach(word => {
       const chip = document.createElement("button");
       chip.type = "button";
       chip.className = "word-chip" + (word.selected ? " active" : "");
       chip.textContent = word.word;
-      chip.addEventListener("click", event => { event.stopPropagation(); word.selected = !word.selected; chip.classList.toggle("active", word.selected); });
+      chip.addEventListener("click", event => { event.stopPropagation(); word.selected = !word.selected; chip.classList.toggle("active", word.selected); updateOverlay(); });
       wordList.appendChild(chip);
     });
     segmentList.appendChild(card);
@@ -275,6 +406,8 @@ async function transcribe() {
   const form = new FormData();
   form.append("media", selectedFile);
   form.append("language", document.getElementById("languageSelect").value);
+  form.append("wordsPerLine", layoutPayload().wordsPerLine);
+  form.append("maxLines", layoutPayload().maxLines);
   transcribeBtn.disabled = true;
   srtBtn.disabled = true;
   exportBtn.disabled = true;
@@ -290,6 +423,7 @@ async function transcribe() {
     renderSegments();
     srtBtn.disabled = !segments.length;
     exportBtn.disabled = !segments.length;
+    layoutBtn.disabled = !segments.length;
     finishProgress(`Transcription complete: ${segments.length} caption lines, language ${data.language || "auto"}.`);
   } catch (err) {
     failProgress(err.message || "Transcription failed.");
@@ -343,9 +477,10 @@ dropZone.addEventListener("dragleave", () => dropZone.classList.remove("drag-ove
 dropZone.addEventListener("drop", e => { e.preventDefault(); dropZone.classList.remove("drag-over"); chooseFile(e.dataTransfer.files[0]); });
 fileInput.addEventListener("change", () => chooseFile(fileInput.files[0]));
 transcribeBtn.addEventListener("click", transcribe);
+layoutBtn.addEventListener("click", () => applyCaptionLayout(true));
 srtBtn.addEventListener("click", downloadSrt);
 exportBtn.addEventListener("click", exportVideo);
-["presetSelect","positionSelect","animationSelect","fontSize","textColor","accentColor","outlineColor","fontName"].forEach(id => document.getElementById(id).addEventListener("input", updateOverlay));
+["presetSelect","positionSelect","animationSelect","fontSize","textColor","accentColor","outlineColor","fontName"].forEach(id => document.getElementById(id).addEventListener("input", () => updateOverlay(true)));
 renderSegments();
 </script>
 <script src="/shared.js"></script>

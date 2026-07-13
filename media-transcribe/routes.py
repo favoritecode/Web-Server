@@ -16,8 +16,9 @@ JOB_TTL_SECONDS = int(os.environ.get("MEDIA_TRANSCRIBE_JOB_TTL", "86400"))
 VIDEO_EXTS = {".mp4", ".mkv", ".webm", ".mov", ".avi", ".flv", ".m4v", ".ogv"}
 AUDIO_EXTS = {".mp3", ".m4a", ".aac", ".wav", ".flac", ".ogg", ".opus", ".wma"}
 _ALLOWED_DOWNLOADS = {"captions.srt", "captioned.mp4"}
-_FAST_WHISPER_MODEL = None
+_FAST_WHISPER_MODELS = {}
 _WHISPER_MODEL = None
+BANGLA_PROMPT = "এটি বাংলা ভাষার বক্তব্য। সব কথা বাংলা লিপিতে হুবহু লিখুন। হিন্দি বা দেবনাগরী লিপি ব্যবহার করবেন না।"
 
 
 class MediaTranscribeError(Exception):
@@ -48,6 +49,8 @@ def init_routes(app):
         if original_ext not in VIDEO_EXTS and original_ext not in AUDIO_EXTS:
             return jsonify({"error": "Upload an audio or video file."}), 400
         language = normalize_language(request.form.get("language"))
+        words_per_line = clamp_int(request.form.get("wordsPerLine"), 1, 12, 4)
+        max_lines = clamp_int(request.form.get("maxLines"), 1, 3, 2)
         job_id = uuid.uuid4().hex
         job_dir = JOBS_DIR / job_id
         job_dir.mkdir(parents=True, exist_ok=True)
@@ -58,6 +61,7 @@ def init_routes(app):
             upload.save(input_path)
             extract_audio(input_path, audio_path)
             segments, detected_language = run_transcription(audio_path, language)
+            segments = format_caption_segments(segments, words_per_line, max_lines)
             if not segments:
                 raise MediaTranscribeError("No speech was detected in this media.", 422)
             duration = get_duration(input_path) or max((seg["end"] for seg in segments), default=0)
@@ -224,14 +228,41 @@ def run_transcription(audio_path, language):
 
 
 def transcribe_with_faster_whisper(audio_path, language):
-    global _FAST_WHISPER_MODEL
+    global _FAST_WHISPER_MODELS
     from faster_whisper import WhisperModel
-    model_name = os.environ.get("MEDIA_TRANSCRIBE_MODEL", "small")
+    model_name = os.environ.get("MEDIA_TRANSCRIBE_BANGLA_MODEL", "medium") if language == "bn" else os.environ.get("MEDIA_TRANSCRIBE_MODEL", "small")
     device = os.environ.get("MEDIA_TRANSCRIBE_DEVICE", "cpu")
     compute_type = os.environ.get("MEDIA_TRANSCRIBE_COMPUTE", "int8")
-    if _FAST_WHISPER_MODEL is None:
-        _FAST_WHISPER_MODEL = WhisperModel(model_name, device=device, compute_type=compute_type)
-    segments_iter, info = _FAST_WHISPER_MODEL.transcribe(str(audio_path), language=language, word_timestamps=True, vad_filter=True, beam_size=5)
+    model_key = (model_name, device, compute_type)
+    if model_key not in _FAST_WHISPER_MODELS:
+        _FAST_WHISPER_MODELS[model_key] = WhisperModel(model_name, device=device, compute_type=compute_type)
+    model = _FAST_WHISPER_MODELS[model_key]
+    segments, detected_language = decode_faster_whisper(model, audio_path, language, beam_size=5)
+    if language == "bn" and has_excessive_devanagari(segments):
+        segments, detected_language = decode_faster_whisper(model, audio_path, language, beam_size=8, retry=True)
+    if language == "bn" and has_excessive_devanagari(segments):
+        raise MediaTranscribeError("Bangla speech could not be decoded reliably. Use clearer audio and keep Language set to Bangla.", 422)
+    return segments, detected_language
+
+
+def decode_faster_whisper(model, audio_path, language, beam_size=5, retry=False):
+    prompt = BANGLA_PROMPT if language == "bn" else None
+    if retry:
+        prompt = BANGLA_PROMPT + " বাংলা অক্ষর ছাড়া অন্য কোনো লিপি লিখবেন না।"
+    segments_iter, info = model.transcribe(
+        str(audio_path),
+        language=language,
+        task="transcribe",
+        initial_prompt=prompt,
+        word_timestamps=True,
+        vad_filter=True,
+        vad_parameters={"min_silence_duration_ms": 400},
+        beam_size=beam_size,
+        best_of=beam_size,
+        temperature=0,
+        condition_on_previous_text=not retry,
+        repetition_penalty=1.08,
+    )
     segments = []
     for idx, seg in enumerate(segments_iter, start=1):
         text = clean_caption_text(seg.text)
@@ -254,7 +285,13 @@ def transcribe_with_openai_whisper(audio_path, language):
     model_name = os.environ.get("MEDIA_TRANSCRIBE_MODEL", "small")
     if _WHISPER_MODEL is None:
         _WHISPER_MODEL = whisper.load_model(model_name)
-    result = _WHISPER_MODEL.transcribe(str(audio_path), language=language)
+    result = _WHISPER_MODEL.transcribe(
+        str(audio_path),
+        language=language,
+        task="transcribe",
+        initial_prompt=BANGLA_PROMPT if language == "bn" else None,
+        fp16=False,
+    )
     segments = []
     for idx, seg in enumerate(result.get("segments") or [], start=1):
         text = clean_caption_text(seg.get("text", ""))
@@ -263,10 +300,24 @@ def transcribe_with_openai_whisper(audio_path, language):
         start = float(seg.get("start") or 0)
         end = float(seg.get("end") or start + 1)
         segments.append({"id": idx, "start": round(start, 3), "end": round(end, 3), "text": text, "words": distribute_words(text, start, end)})
+    if language == "bn" and has_excessive_devanagari(segments):
+        raise MediaTranscribeError("Bangla speech could not be decoded reliably. Use clearer audio and keep Language set to Bangla.", 422)
     return segments, result.get("language") or language or "auto"
 
 def clean_caption_text(text):
     return re.sub(r"\s+", " ", str(text or "")).strip()
+
+
+def clean_caption_multiline(text):
+    lines = [clean_caption_text(line) for line in str(text or "").splitlines()]
+    return "\n".join(line for line in lines if line)
+
+
+def has_excessive_devanagari(segments):
+    text = " ".join(str(segment.get("text") or "") for segment in segments)
+    devanagari = len(re.findall(r"[\u0900-\u097F]", text))
+    bengali = len(re.findall(r"[\u0980-\u09FF]", text))
+    return devanagari >= 3 and devanagari > max(2, bengali // 4)
 
 
 def distribute_words(text, start, end):
@@ -278,8 +329,56 @@ def distribute_words(text, start, end):
     for i, token in enumerate(tokens):
         ws = start + duration * i
         we = start + duration * (i + 1)
-        words.append({"start": round(ws, 3), "end": round(min(we, end), 3), "word": token})
+        words.append({"start": round(ws, 3), "end": round(min(we, end), 3), "word": token, "line": 0})
     return words
+
+
+def format_caption_segments(raw_segments, words_per_line=4, max_lines=2):
+    words_per_line = clamp_int(words_per_line, 1, 12, 4)
+    max_lines = clamp_int(max_lines, 1, 3, 2)
+    max_words = words_per_line * max_lines
+    all_words = []
+    for segment in raw_segments:
+        segment_words = segment.get("words") or distribute_words(segment.get("text", ""), float(segment.get("start", 0)), float(segment.get("end", 0)))
+        for word in segment_words:
+            word_text = clean_caption_text(word.get("word", ""))
+            if not word_text:
+                continue
+            all_words.append({
+                "start": round(float(word.get("start", segment.get("start", 0))), 3),
+                "end": round(float(word.get("end", segment.get("end", 0))), 3),
+                "word": word_text,
+                "selected": bool(word.get("selected")),
+            })
+    all_words.sort(key=lambda item: item["start"])
+    formatted = []
+    cue = []
+
+    def flush():
+        nonlocal cue
+        if not cue:
+            return
+        for index, word in enumerate(cue):
+            word["line"] = index // words_per_line
+        lines = []
+        for index in range(0, len(cue), words_per_line):
+            lines.append(" ".join(item["word"] for item in cue[index:index + words_per_line]))
+        formatted.append({
+            "id": len(formatted) + 1,
+            "start": cue[0]["start"],
+            "end": cue[-1]["end"],
+            "text": "\n".join(lines),
+            "words": cue,
+        })
+        cue = []
+
+    for word in all_words:
+        previous = cue[-1] if cue else None
+        if len(cue) >= max_words or (previous and word["start"] - previous["end"] > 1.25):
+            flush()
+        cue.append(word)
+    flush()
+    return formatted
 
 
 def normalize_segments(raw_segments):
@@ -290,7 +389,7 @@ def normalize_segments(raw_segments):
             end = max(start + 0.08, float(item.get("end", start + 1)))
         except Exception:
             continue
-        text = clean_caption_text(item.get("text", ""))
+        text = clean_caption_multiline(item.get("text", ""))
         if not text:
             continue
         words = []
@@ -303,7 +402,7 @@ def normalize_segments(raw_segments):
                 we = float(word.get("end", end))
             except Exception:
                 ws, we = start, end
-            words.append({"start": round(max(start, ws), 3), "end": round(min(end, max(ws + 0.04, we)), 3), "word": wt, "selected": bool(word.get("selected"))})
+            words.append({"start": round(max(start, ws), 3), "end": round(min(end, max(ws + 0.04, we)), 3), "word": wt, "line": clamp_int(word.get("line"), 0, 5, 0), "selected": bool(word.get("selected"))})
         segments.append({"id": idx, "start": round(start, 3), "end": round(end, 3), "text": text[:600], "words": words or distribute_words(text, start, end)})
     return segments[:1200]
 
@@ -375,7 +474,7 @@ def format_ass_time(seconds):
 
 
 def escape_ass_text(text):
-    return clean_caption_text(text).replace("\\", "\\\\").replace("{", "(").replace("}", ")").replace("\n", "\\N")
+    return clean_caption_multiline(text).replace("\\", "\\\\").replace("{", "(").replace("}", ")").replace("\n", "\\N")
 
 
 def segments_to_ass(segments, style):
@@ -406,20 +505,29 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             override += r"{\bord3\shad0}"
         elif style["preset"] == "highlight":
             override += r"{\bord5}"
-        text = karaoke_text(seg, style) if style["animation"] == "karaoke" or style["preset"] == "karaoke" else escape_ass_text(seg["text"])
+        if style["animation"] == "karaoke" or style["preset"] in {"karaoke", "highlight"}:
+            text = karaoke_text(seg, style)
+        else:
+            text = escape_ass_text(seg["text"])
         lines.append(f"Dialogue: 0,{format_ass_time(seg['start'])},{format_ass_time(seg['end'])},Default,,0,0,0,,{override}{text}\n")
     return "".join(lines)
 
 
 def karaoke_text(seg, style):
     pieces = []
-    for word in seg.get("words") or distribute_words(seg["text"], seg["start"], seg["end"]):
+    current_line = 0
+    timing_tag = "kf" if style["preset"] == "karaoke" or style["animation"] == "karaoke" else "k"
+    for index, word in enumerate(seg.get("words") or distribute_words(seg["text"], seg["start"], seg["end"])):
+        line = clamp_int(word.get("line"), 0, 5, 0)
+        if index and line != current_line:
+            pieces.append(r"\N")
+        current_line = line
         duration = max(1, int(round((float(word.get("end", seg["end"])) - float(word.get("start", seg["start"]))) * 100)))
         word_text = escape_ass_text(word.get("word", ""))
         if word.get("selected"):
             pieces.append(r"{\c" + ass_color(style["accentColor"]) + "}" + word_text + r"{\r} ")
         else:
-            pieces.append(f"{{\\k{duration}}}{word_text} ")
+            pieces.append(f"{{\\{timing_tag}{duration}}}{word_text} ")
     return "".join(pieces).strip() or escape_ass_text(seg["text"])
 
 
