@@ -258,6 +258,18 @@ function renderSegments() {
 function escapeHtml(value) {
   return String(value || "").replace(/[&<>"']/g, ch => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#039;"}[ch]));
 }
+async function readApiResponse(res, fallbackMessage) {
+  const contentType = res.headers.get("content-type") || "";
+  if (contentType.includes("application/json")) {
+    try {
+      return await res.json();
+    } catch (_) {
+      return { error: fallbackMessage };
+    }
+  }
+  const text = (await res.text()).trim();
+  return { error: text || fallbackMessage };
+}
 async function transcribe() {
   if (!selectedFile) return;
   const form = new FormData();
@@ -270,7 +282,7 @@ async function transcribe() {
   startProgress("Uploading and transcribing. First run may take longer while the model loads.");
   try {
     const res = await fetch("/media-transcribe/api/transcribe", { method:"POST", body:form });
-    const data = await res.json();
+    const data = await readApiResponse(res, "Transcription server is temporarily unavailable.");
     if (!res.ok) throw new Error(data.error || "Transcription failed");
     jobId = data.jobId;
     segments = data.segments || [];
@@ -291,7 +303,7 @@ async function downloadSrt() {
   try {
     const res = await fetch("/media-transcribe/api/export-srt", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({segments}) });
     if (!res.ok) {
-      const data = await res.json().catch(() => ({}));
+      const data = await readApiResponse(res, "SRT export failed.");
       throw new Error(data.error || "SRT export failed");
     }
     const blob = await res.blob();
@@ -314,7 +326,7 @@ async function exportVideo() {
   startProgress("Rendering captioned video. Large files can take a few minutes.");
   try {
     const res = await fetch("/media-transcribe/api/export-video", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({jobId, segments, style:stylePayload()}) });
-    const data = await res.json();
+    const data = await readApiResponse(res, "Video export server is temporarily unavailable.");
     if (!res.ok) throw new Error(data.error || "Video export failed");
     videoDownload.href = data.downloadUrl;
     videoDownload.style.display = "inline-block";
