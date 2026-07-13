@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Media Transcribe - FavoriteWeb</title>
+<link rel="stylesheet" href="/shared.css">
+<style>
+.transcribe-main { width:min(1220px, calc(100% - 32px)); margin:42px auto 82px; color:#e5edff; }
+.transcribe-hero { display:flex; justify-content:space-between; align-items:flex-end; gap:20px; padding:28px; border:1px solid rgba(148,163,184,.16); border-radius:18px; background:linear-gradient(135deg, rgba(15,23,42,.88), rgba(30,41,59,.56)); box-shadow:0 22px 60px rgba(0,0,0,.28); backdrop-filter:blur(18px); }
+.transcribe-hero h1 { margin:0 0 8px; color:#f8fbff; font-size:34px; }
+.transcribe-hero p { margin:0; max-width:780px; color:#9aa7bd; line-height:1.65; }
+.transcribe-grid { display:grid; grid-template-columns:minmax(0,1fr) 350px; gap:18px; margin-top:22px; align-items:start; }
+.panel { min-width:0; border:1px solid rgba(148,163,184,.16); border-radius:16px; background:rgba(13,18,34,.72); backdrop-filter:blur(16px); box-shadow:0 18px 44px rgba(0,0,0,.22); }
+.workspace { padding:18px; }
+.side-panel { padding:16px; position:sticky; top:88px; display:grid; gap:14px; }
+.drop-zone { min-height:190px; border:1px dashed rgba(148,163,184,.28); border-radius:16px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px; text-align:center; cursor:pointer; background:rgba(255,255,255,.035); transition:all .2s ease; overflow:hidden; }
+.drop-zone:hover, .drop-zone.drag-over { border-color:rgba(56,189,248,.52); background:rgba(56,189,248,.08); transform:translateY(-1px); }
+.drop-zone h2 { margin:0; color:#f8fbff; font-size:22px; }
+.drop-zone p { margin:0; color:#8ea1bd; font-size:13px; line-height:1.6; }
+.file-pill { display:block; width:min(100%, 620px); min-width:0; padding:8px 12px; border-radius:999px; background:rgba(96,165,250,.12); color:#bfdbfe; font-size:12px; font-weight:800; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.media-preview { position:relative; margin-top:16px; border-radius:16px; overflow:hidden; background:#020617; border:1px solid rgba(148,163,184,.12); min-height:230px; display:grid; place-items:center; }
+.media-preview video, .media-preview audio { width:100%; max-height:480px; display:block; }
+.media-preview audio { padding:42px 24px; }
+.caption-overlay { position:absolute; left:7%; right:7%; bottom:8%; text-align:center; pointer-events:none; color:#fff; font-weight:900; font-size:34px; line-height:1.2; text-shadow:0 3px 0 #0f172a, 0 0 18px rgba(56,189,248,.55); overflow-wrap:anywhere; }
+.caption-overlay.top { top:8%; bottom:auto; }
+.caption-overlay.center { top:50%; bottom:auto; transform:translateY(-50%); }
+.control-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; margin-top:14px; }
+.control { display:grid; gap:7px; min-width:0; }
+.control label { color:#8ea1bd; font-size:12px; font-weight:900; text-transform:uppercase; letter-spacing:.06em; }
+.control input, .control select { width:100%; min-height:42px; border:1px solid rgba(148,163,184,.16); border-radius:12px; background:rgba(15,23,42,.86); color:#edf2ff; padding:0 12px; outline:none; }
+.control input[type="color"] { padding:4px; }
+.action-row { display:flex; flex-wrap:wrap; gap:10px; align-items:center; margin-top:16px; }
+.btn { min-height:44px; border:0; border-radius:999px; padding:0 18px; color:#fff; font-weight:900; cursor:pointer; transition:transform .2s ease, opacity .2s ease; text-decoration:none; }
+.btn:hover { transform:translateY(-1px); }
+.btn:disabled { opacity:.45; cursor:not-allowed; transform:none; }
+.btn.primary { background:linear-gradient(135deg,#9333ea,#0ea5e9); box-shadow:0 14px 34px rgba(99,102,241,.24); }
+.btn.secondary { background:rgba(255,255,255,.08); border:1px solid rgba(148,163,184,.18); }
+.status { flex:1; min-width:180px; color:#7dd3fc; font-size:13px; overflow-wrap:anywhere; }
+.status.error { color:#fecdd3; }
+.progress-wrap { width:100%; height:8px; border-radius:999px; background:rgba(148,163,184,.16); overflow:hidden; display:none; margin-top:10px; }
+.progress-fill { height:100%; width:0%; background:linear-gradient(90deg,#22c55e,#38bdf8,#a855f7); transition:width .25s ease; }
+.editor-head { display:flex; align-items:center; justify-content:space-between; gap:12px; margin:18px 0 10px; }
+.editor-head h2, .side-panel h2 { margin:0; color:#f8fbff; font-size:18px; }
+.segment-list { display:grid; gap:10px; max-height:560px; overflow:auto; padding-right:4px; }
+.segment { border:1px solid rgba(148,163,184,.12); border-radius:14px; background:rgba(255,255,255,.045); padding:12px; display:grid; gap:10px; cursor:pointer; }
+.segment.active { border-color:rgba(56,189,248,.42); background:linear-gradient(135deg, rgba(59,130,246,.14), rgba(147,51,234,.09)); }
+.segment-time { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+.segment textarea { width:100%; min-height:70px; resize:vertical; border:1px solid rgba(148,163,184,.15); border-radius:12px; background:rgba(15,23,42,.78); color:#edf2ff; padding:10px; line-height:1.5; outline:none; }
+.word-list { display:flex; flex-wrap:wrap; gap:7px; }
+.word-chip { border:1px solid rgba(148,163,184,.16); border-radius:999px; background:rgba(255,255,255,.06); color:#cfe3ff; padding:5px 9px; font-size:12px; cursor:pointer; }
+.word-chip.active { border-color:rgba(34,211,238,.52); background:rgba(34,211,238,.18); color:#fff; }
+.style-card { display:grid; gap:12px; padding:12px; border:1px solid rgba(148,163,184,.12); border-radius:14px; background:rgba(255,255,255,.04); }
+.style-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+.help { color:#8ea1bd; font-size:12px; line-height:1.55; }
+.download-link { display:none; text-align:center; line-height:44px; }
+@media (max-width: 980px) { .transcribe-grid { grid-template-columns:1fr; } .side-panel { position:static; } .control-grid { grid-template-columns:1fr 1fr; } }
+@media (max-width: 560px) { .transcribe-main { width:min(100% - 24px,1220px); margin-top:28px; } .transcribe-hero { padding:22px; } .transcribe-hero h1 { font-size:28px; } .control-grid, .style-grid { grid-template-columns:1fr; } .btn { width:100%; } .status { width:100%; } .caption-overlay { font-size:26px; left:4%; right:4%; } }
+</style>
+</head>
+<body>
+<div class="main-content">
+  <main class="transcribe-main">
+    <section class="transcribe-hero">
+      <div>
+        <h1>Media Transcribe</h1>
+        <p>Upload audio or video, transcribe Bangla and English, edit captions line by line, style selected words, download SRT, or export a captioned video.</p>
+      </div>
+    </section>
+
+    <section class="transcribe-grid">
+      <div class="panel workspace">
+        <div class="drop-zone" id="dropZone">
+          <h2>Upload audio or video</h2>
+          <p>Drop a media file here or click to browse. MP4, MOV, WEBM, MP3, WAV, M4A and more are supported.</p>
+          <div class="file-pill" id="fileInfo">No file selected</div>
+          <input id="fileInput" type="file" accept="audio/*,video/*" hidden>
+        </div>
+
+        <div class="control-grid">
+          <div class="control"><label for="languageSelect">Language</label><select id="languageSelect"><option value="auto">Auto Detect</option><option value="bn">Bangla</option><option value="en">English</option></select></div>
+          <div class="control"><label for="presetSelect">Caption Style</label><select id="presetSelect"><option value="neon">Neon Pop</option><option value="classic">Classic</option><option value="highlight">Word Highlight</option><option value="karaoke">Karaoke</option><option value="lower">Lower Third</option></select></div>
+          <div class="control"><label for="positionSelect">Position</label><select id="positionSelect"><option value="bottom">Bottom</option><option value="center">Center</option><option value="top">Top</option></select></div>
+        </div>
+
+        <div class="action-row">
+          <button class="btn primary" id="transcribeBtn" type="button" disabled>Transcribe</button>
+          <button class="btn secondary" id="srtBtn" type="button" disabled>Download SRT</button>
+          <button class="btn primary" id="exportBtn" type="button" disabled>Export Captioned Video</button>
+          <a class="btn secondary download-link" id="videoDownload" href="#">Download Video</a>
+          <div class="status" id="status">Choose a media file to start.</div>
+        </div>
+        <div class="progress-wrap" id="progressWrap"><div class="progress-fill" id="progressFill"></div></div>
+
+        <div class="media-preview" id="previewBox">
+          <span class="help">Preview will appear here after selecting a file.</span>
+          <div class="caption-overlay" id="captionOverlay"></div>
+        </div>
+
+        <div class="editor-head"><h2>Caption Editor</h2><span class="help" id="captionStats">0 lines</span></div>
+        <div class="segment-list" id="segmentList"></div>
+      </div>
+
+      <aside class="panel side-panel">
+        <h2>Caption Design</h2>
+        <div class="style-card">
+          <div class="style-grid">
+            <div class="control"><label for="fontSize">Font Size</label><input id="fontSize" type="range" min="24" max="96" value="48"></div>
+            <div class="control"><label for="animationSelect">Animation</label><select id="animationSelect"><option value="fade">Fade</option><option value="pop">Pop</option><option value="karaoke">Karaoke</option><option value="none">None</option></select></div>
+            <div class="control"><label for="textColor">Text</label><input id="textColor" type="color" value="#ffffff"></div>
+            <div class="control"><label for="accentColor">Accent</label><input id="accentColor" type="color" value="#38bdf8"></div>
+            <div class="control"><label for="outlineColor">Outline</label><input id="outlineColor" type="color" value="#0f172a"></div>
+            <div class="control"><label for="fontName">Font</label><input id="fontName" type="text" value="Arial"></div>
+          </div>
+          <p class="help">Click any caption line to edit it. Click words to mark them for accent styling in karaoke/highlight exports.</p>
+        </div>
+      </aside>
+    </section>
+  </main>
+</div>
+<script>
+const dropZone = document.getElementById("dropZone");
+const fileInput = document.getElementById("fileInput");
+const fileInfo = document.getElementById("fileInfo");
+const transcribeBtn = document.getElementById("transcribeBtn");
+const srtBtn = document.getElementById("srtBtn");
+const exportBtn = document.getElementById("exportBtn");
+const videoDownload = document.getElementById("videoDownload");
+const statusBox = document.getElementById("status");
+const progressWrap = document.getElementById("progressWrap");
+const progressFill = document.getElementById("progressFill");
+const previewBox = document.getElementById("previewBox");
+const segmentList = document.getElementById("segmentList");
+const captionStats = document.getElementById("captionStats");
+let selectedFile = null;
+let jobId = null;
+let segments = [];
+let activeIndex = -1;
+let fakeProgressTimer = null;
+
+function setStatus(text, isError = false) {
+  statusBox.textContent = text;
+  statusBox.classList.toggle("error", isError);
+}
+function startProgress(text) {
+  setStatus(text);
+  progressWrap.style.display = "block";
+  progressFill.style.width = "8%";
+  let value = 8;
+  clearInterval(fakeProgressTimer);
+  fakeProgressTimer = setInterval(() => {
+    value = Math.min(92, value + Math.max(1, (94 - value) * 0.08));
+    progressFill.style.width = value + "%";
+  }, 650);
+}
+function finishProgress(text) {
+  clearInterval(fakeProgressTimer);
+  progressFill.style.width = "100%";
+  setStatus(text);
+  setTimeout(() => { progressWrap.style.display = "none"; progressFill.style.width = "0%"; }, 700);
+}
+function failProgress(text) {
+  clearInterval(fakeProgressTimer);
+  progressWrap.style.display = "none";
+  progressFill.style.width = "0%";
+  setStatus(text, true);
+}
+function chooseFile(file) {
+  if (!file) return;
+  selectedFile = file;
+  fileInfo.textContent = file.name;
+  transcribeBtn.disabled = false;
+  jobId = null;
+  segments = [];
+  activeIndex = -1;
+  renderSegments();
+  srtBtn.disabled = true;
+  exportBtn.disabled = true;
+  videoDownload.style.display = "none";
+  renderPreview(file);
+  setStatus("Ready to transcribe.");
+}
+function renderPreview(file) {
+  const url = URL.createObjectURL(file);
+  const isVideo = file.type.startsWith("video/");
+  previewBox.innerHTML = isVideo ? `<video id="mediaEl" src="${url}" controls></video><div class="caption-overlay" id="captionOverlay"></div>` : `<audio id="mediaEl" src="${url}" controls></audio><div class="caption-overlay" id="captionOverlay"></div>`;
+  updateOverlay();
+  document.getElementById("mediaEl").addEventListener("timeupdate", syncActiveCaption);
+}
+function stylePayload() {
+  return {
+    preset: document.getElementById("presetSelect").value,
+    position: document.getElementById("positionSelect").value,
+    animation: document.getElementById("animationSelect").value,
+    fontSize: Number(document.getElementById("fontSize").value),
+    textColor: document.getElementById("textColor").value,
+    accentColor: document.getElementById("accentColor").value,
+    outlineColor: document.getElementById("outlineColor").value,
+    font: document.getElementById("fontName").value || "Arial"
+  };
+}
+function updateOverlay() {
+  const target = document.getElementById("captionOverlay");
+  if (!target) return;
+  const style = stylePayload();
+  const seg = segments[activeIndex] || segments[0];
+  target.textContent = seg ? seg.text : "";
+  target.className = "caption-overlay " + style.position;
+  target.style.fontSize = Math.round(style.fontSize * 0.72) + "px";
+  target.style.color = style.textColor;
+  target.style.fontFamily = style.font;
+  target.style.textShadow = `0 3px 0 ${style.outlineColor}, 0 0 18px ${style.accentColor}`;
+}
+function syncActiveCaption(e) {
+  const current = e.target.currentTime;
+  const found = segments.findIndex(seg => current >= seg.start && current <= seg.end);
+  if (found !== -1 && found !== activeIndex) {
+    activeIndex = found;
+    updateOverlay();
+    document.querySelectorAll(".segment").forEach((el, i) => el.classList.toggle("active", i === activeIndex));
+  }
+}
+function renderSegments() {
+  captionStats.textContent = `${segments.length} lines`;
+  segmentList.innerHTML = "";
+  if (!segments.length) {
+    segmentList.innerHTML = '<p class="help">Transcribed captions will appear here.</p>';
+    updateOverlay();
+    return;
+  }
+  segments.forEach((seg, index) => {
+    const card = document.createElement("div");
+    card.className = "segment" + (index === activeIndex ? " active" : "");
+    card.innerHTML = `
+      <div class="segment-time">
+        <div class="control"><label>Start</label><input type="number" step="0.01" value="${seg.start}"></div>
+        <div class="control"><label>End</label><input type="number" step="0.01" value="${seg.end}"></div>
+      </div>
+      <textarea>${escapeHtml(seg.text)}</textarea>
+      <div class="word-list"></div>`;
+    const inputs = card.querySelectorAll("input");
+    inputs[0].addEventListener("input", () => { seg.start = Number(inputs[0].value || 0); });
+    inputs[1].addEventListener("input", () => { seg.end = Number(inputs[1].value || seg.start + 1); });
+    card.querySelector("textarea").addEventListener("input", event => { seg.text = event.target.value; updateOverlay(); });
+    card.addEventListener("click", () => { activeIndex = index; renderSegments(); updateOverlay(); });
+    const wordList = card.querySelector(".word-list");
+    (seg.words || []).forEach(word => {
+      const chip = document.createElement("button");
+      chip.type = "button";
+      chip.className = "word-chip" + (word.selected ? " active" : "");
+      chip.textContent = word.word;
+      chip.addEventListener("click", event => { event.stopPropagation(); word.selected = !word.selected; chip.classList.toggle("active", word.selected); });
+      wordList.appendChild(chip);
+    });
+    segmentList.appendChild(card);
+  });
+}
+function escapeHtml(value) {
+  return String(value || "").replace(/[&<>"']/g, ch => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#039;"}[ch]));
+}
+async function transcribe() {
+  if (!selectedFile) return;
+  const form = new FormData();
+  form.append("media", selectedFile);
+  form.append("language", document.getElementById("languageSelect").value);
+  transcribeBtn.disabled = true;
+  srtBtn.disabled = true;
+  exportBtn.disabled = true;
+  videoDownload.style.display = "none";
+  startProgress("Uploading and transcribing. First run may take longer while the model loads.");
+  try {
+    const res = await fetch("/media-transcribe/api/transcribe", { method:"POST", body:form });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Transcription failed");
+    jobId = data.jobId;
+    segments = data.segments || [];
+    activeIndex = segments.length ? 0 : -1;
+    renderSegments();
+    srtBtn.disabled = !segments.length;
+    exportBtn.disabled = !segments.length;
+    finishProgress(`Transcription complete: ${segments.length} caption lines, language ${data.language || "auto"}.`);
+  } catch (err) {
+    failProgress(err.message || "Transcription failed.");
+  } finally {
+    transcribeBtn.disabled = false;
+  }
+}
+async function downloadSrt() {
+  if (!segments.length) return;
+  startProgress("Preparing SRT caption file.");
+  try {
+    const res = await fetch("/media-transcribe/api/export-srt", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({segments}) });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.error || "SRT export failed");
+    }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "captions.srt";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    finishProgress("SRT downloaded.");
+  } catch (err) {
+    failProgress(err.message || "SRT export failed.");
+  }
+}
+async function exportVideo() {
+  if (!jobId || !segments.length) return;
+  exportBtn.disabled = true;
+  startProgress("Rendering captioned video. Large files can take a few minutes.");
+  try {
+    const res = await fetch("/media-transcribe/api/export-video", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({jobId, segments, style:stylePayload()}) });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Video export failed");
+    videoDownload.href = data.downloadUrl;
+    videoDownload.style.display = "inline-block";
+    finishProgress("Captioned video is ready.");
+  } catch (err) {
+    failProgress(err.message || "Video export failed.");
+  } finally {
+    exportBtn.disabled = false;
+  }
+}
+dropZone.addEventListener("click", () => fileInput.click());
+dropZone.addEventListener("dragover", e => { e.preventDefault(); dropZone.classList.add("drag-over"); });
+dropZone.addEventListener("dragleave", () => dropZone.classList.remove("drag-over"));
+dropZone.addEventListener("drop", e => { e.preventDefault(); dropZone.classList.remove("drag-over"); chooseFile(e.dataTransfer.files[0]); });
+fileInput.addEventListener("change", () => chooseFile(fileInput.files[0]));
+transcribeBtn.addEventListener("click", transcribe);
+srtBtn.addEventListener("click", downloadSrt);
+exportBtn.addEventListener("click", exportVideo);
+["presetSelect","positionSelect","animationSelect","fontSize","textColor","accentColor","outlineColor","fontName"].forEach(id => document.getElementById(id).addEventListener("input", updateOverlay));
+renderSegments();
+</script>
+<script src="/shared.js"></script>
+</body>
+</html>

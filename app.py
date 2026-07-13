@@ -1522,6 +1522,13 @@ if article_generate_backend_path.exists():
     article_generate_module = importlib.util.module_from_spec(article_generate_spec)
     article_generate_spec.loader.exec_module(article_generate_module)
     article_generate_module.init_routes(app)
+
+media_transcribe_backend_path = Path(BASE_DIR) / "media-transcribe" / "routes.py"
+if media_transcribe_backend_path.exists():
+    media_transcribe_spec = importlib.util.spec_from_file_location("favoriteweb_media_transcribe", media_transcribe_backend_path)
+    media_transcribe_module = importlib.util.module_from_spec(media_transcribe_spec)
+    media_transcribe_spec.loader.exec_module(media_transcribe_module)
+    media_transcribe_module.init_routes(app)
 from shofikul.routes import init_routes as shofikul_routes
 shofikul_routes(app)
 
