@@ -399,7 +399,7 @@
         <label for="customSlug">Custom slug</label>
         <input id="customSlug" type="text" placeholder="optional-stream-name">
         <label for="slugStart">Start number</label>
-        <input id="slugStart" type="number" min="1" max="999999" step="1" value="1" inputmode="numeric">
+        <input id="slugStart" type="number" min="1" max="999999" step="1" placeholder="Auto" inputmode="numeric">
       </div>
       <div class="action-row">
         <button class="btn-generate" onclick="generate()">⚡ Generate Streams</button>
@@ -470,7 +470,9 @@ async function generate() {
   const rawUrls = textarea.value;
   const urls = rawUrls.split("\n").map(u => u.trim()).filter(u => u.length > 0);
   const baseSlug = document.getElementById("customSlug").value.trim();
-  const startNumber = Math.max(1, Number.parseInt(document.getElementById("slugStart").value, 10) || 1);
+  const startNumberValue = document.getElementById("slugStart").value.trim();
+  const hasCustomStart = /^\d+$/.test(startNumberValue);
+  const startNumber = hasCustomStart ? Math.max(1, Number.parseInt(startNumberValue, 10)) : 1;
 
   if (urls.length === 0) {
     alert("Please paste at least one YouTube URL");
@@ -496,7 +498,7 @@ async function generate() {
     try {
       const payload = { url: urls[i] };
       if (baseSlug) {
-        payload.slug = urls.length > 1 || startNumber > 1
+        payload.slug = urls.length > 1 || hasCustomStart
           ? `${baseSlug}-${startNumber + i}`
           : baseSlug;
       }
