@@ -1,5 +1,7 @@
 from flask import jsonify, request, send_file, send_from_directory
 from pathlib import Path
+import base64
+import io
 import json
 import math
 import os
@@ -8,7 +10,13 @@ import shutil
 import subprocess
 import threading
 import time
+import unicodedata
+import urllib.error
+import urllib.parse
+import urllib.request
 import uuid
+import wave
+from collections import Counter
 
 BASE_DIR = Path(__file__).resolve().parent
 JOBS_DIR = BASE_DIR / "jobs"
@@ -20,7 +28,7 @@ _ALLOWED_DOWNLOADS = {"captions.srt", "captioned.mp4"}
 _FAST_WHISPER_MODELS = {}
 _WHISPER_MODEL = None
 _TRANSCRIBE_LOCK = threading.Lock()
-BANGLA_PROMPT = "এটি বাংলা ভাষার বক্তব্য। সব কথা বাংলা লিপিতে হুবহু লিখুন। হিন্দি বা দেবনাগরী লিপি ব্যবহার করবেন না।"
+BANGLA_PROMPT = "বাংলাদেশের কথ্য বাংলা ভাষার পরিষ্কার ও নির্ভুল প্রতিলিপি।"
 
 
 class MediaTranscribeError(Exception):
@@ -137,7 +145,7 @@ def process_transcription_job(job_id, job_dir, input_path, safe_name, original_e
     try:
         save_status(job_dir, "processing", 18, "Extracting audio from the uploaded media.")
         extract_audio(input_path, audio_path)
-        model_name = os.environ.get("MEDIA_TRANSCRIBE_BANGLA_MODEL", "medium") if language == "bn" else os.environ.get("MEDIA_TRANSCRIBE_MODEL", "small")
+        model_name = "Gemini Audio / NVIDIA Whisper" if language == "bn" and has_cloud_transcription_key() else os.environ.get("MEDIA_TRANSCRIBE_MODEL", "small")
         save_status(job_dir, "processing", 38, f"Loading {model_name} model and transcribing. First run can take longer.")
         with _TRANSCRIBE_LOCK:
             segments, detected_language = run_transcription(audio_path, language)
@@ -262,7 +270,7 @@ def run_command(args, timeout=1800):
 
 def extract_audio(input_path, audio_path):
     ffmpeg = require_binary("ffmpeg", "FFMPEG_PATH")
-    run_command([ffmpeg, "-y", "-i", str(input_path), "-vn", "-ac", "1", "-ar", "16000", "-f", "wav", str(audio_path)])
+    run_command([ffmpeg, "-y", "-i", str(input_path), "-vn", "-ac", "1", "-ar", "16000", "-af", "highpass=f=70,lowpass=f=7800,loudnorm=I=-16:TP=-1.5:LRA=11", "-f", "wav", str(audio_path)])
 
 
 def get_duration(path):
@@ -275,24 +283,185 @@ def get_duration(path):
 
 
 def run_transcription(audio_path, language):
-    engine = os.environ.get("MEDIA_TRANSCRIBE_ENGINE", "faster-whisper").strip().lower()
+    engine = os.environ.get("MEDIA_TRANSCRIBE_ENGINE", "auto").strip().lower()
     errors = []
-    if engine in {"faster-whisper", "auto"}:
+    if language == "bn" and engine in {"auto", "gemini"} and secret_value("GEMINI_API_KEY", "GOOGLE_AI_API_KEY"):
+        try:
+            return transcribe_with_gemini_audio(audio_path, language)
+        except Exception as exc:
+            errors.append("Gemini Audio: " + str(exc))
+    if language == "bn" and engine in {"auto", "nvidia"} and secret_value("NVIDIA_API_KEY", "NVIDIA_NIM_API_KEY"):
+        try:
+            return transcribe_with_nvidia_riva(audio_path, language)
+        except Exception as exc:
+            errors.append("NVIDIA Whisper: " + str(exc))
+    if engine in {"faster-whisper", "auto", "gemini", "nvidia"}:
         try:
             return transcribe_with_faster_whisper(audio_path, language)
         except ImportError:
             errors.append("faster-whisper is not installed")
         except Exception as exc:
             errors.append(str(exc))
-            if engine != "auto":
-                raise
     try:
         return transcribe_with_openai_whisper(audio_path, language)
     except ImportError:
         errors.append("openai-whisper is not installed")
     except Exception as exc:
         errors.append(str(exc))
-    raise MediaTranscribeError("Transcription engine is not ready. Install faster-whisper on this server. " + "; ".join(errors), 500)
+    raise MediaTranscribeError("No transcription provider could complete this audio. " + "; ".join(errors), 500)
+
+
+def secret_value(*names):
+    for name in names:
+        value = os.environ.get(name)
+        if value:
+            return value.strip()
+    try:
+        import favoriteweb_local_secrets as local_secrets
+    except ImportError:
+        return ""
+    for name in names:
+        value = getattr(local_secrets, name, "")
+        if value:
+            return str(value).strip()
+    return ""
+
+
+def has_cloud_transcription_key():
+    return bool(secret_value("GEMINI_API_KEY", "GOOGLE_AI_API_KEY") or secret_value("NVIDIA_API_KEY", "NVIDIA_NIM_API_KEY"))
+
+
+def clean_transcript_text(text):
+    text = unicodedata.normalize("NFC", str(text or "")).replace("\ufffd", "")
+    text = "".join(char for char in text if char in "\n\t" or unicodedata.category(char)[0] != "C")
+    return clean_caption_text(text)
+
+
+def iter_wav_chunks(audio_path, chunk_seconds=300):
+    with wave.open(str(audio_path), "rb") as source:
+        channels = source.getnchannels()
+        sample_width = source.getsampwidth()
+        sample_rate = source.getframerate()
+        chunk_frames = max(sample_rate, int(sample_rate * chunk_seconds))
+        offset = 0.0
+        while True:
+            frames = source.readframes(chunk_frames)
+            if not frames:
+                break
+            frame_count = len(frames) // max(1, channels * sample_width)
+            duration = frame_count / float(sample_rate)
+            output = io.BytesIO()
+            with wave.open(output, "wb") as target:
+                target.setnchannels(channels)
+                target.setsampwidth(sample_width)
+                target.setframerate(sample_rate)
+                target.writeframes(frames)
+            yield offset, duration, output.getvalue()
+            offset += duration
+
+
+def transcribe_with_gemini_audio(audio_path, language):
+    api_key = secret_value("GEMINI_API_KEY", "GOOGLE_AI_API_KEY")
+    if not api_key:
+        raise MediaTranscribeError("Gemini API key is not configured.", 503)
+    model = secret_value("GEMINI_MODEL") or "gemini-2.5-flash"
+    api_url = "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent?key={}".format(
+        urllib.parse.quote(model, safe=""),
+        urllib.parse.quote(api_key, safe=""),
+    )
+    schema = {
+        "type": "OBJECT",
+        "properties": {
+            "segments": {
+                "type": "ARRAY",
+                "items": {
+                    "type": "OBJECT",
+                    "properties": {"start": {"type": "NUMBER"}, "end": {"type": "NUMBER"}, "text": {"type": "STRING"}},
+                    "required": ["start", "end", "text"],
+                },
+            }
+        },
+        "required": ["segments"],
+    }
+    language_name = "Bengali using Bengali script" if language == "bn" else ("English" if language == "en" else "the spoken language")
+    segments = []
+    chunk_seconds = clamp_int(os.environ.get("MEDIA_TRANSCRIBE_GEMINI_CHUNK_SECONDS"), 60, 600, 300)
+    for offset, duration, audio_bytes in iter_wav_chunks(audio_path, chunk_seconds):
+        prompt = (
+            f"Transcribe this {duration:.2f} second audio verbatim in {language_name}. "
+            "Return short caption segments with approximate start and end times in seconds. "
+            "Preserve every spoken word and natural punctuation. Do not translate, summarize, explain, or add speech."
+        )
+        payload = {
+            "contents": [{"role": "user", "parts": [{"text": prompt}, {"inlineData": {"mimeType": "audio/wav", "data": base64.b64encode(audio_bytes).decode("ascii")}}]}],
+            "generationConfig": {"temperature": 0.0, "maxOutputTokens": 8192, "thinkingConfig": {"thinkingBudget": 0}, "responseMimeType": "application/json", "responseSchema": schema},
+        }
+        request_data = urllib.request.Request(
+            api_url,
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json", "Accept": "application/json"},
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(request_data, timeout=240) as response:
+                response_data = json.loads(response.read().decode("utf-8", errors="replace"))
+        except urllib.error.HTTPError as exc:
+            raise MediaTranscribeError(f"Gemini Audio returned HTTP {exc.code}.", 503)
+        except (urllib.error.URLError, TimeoutError, ValueError) as exc:
+            raise MediaTranscribeError("Gemini Audio request failed: " + str(exc), 503)
+        try:
+            response_text = "".join(part.get("text", "") for part in response_data["candidates"][0]["content"]["parts"] if part.get("text")).strip()
+            chunk_segments = json.loads(response_text).get("segments") or []
+        except (KeyError, IndexError, TypeError, ValueError, AttributeError):
+            raise MediaTranscribeError("Gemini Audio returned an invalid transcript.", 502)
+        for item in chunk_segments:
+            text = clean_transcript_text(item.get("text", ""))
+            if not text:
+                continue
+            start = offset + max(0.0, min(duration, float(item.get("start", 0))))
+            end = offset + max(start - offset + 0.08, min(duration, float(item.get("end", duration))))
+            segments.append({"id": len(segments) + 1, "start": round(start, 3), "end": round(end, 3), "text": text, "words": distribute_words(text, start, end)})
+    if not segments:
+        raise MediaTranscribeError("Gemini Audio did not detect speech.", 422)
+    issues = transcription_quality_issues(segments) if language == "bn" else []
+    if has_excessive_devanagari(segments) or issues:
+        raise MediaTranscribeError("Gemini Audio transcript failed quality validation: " + "; ".join(issues or ["wrong writing system detected"]), 422)
+    return segments, language or "auto"
+
+
+def transcribe_with_nvidia_riva(audio_path, language):
+    api_key = secret_value("NVIDIA_API_KEY", "NVIDIA_NIM_API_KEY")
+    if not api_key:
+        raise MediaTranscribeError("NVIDIA API key is not configured.", 503)
+    import riva.client
+    function_id = os.environ.get("NVIDIA_WHISPER_FUNCTION_ID", "b702f636-f60c-4a3d-a6f4-f3568c13bd7d")
+    auth = riva.client.Auth(
+        uri=os.environ.get("NVIDIA_WHISPER_SERVER", "grpc.nvcf.nvidia.com:443"),
+        use_ssl=True,
+        metadata_args=[["function-id", function_id], ["authorization", "Bearer " + api_key]],
+    )
+    service = riva.client.ASRService(auth)
+    config = riva.client.RecognitionConfig(
+        encoding=riva.client.AudioEncoding.LINEAR_PCM,
+        sample_rate_hertz=16000,
+        language_code=language or "multi",
+        max_alternatives=1,
+        enable_automatic_punctuation=True,
+        audio_channel_count=1,
+    )
+    try:
+        response = service.offline_recognize(Path(audio_path).read_bytes(), config)
+    except Exception as exc:
+        raise MediaTranscribeError("NVIDIA Whisper request failed: " + str(exc), 503)
+    transcript = clean_transcript_text(" ".join(result.alternatives[0].transcript for result in response.results if result.alternatives))
+    if not transcript:
+        raise MediaTranscribeError("NVIDIA Whisper did not detect speech.", 422)
+    duration = get_duration(audio_path) or 1.0
+    segments = [{"id": 1, "start": 0.0, "end": duration, "text": transcript, "words": distribute_words(transcript, 0.0, duration)}]
+    issues = transcription_quality_issues(segments) if language == "bn" else []
+    if has_excessive_devanagari(segments) or issues:
+        raise MediaTranscribeError("NVIDIA Whisper transcript failed quality validation: " + "; ".join(issues or ["wrong writing system detected"]), 422)
+    return segments, language or "auto"
 
 
 def transcribe_with_faster_whisper(audio_path, language):
@@ -306,17 +475,20 @@ def transcribe_with_faster_whisper(audio_path, language):
         _FAST_WHISPER_MODELS[model_key] = WhisperModel(model_name, device=device, compute_type=compute_type)
     model = _FAST_WHISPER_MODELS[model_key]
     segments, detected_language = decode_faster_whisper(model, audio_path, language, beam_size=5)
-    if language == "bn" and has_excessive_devanagari(segments):
+    if language == "bn" and (has_excessive_devanagari(segments) or transcription_quality_issues(segments)):
         segments, detected_language = decode_faster_whisper(model, audio_path, language, beam_size=8, retry=True)
-    if language == "bn" and has_excessive_devanagari(segments):
-        raise MediaTranscribeError("Bangla speech could not be decoded reliably. Use clearer audio and keep Language set to Bangla.", 422)
+    if language == "bn":
+        issues = transcription_quality_issues(segments)
+        if has_excessive_devanagari(segments) or issues:
+            detail = "; ".join(issues) if issues else "wrong writing system detected"
+            raise MediaTranscribeError("Bangla speech could not be decoded reliably (" + detail + "). Use clearer speech audio and try again.", 422)
     return segments, detected_language
 
 
 def decode_faster_whisper(model, audio_path, language, beam_size=5, retry=False):
     prompt = BANGLA_PROMPT if language == "bn" else None
     if retry:
-        prompt = BANGLA_PROMPT + " বাংলা অক্ষর ছাড়া অন্য কোনো লিপি লিখবেন না।"
+        prompt = BANGLA_PROMPT + " কথাগুলো হুবহু লিখুন, কোনো শব্দ অনুমান বা পুনরাবৃত্তি করবেন না।"
     segments_iter, info = model.transcribe(
         str(audio_path),
         language=language,
@@ -324,12 +496,19 @@ def decode_faster_whisper(model, audio_path, language, beam_size=5, retry=False)
         initial_prompt=prompt,
         word_timestamps=True,
         vad_filter=True,
-        vad_parameters={"min_silence_duration_ms": 400},
+        vad_parameters={"threshold": 0.45, "min_speech_duration_ms": 200, "min_silence_duration_ms": 500, "speech_pad_ms": 250},
         beam_size=beam_size,
         best_of=beam_size,
-        temperature=0,
-        condition_on_previous_text=not retry,
+        temperature=[0.0, 0.2, 0.4] if retry else 0.0,
+        condition_on_previous_text=False if language == "bn" else not retry,
+        prompt_reset_on_temperature=0.2,
         repetition_penalty=1.08,
+        no_repeat_ngram_size=3 if language == "bn" else 0,
+        compression_ratio_threshold=1.9 if language == "bn" else 2.4,
+        log_prob_threshold=-1.0,
+        no_speech_threshold=0.6,
+        hallucination_silence_threshold=1.5,
+        multilingual=True,
     )
     segments = []
     for idx, seg in enumerate(segments_iter, start=1):
@@ -386,6 +565,31 @@ def has_excessive_devanagari(segments):
     devanagari = len(re.findall(r"[\u0900-\u097F]", text))
     bengali = len(re.findall(r"[\u0980-\u09FF]", text))
     return devanagari >= 3 and devanagari > max(2, bengali // 4)
+
+
+def transcription_quality_issues(segments):
+    text = " ".join(clean_caption_text(segment.get("text", "")) for segment in segments)
+    tokens = re.findall(r"[\u0980-\u09FFA-Za-z0-9]+", text.lower())
+    if len(tokens) < 6:
+        return []
+    issues = []
+    counts = Counter(tokens)
+    word, count = counts.most_common(1)[0]
+    if count >= 4 and count / len(tokens) >= 0.24:
+        issues.append(f"the word '{word}' repeats {count} times")
+    longest_run = 1
+    current_run = 1
+    for index in range(1, len(tokens)):
+        if tokens[index] == tokens[index - 1]:
+            current_run += 1
+            longest_run = max(longest_run, current_run)
+        else:
+            current_run = 1
+    if longest_run >= 3:
+        issues.append(f"the same word repeats {longest_run} times in a row")
+    if len(tokens) >= 12 and len(counts) / len(tokens) < 0.35:
+        issues.append("too little unique speech was detected")
+    return issues
 
 
 def distribute_words(text, start, end):

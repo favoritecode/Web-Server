@@ -11,3 +11,4 @@ pillow-heif>=1.0,<2
 rembg>=2.0.65,<3
 onnxruntime>=1.18,<2
 faster-whisper>=1.1,<2
+nvidia-riva-client>=2.26,<3
