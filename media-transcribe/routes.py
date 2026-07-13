@@ -6,6 +6,7 @@ import os
 import re
 import shutil
 import subprocess
+import threading
 import time
 import uuid
 
@@ -18,6 +19,7 @@ AUDIO_EXTS = {".mp3", ".m4a", ".aac", ".wav", ".flac", ".ogg", ".opus", ".wma"}
 _ALLOWED_DOWNLOADS = {"captions.srt", "captioned.mp4"}
 _FAST_WHISPER_MODELS = {}
 _WHISPER_MODEL = None
+_TRANSCRIBE_LOCK = threading.Lock()
 BANGLA_PROMPT = "এটি বাংলা ভাষার বক্তব্য। সব কথা বাংলা লিপিতে হুবহু লিখুন। হিন্দি বা দেবনাগরী লিপি ব্যবহার করবেন না।"
 
 
@@ -56,25 +58,29 @@ def init_routes(app):
         job_dir.mkdir(parents=True, exist_ok=True)
         safe_name = safe_filename(upload.filename) or f"input{original_ext or '.media'}"
         input_path = job_dir / safe_name
-        audio_path = job_dir / "audio.wav"
         try:
             upload.save(input_path)
-            extract_audio(input_path, audio_path)
-            segments, detected_language = run_transcription(audio_path, language)
-            segments = format_caption_segments(segments, words_per_line, max_lines)
-            if not segments:
-                raise MediaTranscribeError("No speech was detected in this media.", 422)
-            duration = get_duration(input_path) or max((seg["end"] for seg in segments), default=0)
-            (job_dir / "captions.srt").write_text(segments_to_srt(segments), encoding="utf-8")
-            job = {"job_id": job_id, "created_at": time.time(), "input": str(input_path), "input_name": safe_name, "is_video": original_ext in VIDEO_EXTS, "duration": duration, "language": detected_language or language or "auto", "segments": segments}
-            save_job(job_dir, job)
-            return jsonify({"jobId": job_id, "filename": safe_name, "duration": duration, "language": job["language"], "segments": segments, "srtUrl": f"/media-transcribe/api/download/{job_id}/captions.srt"})
-        except MediaTranscribeError as exc:
-            shutil.rmtree(job_dir, ignore_errors=True)
-            return jsonify({"error": str(exc)}), exc.status
+            save_status(job_dir, "queued", 8, "Upload complete. Preparing audio.")
+            worker = threading.Thread(
+                target=process_transcription_job,
+                args=(job_id, job_dir, input_path, safe_name, original_ext, language, words_per_line, max_lines),
+                daemon=True,
+            )
+            worker.start()
+            return jsonify({"jobId": job_id, "status": "queued", "progress": 8, "message": "Upload complete. Preparing audio."}), 202
         except Exception as exc:
             shutil.rmtree(job_dir, ignore_errors=True)
-            return jsonify({"error": "Transcription failed: " + str(exc)}), 500
+            return jsonify({"error": "Upload failed: " + str(exc)}), 500
+
+    @app.route("/media-transcribe/api/status/<job_id>")
+    def media_transcribe_status(job_id):
+        job_id = safe_job_id(job_id)
+        if not job_id:
+            return jsonify({"error": "Invalid transcription job."}), 404
+        status = load_status(JOBS_DIR / job_id)
+        if not status:
+            return jsonify({"error": "This transcription job was not found or expired."}), 404
+        return jsonify(status)
 
     @app.route("/media-transcribe/api/export-srt", methods=["POST"])
     def media_transcribe_export_srt():
@@ -124,6 +130,68 @@ def init_routes(app):
             return jsonify({"error": "File not found or expired."}), 404
         mimetype = "application/x-subrip" if filename.endswith(".srt") else "video/mp4"
         return send_file(path, as_attachment=True, download_name=filename, mimetype=mimetype)
+
+
+def process_transcription_job(job_id, job_dir, input_path, safe_name, original_ext, language, words_per_line, max_lines):
+    audio_path = job_dir / "audio.wav"
+    try:
+        save_status(job_dir, "processing", 18, "Extracting audio from the uploaded media.")
+        extract_audio(input_path, audio_path)
+        model_name = os.environ.get("MEDIA_TRANSCRIBE_BANGLA_MODEL", "medium") if language == "bn" else os.environ.get("MEDIA_TRANSCRIBE_MODEL", "small")
+        save_status(job_dir, "processing", 38, f"Loading {model_name} model and transcribing. First run can take longer.")
+        with _TRANSCRIBE_LOCK:
+            segments, detected_language = run_transcription(audio_path, language)
+        save_status(job_dir, "processing", 88, "Formatting captions and word timing.")
+        segments = format_caption_segments(segments, words_per_line, max_lines)
+        if not segments:
+            raise MediaTranscribeError("No speech was detected in this media.", 422)
+        duration = get_duration(input_path) or max((seg["end"] for seg in segments), default=0)
+        (job_dir / "captions.srt").write_text(segments_to_srt(segments), encoding="utf-8")
+        job = {"job_id": job_id, "created_at": time.time(), "input": str(input_path), "input_name": safe_name, "is_video": original_ext in VIDEO_EXTS, "duration": duration, "language": detected_language or language or "auto", "segments": segments}
+        save_job(job_dir, job)
+        save_status(
+            job_dir,
+            "complete",
+            100,
+            "Transcription complete.",
+            jobId=job_id,
+            filename=safe_name,
+            duration=duration,
+            language=job["language"],
+            segments=segments,
+            srtUrl=f"/media-transcribe/api/download/{job_id}/captions.srt",
+        )
+    except MediaTranscribeError as exc:
+        save_status(job_dir, "error", 100, str(exc), error=str(exc), errorStatus=exc.status)
+    except Exception as exc:
+        save_status(job_dir, "error", 100, "Transcription failed.", error="Transcription failed: " + str(exc), errorStatus=500)
+
+
+def save_status(job_dir, status, progress, message, **extra):
+    job_dir.mkdir(parents=True, exist_ok=True)
+    existing = load_status(job_dir) or {}
+    payload = {
+        "status": status,
+        "progress": max(0, min(100, int(progress))),
+        "message": message,
+        "createdAt": existing.get("createdAt") or time.time(),
+        "updatedAt": time.time(),
+    }
+    payload.update(extra)
+    temp_path = job_dir / "status.json.tmp"
+    temp_path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+    os.replace(temp_path, job_dir / "status.json")
+
+
+def load_status(job_dir):
+    path = job_dir / "status.json"
+    if not path.exists():
+        return None
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+
 
 def cleanup_old_jobs():
     now = time.time()

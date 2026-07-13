@@ -401,6 +401,59 @@ async function readApiResponse(res, fallbackMessage) {
   const text = (await res.text()).trim();
   return { error: text || fallbackMessage };
 }
+function updateServerProgress(progress, message) {
+  clearInterval(fakeProgressTimer);
+  progressWrap.style.display = "block";
+  progressFill.style.width = Math.min(99, Math.max(8, Number(progress) || 8)) + "%";
+  setStatus(message || "Transcription is processing.");
+}
+function wait(milliseconds) {
+  return new Promise(resolve => setTimeout(resolve, milliseconds));
+}
+async function waitForTranscription(id) {
+  const deadline = Date.now() + (2 * 60 * 60 * 1000);
+  let temporaryFailures = 0;
+  while (Date.now() < deadline) {
+    try {
+      const res = await fetch(`/media-transcribe/api/status/${encodeURIComponent(id)}`, { cache:"no-store" });
+      const data = await readApiResponse(res, "Unable to read transcription progress.");
+      if (!res.ok) {
+        if (res.status >= 500 && temporaryFailures < 10) {
+          temporaryFailures += 1;
+          updateServerProgress(38, "Server is reconnecting to the transcription job.");
+          await wait(3000);
+          continue;
+        }
+        throw new Error(data.error || "Unable to read transcription progress.");
+      }
+      temporaryFailures = 0;
+      updateServerProgress(data.progress, data.message);
+      if (data.status === "complete") return data;
+      if (data.status === "error") {
+        const failure = new Error(data.error || data.message || "Transcription failed.");
+        failure.isFinal = true;
+        throw failure;
+      }
+      await wait(2000);
+    } catch (error) {
+      if (error.isFinal || temporaryFailures >= 10 || /not found|expired/i.test(error.message || "")) throw error;
+      temporaryFailures += 1;
+      updateServerProgress(38, "Server is reconnecting to the transcription job.");
+      await wait(3000);
+    }
+  }
+  throw new Error("Transcription took too long. Please try a shorter file.");
+}
+function applyTranscriptionResult(data) {
+  jobId = data.jobId || jobId;
+  segments = data.segments || [];
+  activeIndex = segments.length ? 0 : -1;
+  renderSegments();
+  srtBtn.disabled = !segments.length;
+  exportBtn.disabled = !segments.length;
+  layoutBtn.disabled = !segments.length;
+  finishProgress(`Transcription complete: ${segments.length} captions, language ${data.language || "auto"}.`);
+}
 async function transcribe() {
   if (!selectedFile) return;
   const form = new FormData();
@@ -418,13 +471,8 @@ async function transcribe() {
     const data = await readApiResponse(res, "Transcription server is temporarily unavailable.");
     if (!res.ok) throw new Error(data.error || "Transcription failed");
     jobId = data.jobId;
-    segments = data.segments || [];
-    activeIndex = segments.length ? 0 : -1;
-    renderSegments();
-    srtBtn.disabled = !segments.length;
-    exportBtn.disabled = !segments.length;
-    layoutBtn.disabled = !segments.length;
-    finishProgress(`Transcription complete: ${segments.length} caption lines, language ${data.language || "auto"}.`);
+    const result = data.status === "complete" || data.segments ? data : await waitForTranscription(jobId);
+    applyTranscriptionResult(result);
   } catch (err) {
     failProgress(err.message || "Transcription failed.");
   } finally {
