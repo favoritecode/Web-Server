@@ -76,6 +76,7 @@ function Update-CodeFromGit {
     }
 
     $codePaths = @(
+        "favoriteweb_autostart.ps1",
         "app.py",
         "upload.html",
         "dashboard.html",
@@ -92,8 +93,14 @@ function Update-CodeFromGit {
         "download/route.py",
         "file-converter/routes.py",
         "file-converter/index.html",
+        "remove-bg/routes.py",
+        "remove-bg/index.html",
+        "Article Generate/routes.py",
+        "Article Generate/index.html",
         "ocr/routes.py",
-        "ocr/index.html"
+        "ocr/index.html",
+        "media-transcribe/routes.py",
+        "media-transcribe/index.html"
     )
 
     try {
