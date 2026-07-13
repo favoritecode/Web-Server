@@ -505,7 +505,17 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             override += r"{\bord3\shad0}"
         elif style["preset"] == "highlight":
             override += r"{\bord5}"
-        if style["animation"] == "karaoke" or style["preset"] in {"karaoke", "highlight"}:
+        if style["preset"] == "highlight":
+            words = seg.get("words") or distribute_words(seg["text"], seg["start"], seg["end"])
+            for index, word in enumerate(words):
+                start = max(seg["start"], float(word.get("start", seg["start"])))
+                next_start = float(words[index + 1].get("start", seg["end"])) if index + 1 < len(words) else seg["end"]
+                end = min(seg["end"], max(float(word.get("end", start + 0.08)), next_start, start + 0.08))
+                event_override = override if index == 0 else r"{\bord5}"
+                text = highlight_frame_text(seg, index, style)
+                lines.append(f"Dialogue: 0,{format_ass_time(start)},{format_ass_time(end)},Default,,0,0,0,,{event_override}{text}\n")
+            continue
+        if style["animation"] == "karaoke" or style["preset"] == "karaoke":
             text = karaoke_text(seg, style)
         else:
             text = escape_ass_text(seg["text"])
@@ -528,6 +538,25 @@ def karaoke_text(seg, style):
             pieces.append(r"{\c" + ass_color(style["accentColor"]) + "}" + word_text + r"{\r} ")
         else:
             pieces.append(f"{{\\{timing_tag}{duration}}}{word_text} ")
+    return "".join(pieces).strip() or escape_ass_text(seg["text"])
+
+
+def highlight_frame_text(seg, active_index, style):
+    words = seg.get("words") or distribute_words(seg["text"], seg["start"], seg["end"])
+    pieces = []
+    current_line = 0
+    for index, word in enumerate(words):
+        line = clamp_int(word.get("line"), 0, 5, 0)
+        if index and line != current_line:
+            pieces.append(r"\N")
+        elif index:
+            pieces.append(" ")
+        current_line = line
+        word_text = escape_ass_text(word.get("word", ""))
+        if index == active_index or word.get("selected"):
+            pieces.append(r"{\c" + ass_color(style["accentColor"]) + "}" + word_text + r"{\r}")
+        else:
+            pieces.append(word_text)
     return "".join(pieces).strip() or escape_ass_text(seg["text"])
 
 
