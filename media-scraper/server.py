@@ -11,6 +11,7 @@ Then open:  http://localhost:8000
 Uses only Python standard library — no external dependencies required.
 """
 
+import base64
 import json
 import os
 import re
@@ -25,6 +26,13 @@ try:
     YTDLP_AVAILABLE = True
 except ImportError:
     YTDLP_AVAILABLE = False
+
+# Optional curl_cffi for Cloudflare-protected pages
+try:
+    from curl_cffi import requests as curl_requests
+    CURL_CFFI_AVAILABLE = True
+except ImportError:
+    CURL_CFFI_AVAILABLE = False
 
 PORT = 8000
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -315,12 +323,33 @@ def extract_title(html):
 
 def fetch_page(url):
     """Fetch a webpage and return its decoded HTML content."""
-    req = urllib.request.Request(url, headers={
+    headers = {
         'User-Agent': USER_AGENT,
         'Accept': ('text/html,application/xhtml+xml,application/xml;q=0.9,'
                    'image/avif,image/webp,*/*;q=0.8'),
         'Accept-Language': 'en-US,en;q=0.9',
-    })
+    }
+
+    # If curl_cffi is available, use it first to bypass Cloudflare anti-bot
+    if CURL_CFFI_AVAILABLE:
+        try:
+            resp = curl_requests.get(url, headers=headers, impersonate='chrome', timeout=30, allow_redirects=True)
+            if resp.status_code == 200:
+                data = resp.content
+                content_type = resp.headers.get('Content-Type', '')
+                charset = 'utf-8'
+                m = re.search(r'charset=([\w-]+)', content_type, re.IGNORECASE)
+                if m:
+                    charset = m.group(1)
+                try:
+                    return data.decode(charset)
+                except (LookupError, UnicodeDecodeError):
+                    return data.decode('utf-8', errors='replace')
+        except Exception:
+            pass
+
+    # Fallback to urllib
+    req = urllib.request.Request(url, headers=headers)
     with urllib.request.urlopen(req, timeout=30) as resp:
         content_type = resp.headers.get('Content-Type', '')
         data = resp.read(MAX_RESPONSE_SIZE)
@@ -340,6 +369,81 @@ def fetch_text(url):
         return fetch_page(url)
     except Exception:
         return None
+
+
+def extract_jsonld_media(html, base_url):
+    """Extract audio/video URLs from JSON-LD (schema.org) embedded in a page."""
+    found_audio = []
+    found_video = []
+    # Find application/ld+json blocks
+    for m in re.finditer(
+            r'<script[^>]+type=["\']application/ld\+json["\'][^>]*>(.*?)</script>',
+            html, re.DOTALL | re.IGNORECASE):
+        try:
+            data_text = m.group(1).strip()
+            data = json.loads(data_text)
+        except Exception:
+            continue
+        # Handle single object or array/list
+        items = data if isinstance(data, list) else [data]
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            item_type = str(item.get('@type') or '').lower()
+            if 'audio' in item_type or 'video' in item_type:
+                content_url = item.get('contentUrl') or item.get('url') or ''
+                if content_url:
+                    resolved = urllib.parse.urljoin(base_url, content_url)
+                    # Skip if it's just the page URL itself (not actual media file)
+                    if resolved.rstrip('/') != base_url.rstrip('/'):
+                        if 'audio' in item_type:
+                            found_audio.append(resolved)
+                        else:
+                            found_video.append(resolved)
+                # Also check "encoding" / "associatedMedia"
+                for enc_key in ('encoding', 'associatedMedia'):
+                    enc = item.get(enc_key)
+                    if isinstance(enc, dict):
+                        enc_url = enc.get('contentUrl') or enc.get('url') or ''
+                        if enc_url:
+                            resolved = urllib.parse.urljoin(base_url, enc_url)
+                            if resolved.rstrip('/') != base_url.rstrip('/'):
+                                if 'audio' in item_type:
+                                    found_audio.append(resolved)
+                                else:
+                                    found_video.append(resolved)
+    return found_audio, found_video
+
+
+def extract_media_from_scripts(html, base_url):
+    """Scan inline scripts for media URLs / API references."""
+    found = {'audio': [], 'video': [], 'image': []}
+    for m in re.finditer(r'<script[^>]*>(.*?)</script>', html, re.DOTALL | re.IGNORECASE):
+        text = m.group(1)
+        # Direct audio/video file URLs
+        for fm in re.finditer(
+                r'https?://[^\s"\'<>\\]+\.(?:mp3|wav|m4a|aac|flac|ogg|opus|weba|oga)',
+                text, re.IGNORECASE):
+            u = fm.group(0).rstrip('.,;:!?)]}\'"')
+            if u not in found['audio']:
+                found['audio'].append(u)
+        for fm in re.finditer(
+                r'https?://[^\s"\'<>\\]+\.(?:mp4|webm|m3u8|ogv|mov|mkv)',
+                text, re.IGNORECASE):
+            u = fm.group(0).rstrip('.,;:!?)]}\'"')
+            if u not in found['video']:
+                found['video'].append(u)
+        # JSON-LD / songData style URLs with preview/audio keywords
+        for fm in re.finditer(r'["\'](https?://[^"\']*(?:preview|audio|stream|sound|track)[^"\']*)["\']',
+                              text, re.IGNORECASE):
+            u = fm.group(1)
+            if any(ext in u.lower() for ext in ('.mp3', '.wav', '.m4a', '.aac', '.flac', '.ogg')):
+                if u not in found['audio']:
+                    found['audio'].append(u)
+            elif any(ext in u.lower() for ext in ('.mp4', '.webm', '.m3u8', '.mov')):
+                if u not in found['video']:
+                    found['video'].append(u)
+    return found
 
 
 def deep_scan(parser, html=''):
@@ -414,7 +518,10 @@ def resolve_direct_links(url):
         'skip_download': True,
         'format': 'best',
         'noplaylist': True,
-        'socket_timeout': 15,
+        'socket_timeout': 20,
+        # Impersonate a real browser to bypass Cloudflare anti-bot challenges
+        'extractor_args': {'generic': {'impersonate': ['chrome']}},
+        'impersonate': 'chrome',
     }
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -465,6 +572,27 @@ def resolve_direct_links(url):
         return None
 
 
+def extract_artlist_audio(html, base_url):
+    """Extract artlist.io audio file URLs from base64-encoded cms-public-artifacts paths."""
+    found = []
+    # Pattern: https://cms-public-artifacts.artlist.io/<base64-encoded-path>
+    for m in re.finditer(
+            r'https?://cms-public-artifacts\.artlist\.io/([A-Za-z0-9+/=]+)',
+            html):
+        b64 = m.group(1)
+        try:
+            # Decode base64 to get the actual file path
+            decoded = base64.b64decode(b64).decode('utf-8', errors='ignore')
+            # If decoded path points to an audio file, build full URL
+            if any(ext in decoded.lower() for ext in ('.aac', '.mp3', '.wav', '.m4a', '.flac', '.ogg')):
+                full_url = 'https://cms-public-artifacts.artlist.io/' + decoded
+                if full_url not in found:
+                    found.append(full_url)
+        except Exception:
+            continue
+    return found
+
+
 def scrape(url):
     """Scrape a URL and return media URLs."""
     if not url.startswith(('http://', 'https://')):
@@ -474,6 +602,31 @@ def scrape(url):
     parser = MediaParser(url)
     parser.feed(html)
     deep_scan(parser, html)
+
+    # Extract audio/video URLs from JSON-LD (schema.org) embedded in the page
+    jsonld_audio, jsonld_video = extract_jsonld_media(html, url)
+    for a in jsonld_audio:
+        if a not in parser.audios:
+            parser.audios.append(a)
+    for v in jsonld_video:
+        if v not in parser.videos:
+            parser.videos.append(v)
+
+    # Scan inline scripts for additional media URLs
+    script_media = extract_media_from_scripts(html, url)
+    for a in script_media['audio']:
+        if a not in parser.audios:
+            parser.audios.append(a)
+    for v in script_media['video']:
+        if v not in parser.videos:
+            parser.videos.append(v)
+
+    # Special handling for artlist.io - decode base64 audio URLs
+    if 'artlist.io' in url:
+        artlist_audio = extract_artlist_audio(html, url)
+        for a in artlist_audio:
+            if a not in parser.audios:
+                parser.audios.append(a)
 
     # Try to resolve direct playable/downloadable links with yt-dlp
     direct = resolve_direct_links(url)
