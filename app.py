@@ -1532,6 +1532,13 @@ if media_transcribe_backend_path.exists():
 from shofikul.routes import init_routes as shofikul_routes
 shofikul_routes(app)
 
+media_scraper_backend_path = Path(BASE_DIR) / "media-scraper" / "routes.py"
+if media_scraper_backend_path.exists():
+    media_scraper_spec = importlib.util.spec_from_file_location("favoriteweb_media_scraper", media_scraper_backend_path)
+    media_scraper_module = importlib.util.module_from_spec(media_scraper_spec)
+    media_scraper_spec.loader.exec_module(media_scraper_module)
+    media_scraper_module.init_routes(app)
+
 from download.route import download as download_blueprint
 app.register_blueprint(download_blueprint)
 

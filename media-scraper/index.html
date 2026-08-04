@@ -1,0 +1,718 @@
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Media Scraper Tool</title>
+<link rel="stylesheet" href="/shared.css">
+<style>
+  :root {
+    --bg: #0f172a;
+    --bg-card: #1e293b;
+    --bg-input: #0b1220;
+    --border: #334155;
+    --text: #e2e8f0;
+    --text-muted: #94a3b8;
+    --primary: #6366f1;
+    --primary-hover: #4f46e5;
+    --video: #ef4444;
+    --audio: #22c55e;
+    --image: #3b82f6;
+    --radius: 12px;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'Segoe UI', Tahoma, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 30px 16px;
+  }
+
+  .container {
+    width: 100%;
+    max-width: 1000px;
+  }
+
+  /* ---------- Header ---------- */
+  header {
+    text-align: center;
+    margin-bottom: 28px;
+  }
+
+  header h1 {
+    font-size: 2rem;
+    background: linear-gradient(135deg, #818cf8, #22d3ee);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    margin-bottom: 6px;
+  }
+
+  header p {
+    color: var(--text-muted);
+    font-size: 0.95rem;
+  }
+
+  /* ---------- Search box ---------- */
+  .search-box {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 24px;
+  }
+
+  .search-box input {
+    flex: 1;
+    padding: 14px 18px;
+    font-size: 1rem;
+    color: var(--text);
+    background: var(--bg-input);
+    border: 2px solid var(--border);
+    border-radius: var(--radius);
+    outline: none;
+    transition: border-color 0.2s;
+  }
+
+  .search-box input:focus {
+    border-color: var(--primary);
+  }
+
+  .search-box input::placeholder {
+    color: #64748b;
+  }
+
+  .search-box button {
+    padding: 14px 28px;
+    font-size: 1rem;
+    font-weight: 600;
+    color: #fff;
+    background: var(--primary);
+    border: none;
+    border-radius: var(--radius);
+    cursor: pointer;
+    transition: background 0.2s, transform 0.1s;
+    white-space: nowrap;
+  }
+
+  .search-box button:hover {
+    background: var(--primary-hover);
+  }
+
+  .search-box button:active {
+    transform: scale(0.97);
+  }
+
+  .search-box button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
+  /* ---------- Status / error ---------- */
+  .status {
+    display: none;
+    padding: 12px 16px;
+    border-radius: var(--radius);
+    margin-bottom: 20px;
+    font-size: 0.95rem;
+    line-height: 1.5;
+    word-break: break-word;
+  }
+
+  .status.error {
+    display: block;
+    background: rgba(239, 68, 68, 0.12);
+    border: 1px solid rgba(239, 68, 68, 0.4);
+    color: #fca5a5;
+  }
+
+  .status.loading {
+    display: block;
+    background: rgba(99, 102, 241, 0.12);
+    border: 1px solid rgba(99, 102, 241, 0.4);
+    color: #a5b4fc;
+  }
+
+  .status.loading::before {
+    content: '';
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    margin-right: 10px;
+    border: 2px solid #a5b4fc;
+    border-top-color: transparent;
+    border-radius: 50%;
+    vertical-align: middle;
+    animation: spin 0.8s linear infinite;
+  }
+
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+
+  /* ---------- Result meta ---------- */
+  .result-meta {
+    display: none;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 14px 18px;
+    margin-bottom: 20px;
+  }
+
+  .result-meta.visible { display: block; }
+
+  .result-meta .page-title {
+    font-size: 1.05rem;
+    font-weight: 600;
+    margin-bottom: 4px;
+    word-break: break-word;
+  }
+
+  .result-meta .page-url {
+    color: var(--text-muted);
+    font-size: 0.85rem;
+    word-break: break-all;
+  }
+
+  /* ---------- Tabs ---------- */
+  .tabs {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 18px;
+    border-bottom: 2px solid var(--border);
+    padding-bottom: 0;
+  }
+
+  .tab-btn {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 22px;
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    background: transparent;
+    border: none;
+    border-bottom: 3px solid transparent;
+    margin-bottom: -2px;
+    cursor: pointer;
+    transition: color 0.2s, border-color 0.2s;
+  }
+
+  .tab-btn:hover {
+    color: var(--text);
+  }
+
+  .tab-btn.active {
+    color: var(--text);
+    border-bottom-color: var(--primary);
+  }
+
+  .tab-btn .count {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 2px 10px;
+    font-size: 0.8rem;
+    font-weight: 700;
+    color: var(--text-muted);
+  }
+
+  .tab-btn.active .count {
+    background: var(--primary);
+    border-color: var(--primary);
+    color: #fff;
+  }
+
+  .tab-btn .dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    display: inline-block;
+  }
+
+  .dot.video { background: var(--video); }
+  .dot.audio { background: var(--audio); }
+  .dot.image { background: var(--image); }
+
+  /* ---------- Tab panels ---------- */
+  .tab-panel {
+    display: none;
+  }
+
+  .tab-panel.active {
+    display: block;
+  }
+
+  .empty-state {
+    text-align: center;
+    padding: 50px 20px;
+    color: var(--text-muted);
+    border: 2px dashed var(--border);
+    border-radius: var(--radius);
+  }
+
+  .empty-state .icon {
+    font-size: 2.5rem;
+    margin-bottom: 10px;
+  }
+
+  /* ---------- Media cards ---------- */
+  .media-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .media-card {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 12px 16px;
+    transition: border-color 0.2s;
+  }
+
+  .media-card:hover {
+    border-color: var(--primary);
+  }
+
+  .media-card .index {
+    flex-shrink: 0;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 8px;
+    font-weight: 700;
+    font-size: 0.85rem;
+    color: #fff;
+  }
+
+  .media-card.video-card .index { background: var(--video); }
+  .media-card.audio-card .index { background: var(--audio); }
+  .media-card.image-card .index { background: var(--image); }
+
+  .media-card .url {
+    flex: 1;
+    font-size: 0.85rem;
+    color: var(--text);
+    word-break: break-all;
+    line-height: 1.4;
+  }
+
+  .media-card .url a {
+    color: inherit;
+    text-decoration: none;
+  }
+
+  .media-card .url a:hover {
+    color: #a5b4fc;
+    text-decoration: underline;
+  }
+
+  .media-card .actions {
+    display: flex;
+    gap: 6px;
+    flex-shrink: 0;
+  }
+
+  .media-card .actions button {
+    padding: 6px 12px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--text);
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background 0.2s, border-color 0.2s;
+  }
+
+  .media-card .actions button:hover {
+    background: var(--primary);
+    border-color: var(--primary);
+    color: #fff;
+  }
+
+  /* ---------- Image preview ---------- */
+  .image-preview {
+    width: 48px;
+    height: 48px;
+    border-radius: 8px;
+    object-fit: cover;
+    flex-shrink: 0;
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+  }
+
+  /* ---------- Footer ---------- */
+  footer {
+    margin-top: 40px;
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 0.8rem;
+  }
+
+  /* ---------- Responsive ---------- */
+  @media (max-width: 600px) {
+    .search-box {
+      flex-direction: column;
+    }
+    .search-box button {
+      width: 100%;
+    }
+    .tab-btn {
+      flex: 1;
+      justify-content: center;
+      padding: 12px 8px;
+      font-size: 0.85rem;
+    }
+    .media-card {
+      flex-wrap: wrap;
+    }
+    .media-card .actions {
+      width: 100%;
+      justify-content: flex-end;
+    }
+  }
+</style>
+</head>
+<body>
+
+<div class="container">
+
+  <header>
+    <h1>🎬 Media Scraper Tool</h1>
+    <p>যেকোনো ওয়েবপেজের URL দিন — ভিডিও, অডিও ও ছবির সব লিংক আলাদা ট্যাবে দেখুন</p>
+  </header>
+
+  <!-- Search box -->
+  <div class="search-box">
+    <input type="url" id="urlInput" placeholder="https://example.com — ওয়েবপেজের URL লিখুন..." spellcheck="false">
+    <button id="scrapeBtn">🔍 Scrape</button>
+  </div>
+
+  <!-- Status / error message -->
+  <div class="status" id="status"></div>
+
+  <!-- Result meta -->
+  <div class="result-meta" id="resultMeta">
+    <div class="page-title" id="pageTitle"></div>
+    <div class="page-url" id="pageUrl"></div>
+  </div>
+
+  <!-- Tabs -->
+  <div class="tabs" id="tabs" style="display:none;">
+    <button class="tab-btn active" data-tab="videos">
+      <span class="dot video"></span> ভিডিও
+      <span class="count" id="videoCount">0</span>
+    </button>
+    <button class="tab-btn" data-tab="audios">
+      <span class="dot audio"></span> অডিও
+      <span class="count" id="audioCount">0</span>
+    </button>
+    <button class="tab-btn" data-tab="images">
+      <span class="dot image"></span> ছবি
+      <span class="count" id="imageCount">0</span>
+    </button>
+  </div>
+
+  <!-- Tab panels -->
+  <div class="tab-panel active" id="panel-videos">
+    <div class="empty-state" id="empty-videos">
+      <div class="icon">🎥</div>
+      <div>কোনো ভিডিও পাওয়া যায়নি</div>
+    </div>
+    <div class="media-list" id="list-videos"></div>
+  </div>
+
+  <div class="tab-panel" id="panel-audios">
+    <div class="empty-state" id="empty-audios">
+      <div class="icon">🎵</div>
+      <div>কোনো অডিও পাওয়া যায়নি</div>
+    </div>
+    <div class="media-list" id="list-audios"></div>
+  </div>
+
+  <div class="tab-panel" id="panel-images">
+    <div class="empty-state" id="empty-images">
+      <div class="icon">🖼️</div>
+      <div>কোনো ছবি পাওয়া যায়নি</div>
+    </div>
+    <div class="media-list" id="list-images"></div>
+  </div>
+
+  <footer>
+    Media Scraper Tool — Python + HTML/CSS/JS দিয়ে তৈরি | শুধুমাত্র শিক্ষামূলক ব্যবহারের জন্য
+  </footer>
+
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  // ---------- DOM references ----------
+  const urlInput = document.getElementById('urlInput');
+  const scrapeBtn = document.getElementById('scrapeBtn');
+  const statusEl = document.getElementById('status');
+  const resultMeta = document.getElementById('resultMeta');
+  const pageTitle = document.getElementById('pageTitle');
+  const pageUrl = document.getElementById('pageUrl');
+  const tabsEl = document.getElementById('tabs');
+
+  const videoCountEl = document.getElementById('videoCount');
+  const audioCountEl = document.getElementById('audioCount');
+  const imageCountEl = document.getElementById('imageCount');
+
+  const panels = {
+    videos: document.getElementById('panel-videos'),
+    audios: document.getElementById('panel-audios'),
+    images: document.getElementById('panel-images'),
+  };
+
+  const lists = {
+    videos: document.getElementById('list-videos'),
+    audios: document.getElementById('list-audios'),
+    images: document.getElementById('list-images'),
+  };
+
+  const empties = {
+    videos: document.getElementById('empty-videos'),
+    audios: document.getElementById('empty-audios'),
+    images: document.getElementById('empty-images'),
+  };
+
+  // ---------- Helpers ----------
+  function showStatus(message, type) {
+    statusEl.textContent = message;
+    statusEl.className = 'status ' + (type || '');
+  }
+
+  function clearStatus() {
+    statusEl.textContent = '';
+    statusEl.className = 'status';
+  }
+
+  function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+  }
+
+  function getFileName(url) {
+    try {
+      const path = new URL(url).pathname;
+      const name = path.split('/').pop();
+      return name || url;
+    } catch (e) {
+      return url;
+    }
+  }
+
+  // ---------- Tab switching ----------
+  document.querySelectorAll('.tab-btn').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      document.querySelectorAll('.tab-btn').forEach(function (b) {
+        b.classList.remove('active');
+      });
+      btn.classList.add('active');
+
+      const tab = btn.dataset.tab;
+      Object.keys(panels).forEach(function (key) {
+        panels[key].classList.toggle('active', key === tab);
+      });
+    });
+  });
+
+  // ---------- Render results ----------
+  function renderList(type, urls) {
+    const list = lists[type];
+    const empty = empties[type];
+    list.innerHTML = '';
+
+    if (!urls || urls.length === 0) {
+      empty.style.display = 'block';
+      return;
+    }
+
+    empty.style.display = 'none';
+
+    urls.forEach(function (url, i) {
+      const card = document.createElement('div');
+      card.className = 'media-card ' + type + '-card';
+
+      // Index badge
+      const index = document.createElement('div');
+      index.className = 'index';
+      index.textContent = (i + 1);
+
+      // Image preview for image type
+      let preview = null;
+      if (type === 'images') {
+        preview = document.createElement('img');
+        preview.className = 'image-preview';
+        preview.src = url;
+        preview.alt = 'Preview';
+        preview.loading = 'lazy';
+        preview.onerror = function () {
+          preview.style.display = 'none';
+        };
+      }
+
+      // URL text
+      const urlDiv = document.createElement('div');
+      urlDiv.className = 'url';
+      const link = document.createElement('a');
+      link.href = url;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      link.textContent = url;
+      urlDiv.appendChild(link);
+
+      // Actions
+      const actions = document.createElement('div');
+      actions.className = 'actions';
+
+      const copyBtn = document.createElement('button');
+      copyBtn.textContent = '📋 কপি';
+      copyBtn.title = 'URL কপি করুন';
+      copyBtn.addEventListener('click', function () {
+        navigator.clipboard.writeText(url).then(function () {
+          copyBtn.textContent = '✅ কপি হয়েছে';
+          setTimeout(function () {
+            copyBtn.textContent = '📋 কপি';
+          }, 1500);
+        }).catch(function () {
+          copyBtn.textContent = '❌ ব্যর্থ';
+          setTimeout(function () {
+            copyBtn.textContent = '📋 কপি';
+          }, 1500);
+        });
+      });
+
+      const openBtn = document.createElement('button');
+      openBtn.textContent = '↗ খুলুন';
+      openBtn.title = 'নতুন ট্যাবে খুলুন';
+      openBtn.addEventListener('click', function () {
+        window.open(url, '_blank', 'noopener');
+      });
+
+      actions.appendChild(copyBtn);
+      actions.appendChild(openBtn);
+
+      card.appendChild(index);
+      if (preview) card.appendChild(preview);
+      card.appendChild(urlDiv);
+      card.appendChild(actions);
+
+      list.appendChild(card);
+    });
+  }
+
+  function renderResult(data) {
+    // Meta info
+    pageTitle.textContent = data.title || 'পেজের টাইটেল পাওয়া যায়নি';
+    pageUrl.textContent = data.url;
+    resultMeta.classList.add('visible');
+
+    // Counts
+    videoCountEl.textContent = data.videos.length;
+    audioCountEl.textContent = data.audios.length;
+    imageCountEl.textContent = data.images.length;
+
+    // Lists
+    renderList('videos', data.videos);
+    renderList('audios', data.audios);
+    renderList('images', data.images);
+
+    // Show tabs
+    tabsEl.style.display = 'flex';
+
+    // Reset to first tab
+    document.querySelectorAll('.tab-btn').forEach(function (b) {
+      b.classList.remove('active');
+    });
+    document.querySelector('.tab-btn[data-tab="videos"]').classList.add('active');
+    Object.keys(panels).forEach(function (key) {
+      panels[key].classList.toggle('active', key === 'videos');
+    });
+  }
+
+  // ---------- Scrape action ----------
+  function scrape() {
+    let url = urlInput.value.trim();
+    if (!url) {
+      showStatus('⚠️ দয়া করে একটি URL লিখুন', 'error');
+      urlInput.focus();
+      return;
+    }
+
+    if (!/^https?:\/\//i.test(url)) {
+      url = 'https://' + url;
+      urlInput.value = url;
+    }
+
+    // Validate URL format
+    try {
+      new URL(url);
+    } catch (e) {
+      showStatus('⚠️ URL টি সঠিক নয়। উদাহরণ: https://example.com', 'error');
+      return;
+    }
+
+    scrapeBtn.disabled = true;
+    showStatus('পেজ থেকে মিডিয়া সংগ্রহ করা হচ্ছে... দয়া করে অপেক্ষা করুন', 'loading');
+
+    const apiUrl = '/media-scraper/api/scrape?url=' + encodeURIComponent(url);
+
+    fetch(apiUrl)
+      .then(function (resp) {
+        if (!resp.ok) {
+          return resp.json().then(function (data) {
+            throw new Error(data.error || 'সার্ভার থেকে ত্রুটি হয়েছে');
+          });
+        }
+        return resp.json();
+      })
+      .then(function (data) {
+        if (data.error) {
+          throw new Error(data.error);
+        }
+        clearStatus();
+        renderResult(data);
+      })
+      .catch(function (err) {
+        showStatus('❌ ' + err.message, 'error');
+      })
+      .finally(function () {
+        scrapeBtn.disabled = false;
+      });
+  }
+
+  // ---------- Events ----------
+  scrapeBtn.addEventListener('click', scrape);
+
+  urlInput.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') {
+      scrape();
+    }
+  });
+
+  // ---------- Init ----------
+  urlInput.focus();
+})();
+</script>
+
+<script src="/shared.js"></script>
+</body>
+</html>

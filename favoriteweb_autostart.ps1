@@ -100,7 +100,10 @@ function Update-CodeFromGit {
         "ocr/routes.py",
         "ocr/index.html",
         "media-transcribe/routes.py",
-        "media-transcribe/index.html"
+        "media-transcribe/index.html",
+        "media-scraper/routes.py",
+        "media-scraper/index.html",
+        "media-scraper/server.py"
     )
 
     try {
