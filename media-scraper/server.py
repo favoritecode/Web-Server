@@ -19,6 +19,13 @@ import urllib.request
 from html.parser import HTMLParser
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
+# Optional yt-dlp for direct video/audio URL resolution
+try:
+    import yt_dlp
+    YTDLP_AVAILABLE = True
+except ImportError:
+    YTDLP_AVAILABLE = False
+
 PORT = 8000
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 MAX_RESPONSE_SIZE = 20 * 1024 * 1024  # 20 MB
@@ -396,6 +403,68 @@ def deep_scan(parser, html=''):
     return parser
 
 
+def resolve_direct_links(url):
+    """Use yt-dlp to resolve direct playable/downloadable media URLs."""
+    if not YTDLP_AVAILABLE:
+        return None
+
+    ydl_opts = {
+        'quiet': True,
+        'no_warnings': True,
+        'skip_download': True,
+        'format': 'best',
+        'noplaylist': True,
+        'socket_timeout': 15,
+    }
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=False)
+            if not info:
+                return None
+
+            result = {
+                'title': info.get('title') or '',
+                'thumbnail': info.get('thumbnail') or '',
+                'duration': info.get('duration') or 0,
+                'formats': [],
+            }
+
+            # Collect best video formats
+            formats = info.get('formats') or []
+            seen = set()
+            for f in formats:
+                url = f.get('url') or ''
+                ext = f.get('ext') or ''
+                height = f.get('height') or 0
+                vcodec = f.get('vcodec') or 'none'
+                acodec = f.get('acodec') or 'none'
+                if not url or url in seen:
+                    continue
+                seen.add(url)
+                if vcodec != 'none':
+                    result['formats'].append({
+                        'type': 'video',
+                        'url': url,
+                        'ext': ext,
+                        'height': height,
+                        'has_audio': acodec != 'none',
+                    })
+                elif acodec != 'none':
+                    result['formats'].append({
+                        'type': 'audio',
+                        'url': url,
+                        'ext': ext,
+                        'height': 0,
+                        'has_audio': True,
+                    })
+
+            # Sort video by quality, audio separately
+            result['formats'].sort(key=lambda x: (x['type'] != 'video', -x['height']))
+            return result
+    except Exception:
+        return None
+
+
 def scrape(url):
     """Scrape a URL and return media URLs."""
     if not url.startswith(('http://', 'https://')):
@@ -406,12 +475,17 @@ def scrape(url):
     parser.feed(html)
     deep_scan(parser, html)
 
+    # Try to resolve direct playable/downloadable links with yt-dlp
+    direct = resolve_direct_links(url)
+
     return {
         'url': url,
         'title': extract_title(html),
         'videos': parser.videos,
         'audios': parser.audios,
         'images': parser.images,
+        'direct': direct,
+        'ytdlp_available': YTDLP_AVAILABLE,
     }
 
 

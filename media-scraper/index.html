@@ -351,6 +351,85 @@
     border: 1px solid var(--border);
   }
 
+  /* ---------- Direct links (yt-dlp) ---------- */
+  .direct-links {
+    background: var(--bg-card);
+    border: 1px solid rgba(99, 102, 241, 0.3);
+    border-radius: var(--radius);
+    padding: 16px 18px;
+    margin-bottom: 20px;
+  }
+
+  .direct-head h3 {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: #a5b4fc;
+    margin-bottom: 6px;
+  }
+
+  .direct-title {
+    font-size: 0.9rem;
+    color: var(--text);
+    margin-bottom: 4px;
+    word-break: break-word;
+  }
+
+  .direct-duration {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+  }
+
+  .direct-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 12px;
+  }
+
+  .direct-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 14px;
+    flex-wrap: wrap;
+  }
+
+  .direct-label {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--text);
+    flex: 1;
+    min-width: 150px;
+  }
+
+  .direct-actions {
+    display: flex;
+    gap: 6px;
+    flex-shrink: 0;
+  }
+
+  .direct-btn {
+    padding: 6px 12px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: opacity 0.2s, transform 0.1s;
+    color: #fff;
+  }
+
+  .direct-btn:hover { opacity: 0.85; }
+  .direct-btn:active { transform: scale(0.96); }
+
+  .direct-btn.play { background: #22c55e; }
+  .direct-btn.download { background: #3b82f6; }
+  .direct-btn.copy { background: #6b7280; }
+
   /* ---------- Footer ---------- */
   footer {
     margin-top: 40px;
@@ -406,6 +485,9 @@
     <div class="page-title" id="pageTitle"></div>
     <div class="page-url" id="pageUrl"></div>
   </div>
+
+  <!-- Direct playable/download links (yt-dlp resolved) -->
+  <div class="direct-links" id="directLinks" style="display:none;"></div>
 
   <!-- Tabs -->
   <div class="tabs" id="tabs" style="display:none;">
@@ -616,6 +698,90 @@
     });
   }
 
+  function renderDirectLinks(direct) {
+    const container = document.getElementById('directLinks');
+    if (!direct || !direct.formats || direct.formats.length === 0) {
+      container.style.display = 'none';
+      return;
+    }
+    container.style.display = 'block';
+    container.innerHTML = '';
+
+    // Header
+    const head = document.createElement('div');
+    head.className = 'direct-head';
+    head.innerHTML = '<h3>🎯 Direct Playable / Download Links</h3>';
+    if (direct.title) {
+      const t = document.createElement('div');
+      t.className = 'direct-title';
+      t.textContent = direct.title;
+      head.appendChild(t);
+    }
+    if (direct.duration) {
+      const d = document.createElement('span');
+      d.className = 'direct-duration';
+      const mins = Math.floor(direct.duration / 60);
+      const secs = direct.duration % 60;
+      d.textContent = '⏱ ' + mins + ':' + (secs < 10 ? '0' : '') + secs;
+      head.appendChild(d);
+    }
+    container.appendChild(head);
+
+    // Format list
+    const list = document.createElement('div');
+    list.className = 'direct-list';
+    direct.formats.forEach(function (f, i) {
+      const row = document.createElement('div');
+      row.className = 'direct-row';
+
+      const label = document.createElement('div');
+      label.className = 'direct-label';
+      if (f.type === 'video') {
+        label.textContent = '🎥 Video' + (f.height ? ' ' + f.height + 'p' : '') + ' (' + (f.ext || 'mp4') + ')' + (f.has_audio ? '' : ' - no audio');
+      } else {
+        label.textContent = '🎵 Audio (' + (f.ext || 'mp3') + ')';
+      }
+      row.appendChild(label);
+
+      const actions = document.createElement('div');
+      actions.className = 'direct-actions';
+
+      // Play button
+      const playBtn = document.createElement('button');
+      playBtn.textContent = '▶ Play';
+      playBtn.className = 'direct-btn play';
+      playBtn.addEventListener('click', function () {
+        window.open('/media-scraper/api/download?url=' + encodeURIComponent(f.url), '_blank');
+      });
+      actions.appendChild(playBtn);
+
+      // Download button
+      const dlBtn = document.createElement('button');
+      dlBtn.textContent = '⬇ Download';
+      dlBtn.className = 'direct-btn download';
+      dlBtn.addEventListener('click', function () {
+        window.open('/media-scraper/api/download?url=' + encodeURIComponent(f.url), '_blank');
+      });
+      actions.appendChild(dlBtn);
+
+      // Copy button
+      const copyBtn = document.createElement('button');
+      copyBtn.textContent = '📋 Copy';
+      copyBtn.className = 'direct-btn copy';
+      copyBtn.addEventListener('click', function () {
+        navigator.clipboard.writeText(f.url).then(function () {
+          copyBtn.textContent = '✅ Copied';
+          setTimeout(function () { copyBtn.textContent = '📋 Copy'; }, 1500);
+        });
+      });
+      actions.appendChild(copyBtn);
+
+      row.appendChild(actions);
+      list.appendChild(row);
+    });
+    container.appendChild(list);
+  }
+
   function renderResult(data) {
     // Meta info
     pageTitle.textContent = data.title || 'পেজের টাইটেল পাওয়া যায়নি';
@@ -626,6 +792,9 @@
     videoCountEl.textContent = data.videos.length;
     audioCountEl.textContent = data.audios.length;
     imageCountEl.textContent = data.images.length;
+
+    // Direct links (yt-dlp resolved)
+    renderDirectLinks(data.direct);
 
     // Lists
     renderList('videos', data.videos);
