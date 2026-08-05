@@ -636,7 +636,10 @@ def home():
 @app.route("/eee")
 @app.route("/eee/")
 def eee_book():
-    return redirect("https://cdn.jsdelivr.net/gh/favoritecode/EEE-Career-Masterbook@main/blogger-web/eee-career-masterbook-self-contained.html")
+    url = "https://cdn.jsdelivr.net/gh/favoritecode/EEE-Career-Masterbook@main/blogger-web/eee-career-masterbook-self-contained.html"
+    upstream = requests.get(url, timeout=20)
+    upstream.raise_for_status()
+    return Response(upstream.text, mimetype="text/html")
 
 @app.route("/eee/<path:filename>")
 def eee_book_assets(filename):
