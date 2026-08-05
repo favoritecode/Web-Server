@@ -630,6 +630,18 @@ def home():
     return send_from_directory(BASE_DIR, "index.html")
 
 # =====================
+# EEE CAREER MASTERBOOK
+# =====================
+
+@app.route("/eee")
+def eee_book():
+    return send_from_directory(os.path.join(BASE_DIR, "eee"), "index.html")
+
+@app.route("/eee/<path:filename>")
+def eee_book_assets(filename):
+    return send_from_directory(os.path.join(BASE_DIR, "eee"), filename)
+
+# =====================
 # LOGIN
 # =====================
 
