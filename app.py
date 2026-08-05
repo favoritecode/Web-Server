@@ -633,17 +633,29 @@ def home():
 # EEE CAREER MASTERBOOK
 # =====================
 
+EEE_DIR = os.path.join(BASE_DIR, "eee")
+EEE_INDEX = "eee-career-masterbook-self-contained.html"
+
+@app.route("/EEE")
+def eee_book_canonical():
+    return redirect("/EEE/", code=308)
+
+@app.route("/EEE/")
+def eee_book():
+    return send_from_directory(EEE_DIR, EEE_INDEX)
+
+@app.route("/EEE/<path:filename>")
+def eee_book_assets(filename):
+    return send_from_directory(EEE_DIR, filename)
+
 @app.route("/eee")
 @app.route("/eee/")
-def eee_book():
-    url = "https://cdn.jsdelivr.net/gh/favoritecode/EEE-Career-Masterbook@main/blogger-web/eee-career-masterbook-self-contained.html"
-    upstream = requests.get(url, timeout=20)
-    upstream.raise_for_status()
-    return Response(upstream.text, mimetype="text/html")
+def eee_book_lowercase():
+    return redirect("/EEE/", code=308)
 
 @app.route("/eee/<path:filename>")
-def eee_book_assets(filename):
-    return redirect(f"https://cdn.jsdelivr.net/gh/favoritecode/EEE-Career-Masterbook@main/blogger-web/{filename}")
+def eee_book_assets_lowercase(filename):
+    return redirect(f"/EEE/{filename}", code=308)
 
 # =====================
 # LOGIN
