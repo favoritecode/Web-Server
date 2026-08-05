@@ -88,7 +88,6 @@ function Update-CodeFromGit {
         "requirements.txt",
         "render.yaml",
         "server-worker.js",
-        "eee",
         "ytplayer/routes.py",
         "ytplayer/index.html",
         "download/route.py",

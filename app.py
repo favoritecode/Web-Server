@@ -636,14 +636,11 @@ def home():
 @app.route("/eee")
 @app.route("/eee/")
 def eee_book():
-    return send_from_directory(
-        os.path.join(BASE_DIR, "eee"),
-        "eee-career-masterbook-self-contained.html",
-    )
+    return redirect("https://cdn.jsdelivr.net/gh/favoritecode/EEE-Career-Masterbook@main/blogger-web/eee-career-masterbook-self-contained.html")
 
 @app.route("/eee/<path:filename>")
 def eee_book_assets(filename):
-    return send_from_directory(os.path.join(BASE_DIR, "eee"), filename)
+    return redirect(f"https://cdn.jsdelivr.net/gh/favoritecode/EEE-Career-Masterbook@main/blogger-web/{filename}")
 
 # =====================
 # LOGIN
