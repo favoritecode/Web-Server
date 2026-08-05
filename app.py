@@ -642,7 +642,13 @@ def eee_book_canonical():
 
 @app.route("/EEE/")
 def eee_book():
-    return send_from_directory(EEE_DIR, EEE_INDEX)
+    with open(os.path.join(EEE_DIR, EEE_INDEX), "r", encoding="utf-8") as f:
+        html = f.read()
+    if "/shared.css" not in html:
+        html = html.replace("</head>", '<link rel="stylesheet" href="/shared.css">\n</head>', 1)
+    if "/shared.js" not in html:
+        html = html.replace("</body>", '<script src="/shared.js"></script>\n</body>', 1)
+    return Response(html, mimetype="text/html")
 
 @app.route("/EEE/<path:filename>")
 def eee_book_assets(filename):
