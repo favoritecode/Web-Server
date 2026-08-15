@@ -124,7 +124,8 @@ def _pick_url(info):
 # 🎥 video extract (force mp4 for better compatibility)
 def extract_video(url):
     last_err = None
-    clients = ["mweb", "web", "web_safari", "ios", "tv", "android_vr"]
+    # android_vr / web_embedded / tv_embedded don't need n-challenge or PO token
+    clients = ["android_vr", "web_embedded", "tv_embedded", "mweb", "web", "web_safari", "ios", "tv"]
     formats = ["best[ext=mp4]/best", "best"]
     for client in clients:
         for fmt in formats:
@@ -147,7 +148,8 @@ def extract_video(url):
 # 🎧 audio extract
 def extract_audio(url):
     last_err = None
-    clients = ["mweb", "web", "web_safari", "ios", "tv", "android_vr"]
+    # android_vr / web_embedded / tv_embedded don't need n-challenge or PO token
+    clients = ["android_vr", "web_embedded", "tv_embedded", "mweb", "web", "web_safari", "ios", "tv"]
     formats = ["bestaudio/best", "best"]
     for client in clients:
         for fmt in formats:
