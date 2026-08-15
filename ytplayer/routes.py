@@ -76,7 +76,7 @@ def public_origin():
     return f"{proto}://{host}"
 
 
-def ydl_opts(format_selector):
+def ydl_opts(format_selector, use_cookies=True):
     opts = {
         "quiet": True,
         "skip_download": True,
@@ -96,9 +96,10 @@ def ydl_opts(format_selector):
     }
     # Use a JS runtime to solve YouTube's n-challenge (required for regular
     # videos; Shorts work without it). Prefer node (installed) over deno.
-    cookie_file = get_cookie_file()
-    if cookie_file:
-        opts["cookiefile"] = cookie_file
+    if use_cookies:
+        cookie_file = get_cookie_file()
+        if cookie_file:
+            opts["cookiefile"] = cookie_file
     import shutil
     if shutil.which("node"):
         opts["js_runtimes"] = {"node": {"path": shutil.which("node")}}
@@ -121,25 +122,31 @@ def _pick_url(info):
     raise RuntimeError("No direct media URL found")
 
 
+def _try_extract(url, fmt, client, use_cookies):
+    opts = ydl_opts(fmt, use_cookies=use_cookies)
+    opts["extractor_args"] = {"youtube": {"player_client": [client], "skip": ["hls", "dash"]}}
+    with yt_dlp.YoutubeDL(opts) as ydl:
+        info = ydl.extract_info(url, download=False)
+    return _pick_url(info)
+
+
 # 🎥 video extract (force mp4 for better compatibility)
 def extract_video(url):
     last_err = None
     # android_vr / web_embedded / tv_embedded don't need n-challenge or PO token
     clients = ["android_vr", "web_embedded", "tv_embedded", "mweb", "web", "web_safari", "ios", "tv"]
     formats = ["best[ext=mp4]/best", "best"]
-    for client in clients:
-        for fmt in formats:
-            try:
-                opts = ydl_opts(fmt)
-                opts["extractor_args"] = {"youtube": {"player_client": [client], "skip": ["hls", "dash"]}}
-                with yt_dlp.YoutubeDL(opts) as ydl:
-                    info = ydl.extract_info(url, download=False)
-                direct = _pick_url(info)
-                if direct:
-                    return direct
-            except Exception as e:  # noqa: BLE001
-                last_err = e
-                continue
+    # Try anonymous first (stale cookies cause 403), then with cookies
+    for use_cookies in (False, True):
+        for client in clients:
+            for fmt in formats:
+                try:
+                    direct = _try_extract(url, fmt, client, use_cookies)
+                    if direct:
+                        return direct
+                except Exception as e:  # noqa: BLE001
+                    last_err = e
+                    continue
     if last_err:
         raise last_err
     raise RuntimeError("Video extraction failed for all player clients")
@@ -151,19 +158,17 @@ def extract_audio(url):
     # android_vr / web_embedded / tv_embedded don't need n-challenge or PO token
     clients = ["android_vr", "web_embedded", "tv_embedded", "mweb", "web", "web_safari", "ios", "tv"]
     formats = ["bestaudio/best", "best"]
-    for client in clients:
-        for fmt in formats:
-            try:
-                opts = ydl_opts(fmt)
-                opts["extractor_args"] = {"youtube": {"player_client": [client], "skip": ["hls", "dash"]}}
-                with yt_dlp.YoutubeDL(opts) as ydl:
-                    info = ydl.extract_info(url, download=False)
-                direct = _pick_url(info)
-                if direct:
-                    return direct
-            except Exception as e:  # noqa: BLE001
-                last_err = e
-                continue
+    # Try anonymous first (stale cookies cause 403), then with cookies
+    for use_cookies in (False, True):
+        for client in clients:
+            for fmt in formats:
+                try:
+                    direct = _try_extract(url, fmt, client, use_cookies)
+                    if direct:
+                        return direct
+                except Exception as e:  # noqa: BLE001
+                    last_err = e
+                    continue
     if last_err:
         raise last_err
     raise RuntimeError("Audio extraction failed for all player clients")
