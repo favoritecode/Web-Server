@@ -83,28 +83,88 @@ def ydl_opts(format_selector):
         "format": format_selector,
         "nocheckcertificate": True,
         "socket_timeout": 30,
-        "retries": 3,
-        "fragment_retries": 3,
+        "retries": 0,
+        "fragment_retries": 0,
         "http_headers": UPSTREAM_HEADERS,
+        # rotate multiple player clients to dodge YouTube bot-blocks / 403s
+        "extractor_args": {
+            "youtube": {
+                "player_client": ["web_safari", "ios", "tv", "android_vr", "web"],
+                "skip": ["hls", "dash"]
+            }
+        },
     }
+    # Use a JS runtime to solve YouTube's n-challenge (required for regular
+    # videos; Shorts work without it). Prefer node (installed) over deno.
     cookie_file = get_cookie_file()
     if cookie_file:
         opts["cookiefile"] = cookie_file
+    import shutil
+    if shutil.which("node"):
+        opts["js_runtimes"] = {"node": {"path": shutil.which("node")}}
+    elif shutil.which("deno"):
+        opts["js_runtimes"] = {"deno": {"path": shutil.which("deno")}}
     return opts
+
+
+def _pick_url(info):
+    """Return the most reliable direct URL from yt-dlp info."""
+    for key in ("url", "manifest_url"):
+        if info.get(key):
+            return info[key]
+    formats = info.get("formats") or []
+    if formats:
+        for f in formats:
+            u = f.get("url") or f.get("manifest_url")
+            if u:
+                return u
+    raise RuntimeError("No direct media URL found")
 
 
 # 🎥 video extract (force mp4 for better compatibility)
 def extract_video(url):
-    with yt_dlp.YoutubeDL(ydl_opts("best[ext=mp4]/best")) as ydl:
-        info = ydl.extract_info(url, download=False)
-        return info["url"]
+    last_err = None
+    clients = ["mweb", "web", "web_safari", "ios", "tv", "android_vr"]
+    formats = ["best[ext=mp4]/best", "best"]
+    for client in clients:
+        for fmt in formats:
+            try:
+                opts = ydl_opts(fmt)
+                opts["extractor_args"] = {"youtube": {"player_client": [client], "skip": ["hls", "dash"]}}
+                with yt_dlp.YoutubeDL(opts) as ydl:
+                    info = ydl.extract_info(url, download=False)
+                direct = _pick_url(info)
+                if direct:
+                    return direct
+            except Exception as e:  # noqa: BLE001
+                last_err = e
+                continue
+    if last_err:
+        raise last_err
+    raise RuntimeError("Video extraction failed for all player clients")
 
 
 # 🎧 audio extract
 def extract_audio(url):
-    with yt_dlp.YoutubeDL(ydl_opts("bestaudio/best")) as ydl:
-        info = ydl.extract_info(url, download=False)
-        return info["url"]
+    last_err = None
+    clients = ["mweb", "web", "web_safari", "ios", "tv", "android_vr"]
+    formats = ["bestaudio/best", "best"]
+    for client in clients:
+        for fmt in formats:
+            try:
+                opts = ydl_opts(fmt)
+                opts["extractor_args"] = {"youtube": {"player_client": [client], "skip": ["hls", "dash"]}}
+                with yt_dlp.YoutubeDL(opts) as ydl:
+                    info = ydl.extract_info(url, download=False)
+                direct = _pick_url(info)
+                if direct:
+                    return direct
+            except Exception as e:  # noqa: BLE001
+                last_err = e
+                continue
+    if last_err:
+        raise last_err
+    raise RuntimeError("Audio extraction failed for all player clients")
 
 
 def init_routes(app):
