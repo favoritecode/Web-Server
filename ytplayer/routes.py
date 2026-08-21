@@ -6,6 +6,7 @@ import time
 import uuid
 import re
 import shutil
+import subprocess
 from flask import request, jsonify, send_from_directory, send_file, Response, session
 
 BASE_DIR = os.path.dirname(__file__)
@@ -71,8 +72,10 @@ def is_youtube_short(url):
 
 
 def should_cache_first(url):
-    lowered = (url or "").lower()
-    return not is_youtube_short(url) and ("youtube.com/watch" in lowered or "youtu.be/" in lowered)
+    # Stream through a fresh yt-dlp URL first. Downloading a whole normal
+    # YouTube video before responding makes HEAD/curl/browser probes slow and
+    # can hit YouTube 403s. Cache remains a last-resort fallback below.
+    return False
 
 def get_cookie_file():
     for path in (COOKIES_FILE, LOCAL_COOKIES_FILE):
@@ -134,19 +137,143 @@ def _pick_url(info):
     raise RuntimeError("No direct media URL found")
 
 
+def _yt_dlp_cli_path():
+    return shutil.which("yt-dlp") or shutil.which("yt-dlp.exe")
+
+
+def _node_runtime_arg():
+    node = shutil.which("node")
+    if not node and os.path.exists(r"C:\Program Files\nodejs\node.exe"):
+        node = r"C:\Program Files\nodejs\node.exe"
+    return f"node:{node}" if node else None
+
+
+def _try_extract_cli(url, fmt, client, use_cookies):
+    exe = _yt_dlp_cli_path()
+    if not exe:
+        raise RuntimeError("yt-dlp CLI was not found")
+
+    args = [
+        exe,
+        "-g",
+        "--no-warnings",
+        "--no-playlist",
+        "-f",
+        fmt,
+        "--extractor-args",
+        f"youtube:player_client={client}",
+    ]
+
+    node_runtime = _node_runtime_arg()
+    if node_runtime:
+        args.extend(["--js-runtimes", node_runtime])
+
+    cookie_file = get_cookie_file() if use_cookies else None
+    if cookie_file:
+        args.extend(["--cookies", cookie_file])
+
+    args.append(url)
+
+    result = subprocess.run(
+        args,
+        cwd=PROJECT_DIR,
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=True,
+    )
+
+    for line in result.stdout.splitlines():
+        line = line.strip()
+        if line.startswith(("http://", "https://")):
+            return line
+
+    raise RuntimeError("yt-dlp CLI did not return a direct media URL")
+
+
+def _direct_url_works(media_url):
+    headers = dict(UPSTREAM_HEADERS)
+    headers["Range"] = "bytes=0-1"
+    try:
+        r = requests.get(media_url, headers=headers, stream=True, timeout=20)
+        try:
+            return r.status_code < 400
+        finally:
+            r.close()
+    except Exception:
+        return False
+
+
 def _try_extract(url, fmt, client, use_cookies):
+    # Prefer the standalone yt-dlp executable when present. On this server it is
+    # newer than the venv module and handles regular YouTube videos that the old
+    # module currently resolves to 403-prone URLs.
+    cli_err = None
+    try:
+        return _try_extract_cli(url, fmt, client, use_cookies)
+    except Exception as e:  # noqa: BLE001
+        cli_err = e
+
     opts = ydl_opts(fmt, use_cookies=use_cookies)
     opts["extractor_args"] = {"youtube": {"player_client": [client], "skip": ["hls", "dash"]}}
-    with yt_dlp.YoutubeDL(opts) as ydl:
-        info = ydl.extract_info(url, download=False)
-    return _pick_url(info)
+    try:
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            info = ydl.extract_info(url, download=False)
+        return _pick_url(info)
+    except Exception as module_err:  # noqa: BLE001
+        raise module_err from cli_err
+
+
+def _download_to_cache_cli(video_id, url, kind):
+    exe = _yt_dlp_cli_path()
+    if not exe:
+        raise RuntimeError("yt-dlp CLI was not found")
+
+    os.makedirs(MEDIA_CACHE_DIR, exist_ok=True)
+    safe_id = _safe_cache_id(video_id)
+    outtmpl = os.path.join(MEDIA_CACHE_DIR, f"{safe_id}-{kind}.%(ext)s")
+    fmt = "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best" if kind == "video" else "bestaudio[ext=m4a]/bestaudio/best"
+
+    args = [
+        exe,
+        "--no-playlist",
+        "--continue",
+        "--retries",
+        "3",
+        "--fragment-retries",
+        "3",
+        "-f",
+        fmt,
+        "-o",
+        outtmpl,
+    ]
+
+    node_runtime = _node_runtime_arg()
+    if node_runtime:
+        args.extend(["--js-runtimes", node_runtime])
+
+    if kind == "video":
+        args.extend(["--merge-output-format", "mp4"])
+
+    cookie_file = get_cookie_file()
+    if cookie_file:
+        args.extend(["--cookies", cookie_file])
+
+    args.append(url)
+
+    subprocess.run(args, cwd=PROJECT_DIR, timeout=1800, check=True)
+
+    cached = _cached_media_file(video_id, kind)
+    if cached:
+        return cached
+    raise RuntimeError("yt-dlp CLI finished but cached media file was not found")
+
 
 
 # 🎥 video extract (force mp4 for better compatibility)
 def extract_video(url):
     last_err = None
-    # android_vr / web_embedded / tv_embedded don't need n-challenge or PO token
-    clients = ["android_vr", "web_embedded", "tv_embedded", "mweb", "web", "web_safari", "ios", "tv"]
+    clients = ["web_safari", "web_embedded", "mweb", "web", "ios", "tv", "android_vr", "tv_embedded"]
     formats = ["best[ext=mp4]/best", "best"]
     # Try anonymous first (stale cookies cause 403), then with cookies
     for use_cookies in (False, True):
@@ -154,8 +281,9 @@ def extract_video(url):
             for fmt in formats:
                 try:
                     direct = _try_extract(url, fmt, client, use_cookies)
-                    if direct:
+                    if direct and _direct_url_works(direct):
                         return direct
+                    last_err = RuntimeError(f"Direct URL from {client} returned HTTP 403/blocked")
                 except Exception as e:  # noqa: BLE001
                     last_err = e
                     continue
@@ -167,8 +295,7 @@ def extract_video(url):
 # 🎧 audio extract
 def extract_audio(url):
     last_err = None
-    # android_vr / web_embedded / tv_embedded don't need n-challenge or PO token
-    clients = ["android_vr", "web_embedded", "tv_embedded", "mweb", "web", "web_safari", "ios", "tv"]
+    clients = ["web_safari", "web_embedded", "mweb", "web", "ios", "tv", "android_vr", "tv_embedded"]
     formats = ["bestaudio/best", "best"]
     # Try anonymous first (stale cookies cause 403), then with cookies
     for use_cookies in (False, True):
@@ -176,8 +303,9 @@ def extract_audio(url):
             for fmt in formats:
                 try:
                     direct = _try_extract(url, fmt, client, use_cookies)
-                    if direct:
+                    if direct and _direct_url_works(direct):
                         return direct
+                    last_err = RuntimeError(f"Direct URL from {client} returned HTTP 403/blocked")
                 except Exception as e:  # noqa: BLE001
                     last_err = e
                     continue
@@ -235,7 +363,10 @@ def _download_to_cache(video_id, url, kind):
         except Exception as e:  # noqa: BLE001
             last_err = e
     else:
-        raise last_err or RuntimeError("Download failed")
+        try:
+            return _download_to_cache_cli(video_id, url, kind)
+        except Exception as cli_err:  # noqa: BLE001
+            raise cli_err from last_err
 
     cached = _cached_media_file(video_id, kind)
     if cached:
