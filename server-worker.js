@@ -10,6 +10,7 @@ const BACKUP = "https://host.favoriteweb.net";
 const RENDER_BACKUP = "https://favoriteweb-backup.onrender.com";
 const TIMEOUT = 3000;
 const HEALTH_TIMEOUT = 2000;
+const YTPLAYER_MEDIA_TIMEOUT = 7000;
 const BACKENDS = [PRIMARY, BACKUP, RENDER_BACKUP];
 const STREAM_BACKENDS = [PRIMARY, BACKUP];
 const OCR_BACKENDS = [PRIMARY, BACKUP];
@@ -474,7 +475,9 @@ async function proxyTo(request, target) {
     redirect: "manual"
   };
 
-  if (!isLongRunningPath(incomingUrl.pathname)) {
+  if (isYtPlayerMediaPath(incomingUrl.pathname)) {
+    init.signal = AbortSignal.timeout(YTPLAYER_MEDIA_TIMEOUT);
+  } else if (!isLongRunningPath(incomingUrl.pathname)) {
     init.signal = AbortSignal.timeout(TIMEOUT);
   }
 

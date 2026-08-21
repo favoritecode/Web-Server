@@ -7,6 +7,8 @@ import uuid
 import re
 import shutil
 import subprocess
+import threading
+from urllib.parse import parse_qs, urlparse
 from flask import request, jsonify, send_from_directory, send_file, Response, session
 
 BASE_DIR = os.path.dirname(__file__)
@@ -16,6 +18,13 @@ LOCAL_DATA_FILE = os.path.join(BASE_DIR, "videos.local.json")
 MEDIA_CACHE_DIR = os.path.join(BASE_DIR, "cache")
 COOKIES_FILE = os.path.join(PROJECT_DIR, "cookies.txt")
 LOCAL_COOKIES_FILE = os.path.join(BASE_DIR, "cookies.txt")
+DIRECT_URL_CACHE_TTL = 20 * 60
+DIRECT_URL_CACHE_GRACE = 60
+STARTUP_PREWARM_LIMIT = 0
+DIRECT_URL_CACHE = {}
+DIRECT_URL_CACHE_LOCK = threading.Lock()
+DIRECT_URL_PREWARMING = set()
+STARTUP_PREWARM_STARTED = False
 
 UPSTREAM_HEADERS = {
     "User-Agent": (
@@ -76,6 +85,122 @@ def should_cache_first(url):
     # YouTube video before responding makes HEAD/curl/browser probes slow and
     # can hit YouTube 403s. Cache remains a last-resort fallback below.
     return False
+
+
+def _direct_cache_key(video_id, kind):
+    return f"{kind}:{_safe_cache_id(video_id)}"
+
+
+def _media_url_expires_at(media_url):
+    try:
+        values = parse_qs(urlparse(media_url).query).get("expire") or []
+        if values:
+            return max(0, int(values[0]) - DIRECT_URL_CACHE_GRACE)
+    except Exception:
+        pass
+    return int(time.time()) + DIRECT_URL_CACHE_TTL
+
+
+def _get_cached_direct_url(video_id, kind):
+    key = _direct_cache_key(video_id, kind)
+    now = int(time.time())
+    with DIRECT_URL_CACHE_LOCK:
+        item = DIRECT_URL_CACHE.get(key)
+        if item and item.get("expires_at", 0) > now:
+            return item.get("url")
+        DIRECT_URL_CACHE.pop(key, None)
+    return None
+
+
+def _set_cached_direct_url(video_id, kind, media_url):
+    if not media_url:
+        return media_url
+    key = _direct_cache_key(video_id, kind)
+    with DIRECT_URL_CACHE_LOCK:
+        DIRECT_URL_CACHE[key] = {
+            "url": media_url,
+            "expires_at": _media_url_expires_at(media_url),
+        }
+    return media_url
+
+
+def _resolve_direct_url(video_id, url, kind):
+    cached = _get_cached_direct_url(video_id, kind)
+    if cached:
+        return cached
+    media_url = extract_video(url) if kind == "video" else extract_audio(url)
+    return _set_cached_direct_url(video_id, kind, media_url)
+
+
+def _prewarm_direct_urls(video_id, url, kinds=("video", "audio")):
+    if not url or not (("youtube.com/" in url.lower()) or ("youtu.be/" in url.lower())):
+        return
+    prewarm_key = f"{video_id}:{','.join(kinds)}"
+
+    def worker():
+        try:
+            for kind in kinds:
+                _resolve_direct_url(video_id, url, kind)
+        except Exception:
+            pass
+        finally:
+            with DIRECT_URL_CACHE_LOCK:
+                DIRECT_URL_PREWARMING.discard(prewarm_key)
+
+    with DIRECT_URL_CACHE_LOCK:
+        if prewarm_key in DIRECT_URL_PREWARMING:
+            return
+        DIRECT_URL_PREWARMING.add(prewarm_key)
+
+    threading.Thread(target=worker, daemon=True).start()
+
+
+def _wait_for_cached_direct_url(video_id, kind, timeout=6):
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        cached = _get_cached_direct_url(video_id, kind)
+        if cached:
+            return cached
+        with DIRECT_URL_CACHE_LOCK:
+            is_prewarming = any(key.startswith(f"{video_id}:") for key in DIRECT_URL_PREWARMING)
+        if not is_prewarming:
+            return None
+        time.sleep(0.1)
+    return _get_cached_direct_url(video_id, kind)
+
+
+def _prewarm_existing_videos():
+    global STARTUP_PREWARM_STARTED
+    if STARTUP_PREWARM_LIMIT <= 0:
+        return
+    with DIRECT_URL_CACHE_LOCK:
+        if STARTUP_PREWARM_STARTED:
+            return
+        STARTUP_PREWARM_STARTED = True
+
+    def worker():
+        try:
+            videos = load_videos()
+            items = list(videos.items())[-STARTUP_PREWARM_LIMIT:]
+            for video_id, record in reversed(items):
+                url = record_url(record)
+                if not url or not (("youtube.com/" in url.lower()) or ("youtu.be/" in url.lower())):
+                    continue
+                try:
+                    _resolve_direct_url(video_id, url, "video")
+                except Exception:
+                    continue
+        except Exception:
+            pass
+
+    threading.Thread(target=worker, daemon=True).start()
+
+
+def _fast_head_response(content_type):
+    response = Response(status=200, content_type=content_type)
+    response.headers["Accept-Ranges"] = "bytes"
+    response.headers["Cache-Control"] = "no-store"
+    return response
 
 def get_cookie_file():
     for path in (COOKIES_FILE, LOCAL_COOKIES_FILE):
@@ -191,13 +316,23 @@ def _try_extract_cli(url, fmt, client, use_cookies):
     raise RuntimeError("yt-dlp CLI did not return a direct media URL")
 
 
-def _direct_url_works(media_url):
+def _direct_url_works(media_url, kind):
     headers = dict(UPSTREAM_HEADERS)
     headers["Range"] = "bytes=0-1"
     try:
         r = requests.get(media_url, headers=headers, stream=True, timeout=20)
         try:
-            return r.status_code < 400
+            content_type = (r.headers.get("Content-Type") or "").lower()
+            if r.status_code >= 400:
+                return False
+            if "mpegurl" in content_type or "text/plain" in content_type or "text/html" in content_type:
+                return False
+            if kind == "video" and content_type and not (
+                content_type.startswith("video/")
+                or content_type.startswith("application/octet-stream")
+            ):
+                return False
+            return True
         finally:
             r.close()
     except Exception:
@@ -281,7 +416,7 @@ def extract_video(url):
             for fmt in formats:
                 try:
                     direct = _try_extract(url, fmt, client, use_cookies)
-                    if direct and _direct_url_works(direct):
+                    if direct and _direct_url_works(direct, "video"):
                         return direct
                     last_err = RuntimeError(f"Direct URL from {client} returned HTTP 403/blocked")
                 except Exception as e:  # noqa: BLE001
@@ -303,7 +438,7 @@ def extract_audio(url):
             for fmt in formats:
                 try:
                     direct = _try_extract(url, fmt, client, use_cookies)
-                    if direct and _direct_url_works(direct):
+                    if direct and _direct_url_works(direct, "audio"):
                         return direct
                     last_err = RuntimeError(f"Direct URL from {client} returned HTTP 403/blocked")
                 except Exception as e:  # noqa: BLE001
@@ -411,6 +546,7 @@ def _proxy_direct_url(media_url, default_content_type):
 
 
 def init_routes(app):
+    _prewarm_existing_videos()
 
     # homepage
     @app.route("/ytplayer/")
@@ -451,6 +587,7 @@ def init_routes(app):
         }
 
         save_videos(videos)
+        _prewarm_direct_urls(video_id, url)
 
         base = public_origin()
 
@@ -471,12 +608,17 @@ def init_routes(app):
         if not url:
             return "Video not found", 404
 
+        if request.method == "HEAD":
+            _prewarm_direct_urls(id, url, ("video",))
+            return _fast_head_response("video/mp4")
+
         if should_cache_first(url):
             file_path = _download_to_cache(id, url, "video")
             return send_file(file_path, mimetype="video/mp4", conditional=True)
 
         try:
-            return _proxy_direct_url(extract_video(url), "video/mp4")
+            media_url = _get_cached_direct_url(id, "video") or _wait_for_cached_direct_url(id, "video") or _resolve_direct_url(id, url, "video")
+            return _proxy_direct_url(media_url, "video/mp4")
         except Exception:
             file_path = _download_to_cache(id, url, "video")
             return send_file(file_path, mimetype="video/mp4", conditional=True)
@@ -526,12 +668,17 @@ def init_routes(app):
         if not url:
             return "Audio not found", 404
 
+        if request.method == "HEAD":
+            _prewarm_direct_urls(id, url, ("audio",))
+            return _fast_head_response("audio/mpeg")
+
         if should_cache_first(url):
             file_path = _download_to_cache(id, url, "audio")
             return send_file(file_path, conditional=True)
 
         try:
-            return _proxy_direct_url(extract_audio(url), "audio/mpeg")
+            media_url = _get_cached_direct_url(id, "audio") or _wait_for_cached_direct_url(id, "audio") or _resolve_direct_url(id, url, "audio")
+            return _proxy_direct_url(media_url, "audio/mpeg")
         except Exception:
             file_path = _download_to_cache(id, url, "audio")
             return send_file(file_path, conditional=True)
