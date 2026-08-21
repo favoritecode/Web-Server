@@ -173,11 +173,11 @@ function stickyTarget(request, targets) {
 }
 
 function orderedTargets(request, targets) {
-  const sticky = stickyTarget(request, targets);
-  if (!sticky) {
-    return targets;
-  }
-  return [sticky, ...targets.filter((target) => target !== sticky)];
+  // Always try the configured priority order first:
+  // PC1/KHAN -> PC2/HOST -> Render (where that route allows Render).
+  // A previous sticky cookie could put HOST first and keep ytplayer stuck on
+  // the backend returning 403 even when KHAN was available.
+  return targets;
 }
 
 function stickyBackendCookie(target) {
