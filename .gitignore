@@ -19,11 +19,13 @@ node_modules/
 *.crt
 cookies.txt
 cookies*.txt
+*cookies*.tmp
 instagram-cookies.txt
 favoriteweb_pc_config.ps1
 
 # Logs, sync conflicts, temporary backups
 *.log
+media-scraper/server_log.txt
 *.sync-conflict-*
 *.analytics-backup.*
 *.before-*

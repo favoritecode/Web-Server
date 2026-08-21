@@ -1,6 +1,9 @@
 # FavoriteWeb Server restore on a new PC
 
 This repository is the source backup for running FavoriteWeb on another Windows PC.
+Prefer `git clone` for a new server PC. The backup zip in `backups/` is an
+emergency source snapshot; it does not include `.git`, runtime files, secrets,
+cookies, or installed virtual environments.
 
 ## 1) Install required software
 
@@ -9,6 +12,7 @@ This repository is the source backup for running FavoriteWeb on another Windows 
 - Node.js
 - FFmpeg available in `PATH`
 - Cloudflared, if this PC will be exposed through a Cloudflare Tunnel
+- MediaMTX, if live/offline stream routes are needed
 
 ## 2) Clone and install
 
@@ -20,6 +24,10 @@ python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
 .\.venv\Scripts\python.exe -m pip install --upgrade yt-dlp
 ```
+
+If restoring from the backup zip instead of cloning, extract it to `E:\web`.
+After zip restore, Git auto-update will be skipped until the folder is converted
+back into a real Git clone.
 
 ## 3) Add local-only secrets
 
@@ -34,6 +42,18 @@ GOOGLE_CLIENT_SECRET = "..."
 ```
 
 If YouTube needs account cookies, put `cookies.txt` in `E:\web\cookies.txt`. Do not commit it.
+
+For Cloudflare tunnel auto-start, place `cloudflared.exe` at:
+
+```text
+E:\web\cloudflared.exe
+```
+
+For live/offline streaming auto-start, place MediaMTX at:
+
+```text
+E:\web\mediamtx\mediamtx.exe
+```
 
 ## 4) Start the server
 
@@ -52,11 +72,38 @@ X-Favoriteweb-Backend: ok
 
 ## 5) Optional: install auto-start
 
-Run the included startup installer from an elevated PowerShell:
+Run the included startup installer from PowerShell:
 
 ```powershell
 Set-Location E:\web
 .\install_favoriteweb_startup.ps1
+```
+
+This creates:
+
+```text
+C:\Users\<you>\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup\FavoriteWeb AutoStart.lnk
+```
+
+On shutdown/restart, FavoriteWeb will auto-start after this Windows user logs in.
+It starts:
+
+- Flask app on port `8010`
+- Cloudflare tunnel for this PC, if configured
+- MediaMTX, if available
+- offline slate stream
+
+Verify auto-start is installed:
+
+```powershell
+$Startup = [Environment]::GetFolderPath("Startup")
+Test-Path (Join-Path $Startup "FavoriteWeb AutoStart.lnk")
+```
+
+Expected:
+
+```text
+True
 ```
 
 ## 6) Deploy server.favoriteweb.net failover Worker
@@ -75,4 +122,3 @@ The Worker priority is:
 3. Render backup for supported routes
 
 For ytplayer media, the Worker quickly falls back to the next backend if the current PC is slow or returns protected/expired media errors.
-
