@@ -110,6 +110,10 @@ function isDriveFilePath(pathname) {
   return pathname === "/api/drive/files" || pathname === "/drive/media" || pathname === "/drive/save" || pathname.startsWith("/drive/open/") || pathname.startsWith("/drive/download/");
 }
 
+function isYtPlayerMediaPath(pathname) {
+  return pathname.startsWith("/ytplayer/stream/") || pathname.startsWith("/ytplayer/play/");
+}
+
 function isRemoveBgPath(pathname) {
   return pathname === "/remove-bg/process";
 }
@@ -609,6 +613,11 @@ async function proxyWithFailover(request) {
       }
 
       if (isDriveFilePath(url.pathname) && await shouldTryNextDriveBackend(response)) {
+        lastResponse = response;
+        continue;
+      }
+
+      if (isYtPlayerMediaPath(url.pathname) && [401, 403, 404, 410].includes(response.status)) {
         lastResponse = response;
         continue;
       }

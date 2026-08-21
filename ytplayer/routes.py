@@ -5,12 +5,14 @@ import requests
 import time
 import uuid
 import re
-from flask import request, jsonify, send_from_directory, Response, session
+import shutil
+from flask import request, jsonify, send_from_directory, send_file, Response, session
 
 BASE_DIR = os.path.dirname(__file__)
 PROJECT_DIR = os.path.dirname(BASE_DIR)
 DATA_FILE = os.path.join(BASE_DIR, "videos.json")
 LOCAL_DATA_FILE = os.path.join(BASE_DIR, "videos.local.json")
+MEDIA_CACHE_DIR = os.path.join(BASE_DIR, "cache")
 COOKIES_FILE = os.path.join(PROJECT_DIR, "cookies.txt")
 LOCAL_COOKIES_FILE = os.path.join(BASE_DIR, "cookies.txt")
 
@@ -63,6 +65,15 @@ def record_url(record):
         return record.get("url") or record.get("source")
     return record
 
+
+def is_youtube_short(url):
+    return bool(re.search(r"(?:youtube\.com/shorts/|youtu\.be/shorts/)", url or "", re.I))
+
+
+def should_cache_first(url):
+    lowered = (url or "").lower()
+    return not is_youtube_short(url) and ("youtube.com/watch" in lowered or "youtu.be/" in lowered)
+
 def get_cookie_file():
     for path in (COOKIES_FILE, LOCAL_COOKIES_FILE):
         if os.path.exists(path):
@@ -76,7 +87,13 @@ def public_origin():
     return f"{proto}://{host}"
 
 
-def ydl_opts(format_selector, use_cookies=True):
+def ydl_opts(format_selector, use_cookies=True, skip_streaming_formats=True):
+    youtube_args = {
+        "player_client": ["web_safari", "ios", "tv", "android_vr", "web"],
+    }
+    if skip_streaming_formats:
+        youtube_args["skip"] = ["hls", "dash"]
+
     opts = {
         "quiet": True,
         "skip_download": True,
@@ -86,13 +103,9 @@ def ydl_opts(format_selector, use_cookies=True):
         "retries": 0,
         "fragment_retries": 0,
         "http_headers": UPSTREAM_HEADERS,
+        "remote_components": ["ejs:github"],
         # rotate multiple player clients to dodge YouTube bot-blocks / 403s
-        "extractor_args": {
-            "youtube": {
-                "player_client": ["web_safari", "ios", "tv", "android_vr", "web"],
-                "skip": ["hls", "dash"]
-            }
-        },
+        "extractor_args": {"youtube": youtube_args},
     }
     # Use a JS runtime to solve YouTube's n-challenge (required for regular
     # videos; Shorts work without it). Prefer node (installed) over deno.
@@ -100,7 +113,6 @@ def ydl_opts(format_selector, use_cookies=True):
         cookie_file = get_cookie_file()
         if cookie_file:
             opts["cookiefile"] = cookie_file
-    import shutil
     if shutil.which("node"):
         opts["js_runtimes"] = {"node": {"path": shutil.which("node")}}
     elif shutil.which("deno"):
@@ -174,6 +186,99 @@ def extract_audio(url):
     raise RuntimeError("Audio extraction failed for all player clients")
 
 
+def _safe_cache_id(video_id):
+    return re.sub(r"[^A-Za-z0-9_.-]+", "_", video_id).strip("._")[:120] or uuid.uuid4().hex
+
+
+def _cached_media_file(video_id, kind):
+    safe_id = _safe_cache_id(video_id)
+    if not os.path.isdir(MEDIA_CACHE_DIR):
+        return None
+    prefix = f"{safe_id}-{kind}."
+    for name in os.listdir(MEDIA_CACHE_DIR):
+        path = os.path.join(MEDIA_CACHE_DIR, name)
+        if name.startswith(prefix) and os.path.isfile(path) and not name.endswith(".part"):
+            return path
+    return None
+
+
+def _download_to_cache(video_id, url, kind):
+    cached = _cached_media_file(video_id, kind)
+    if cached:
+        return cached
+
+    os.makedirs(MEDIA_CACHE_DIR, exist_ok=True)
+    safe_id = _safe_cache_id(video_id)
+    outtmpl = os.path.join(MEDIA_CACHE_DIR, f"{safe_id}-{kind}.%(ext)s")
+    fmt = "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best" if kind == "video" else "bestaudio[ext=m4a]/bestaudio/best"
+    last_err = None
+    for use_cookies in (False, True):
+        opts = ydl_opts(fmt, use_cookies=use_cookies, skip_streaming_formats=False)
+        opts.update({
+            "skip_download": False,
+            "outtmpl": outtmpl,
+            "noplaylist": True,
+            "continuedl": True,
+            "overwrites": False,
+            "quiet": True,
+            "noprogress": True,
+            "retries": 3,
+            "fragment_retries": 3,
+        })
+        if kind == "video":
+            opts["merge_output_format"] = "mp4"
+
+        try:
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                ydl.download([url])
+            break
+        except Exception as e:  # noqa: BLE001
+            last_err = e
+    else:
+        raise last_err or RuntimeError("Download failed")
+
+    cached = _cached_media_file(video_id, kind)
+    if cached:
+        return cached
+    raise RuntimeError("Download finished but cached media file was not found")
+
+
+def _proxy_direct_url(media_url, default_content_type):
+    headers = {}
+    if "Range" in request.headers:
+        headers["Range"] = request.headers["Range"]
+    headers.update(UPSTREAM_HEADERS)
+
+    r = requests.get(media_url, headers=headers, stream=True, timeout=60)
+    if r.status_code >= 400:
+        r.close()
+        raise RuntimeError(f"Direct media request failed with HTTP {r.status_code}")
+
+    def generate():
+        try:
+            for chunk in r.iter_content(chunk_size=8192):
+                if chunk:
+                    yield chunk
+        finally:
+            r.close()
+
+    response = Response(
+        generate(),
+        status=r.status_code,
+        content_type=r.headers.get("Content-Type", default_content_type)
+    )
+
+    if "Content-Range" in r.headers:
+        response.headers["Content-Range"] = r.headers["Content-Range"]
+
+    response.headers["Accept-Ranges"] = "bytes"
+
+    if "Content-Length" in r.headers:
+        response.headers["Content-Length"] = r.headers["Content-Length"]
+
+    return response
+
+
 def init_routes(app):
 
     # homepage
@@ -235,6 +340,16 @@ def init_routes(app):
         if not url:
             return "Video not found", 404
 
+        if should_cache_first(url):
+            file_path = _download_to_cache(id, url, "video")
+            return send_file(file_path, mimetype="video/mp4", conditional=True)
+
+        try:
+            return _proxy_direct_url(extract_video(url), "video/mp4")
+        except Exception:
+            file_path = _download_to_cache(id, url, "video")
+            return send_file(file_path, mimetype="video/mp4", conditional=True)
+
         video_url = extract_video(url)
 
         headers = {}
@@ -279,6 +394,16 @@ def init_routes(app):
 
         if not url:
             return "Audio not found", 404
+
+        if should_cache_first(url):
+            file_path = _download_to_cache(id, url, "audio")
+            return send_file(file_path, conditional=True)
+
+        try:
+            return _proxy_direct_url(extract_audio(url), "audio/mpeg")
+        except Exception:
+            file_path = _download_to_cache(id, url, "audio")
+            return send_file(file_path, conditional=True)
 
         audio_url = extract_audio(url)
 
