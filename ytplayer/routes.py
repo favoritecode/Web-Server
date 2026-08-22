@@ -303,7 +303,13 @@ def _pick_url(info):
 
 
 def _yt_dlp_cli_path():
-    return shutil.which("yt-dlp") or shutil.which("yt-dlp.exe")
+    candidates = [
+        os.path.join(PROJECT_DIR, ".venv", "Scripts", "yt-dlp.exe"),
+        os.path.join(PROJECT_DIR, ".venv", "Scripts", "yt-dlp"),
+        shutil.which("yt-dlp"),
+        shutil.which("yt-dlp.exe"),
+    ]
+    return next((path for path in candidates if path and (os.path.exists(path) or shutil.which(path))), None)
 
 
 def _node_runtime_arg():

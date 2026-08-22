@@ -92,6 +92,9 @@ function Update-CodeFromGit {
         "ytplayer/routes.py",
         "ytplayer/index.html",
         "download/route.py",
+        "download/public/index.html",
+        "download/public/script.js",
+        "download/public/style.css",
         "file-converter/routes.py",
         "file-converter/index.html",
         "remove-bg/routes.py",
@@ -122,6 +125,7 @@ function Update-CodeFromGit {
         if ((Test-Path -LiteralPath $Python) -and (Test-Path -LiteralPath (Join-Path $Root "requirements.txt"))) {
             Write-Log "Installing Python requirements."
             & $Python -m pip install -r (Join-Path $Root "requirements.txt") --quiet 2>&1 | ForEach-Object { Write-Log "pip: $_" }
+            & $Python -m pip install --upgrade yt-dlp --quiet 2>&1 | ForEach-Object { Write-Log "pip yt-dlp: $_" }
         } else {
             Write-Log "Skipped Python requirements install. Missing Python or requirements.txt."
         }

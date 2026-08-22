@@ -22,6 +22,29 @@ INSTAGRAM_COOKIES_FILE = os.path.join(BASE_DIR, "instagram-cookies.txt")
 DOWNLOAD_JOBS = {}
 DOWNLOAD_JOBS_LOCK = threading.Lock()
 JOB_TTL_SECONDS = 6 * 60 * 60
+YOUTUBE_CLIENTS = ["web_safari", "web_embedded", "mweb", "web", "ios", "tv", "android_vr", "tv_embedded"]
+
+
+def _is_youtube_url(url):
+    host = (urllib.parse.urlparse(url or "").netloc or "").lower()
+    return host.endswith("youtube.com") or host.endswith("youtube-nocookie.com") or host in {"youtu.be", "www.youtu.be"}
+
+
+def _node_runtime_arg():
+    node = shutil.which("node")
+    if not node and os.path.exists(r"C:\Program Files\nodejs\node.exe"):
+        node = r"C:\Program Files\nodejs\node.exe"
+    return f"node:{node}" if node else None
+
+
+def _yt_dlp_cli_path():
+    candidates = [
+        os.path.join(BASE_DIR, ".venv", "Scripts", "yt-dlp.exe"),
+        os.path.join(BASE_DIR, ".venv", "Scripts", "yt-dlp"),
+        shutil.which("yt-dlp"),
+        shutil.which("yt-dlp.exe"),
+    ]
+    return next((path for path in candidates if path and (os.path.exists(path) or shutil.which(path))), "yt-dlp")
 
 
 def _find_cookies(url=None):
@@ -44,8 +67,9 @@ def _find_cookies(url=None):
     return None
 
 
-def _base_ydl_opts(extra=None, url=None):
+def _base_ydl_opts(extra=None, url=None, use_cookies=None):
     """Base yt-dlp options with cookies, headers, and error handling."""
+    is_youtube = _is_youtube_url(url)
     opts = {
         "quiet": True,
         "nocheckcertificate": True,
@@ -58,8 +82,14 @@ def _base_ydl_opts(extra=None, url=None):
         "noplaylist": True,
     }
 
-    cookies_path = _find_cookies(url)
-    if cookies_path:
+    if use_cookies is None:
+        # Stale YouTube cookies commonly produce googlevideo 403 for public
+        # videos. Prefer anonymous extraction first; retry paths can still opt
+        # into cookies for login/private videos.
+        use_cookies = not is_youtube
+
+    cookies_path = _find_cookies(url) if use_cookies else None
+    if use_cookies and cookies_path:
         opts["cookiefile"] = cookies_path
 
     opts["http_headers"] = {
@@ -72,6 +102,13 @@ def _base_ydl_opts(extra=None, url=None):
         "Accept-Language": "en-US,en;q=0.5",
         "Sec-Fetch-Mode": "navigate",
     }
+
+    if is_youtube:
+        opts["extractor_args"] = {"youtube": {"player_client": YOUTUBE_CLIENTS}}
+        opts["remote_components"] = ["ejs:github"]
+        node_runtime = _node_runtime_arg()
+        if node_runtime:
+            opts["js_runtimes"] = {"node": {"path": node_runtime.split(":", 1)[1]}}
 
     if extra:
         opts.update(extra)
@@ -656,6 +693,7 @@ def _download_progress_hook(job_id):
 def _run_server_download(url, requested_format, selected_type, selected_has_audio, force_compat, job_id=None):
     url = _normalize_media_url(url)
     is_instagram = _is_instagram_url(url)
+    is_youtube = _is_youtube_url(url)
     cookies_path = _find_cookies(url)
     temp_dir = tempfile.mkdtemp(prefix="favoriteweb-download-")
     safe_title = "video"
@@ -712,6 +750,13 @@ def _run_server_download(url, requested_format, selected_type, selected_has_audi
 
         if requested_format:
             format_strategies = [{}]
+            if is_youtube:
+                format_strategies.extend([
+                    {"format": "best[ext=mp4]/best"},
+                    {"format": "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"},
+                    {"format": "best"},
+                    {"format": "bestvideo+bestaudio/best"},
+                ])
         elif is_instagram:
             format_strategies = [
                 {},
@@ -728,18 +773,24 @@ def _run_server_download(url, requested_format, selected_type, selected_has_audi
 
         last_error = None
         downloaded = False
-        for strategy in format_strategies:
-            try:
-                dl_opts_try = dict(dl_opts)
-                dl_opts_try.update(strategy)
-                _set_job(job_id, phase="Downloading media...", pct=5)
-                with YoutubeDL(dl_opts_try) as ydl:
-                    ydl.extract_info(url, download=True)
-                downloaded = True
+        cookie_attempts = (False, True) if is_youtube and cookies_path else (None,)
+        for use_cookies in cookie_attempts:
+            for strategy in format_strategies:
+                try:
+                    dl_opts_try = dict(dl_opts)
+                    if is_youtube and use_cookies is not None:
+                        dl_opts_try = _base_ydl_opts(dl_opts_try, url, use_cookies=use_cookies)
+                    dl_opts_try.update(strategy)
+                    _set_job(job_id, phase="Downloading media...", pct=5)
+                    with YoutubeDL(dl_opts_try) as ydl:
+                        ydl.extract_info(url, download=True)
+                    downloaded = True
+                    break
+                except Exception as e:
+                    last_error = str(e)[-700:]
+                    continue
+            if downloaded:
                 break
-            except Exception as e:
-                last_error = str(e)[-700:]
-                continue
 
         if not downloaded:
             error_msg = last_error or "Unknown download error"
@@ -747,7 +798,7 @@ def _run_server_download(url, requested_format, selected_type, selected_has_audi
                 _set_job(job_id, phase="Retrying with yt-dlp command...", pct=5)
                 output_template = os.path.join(temp_dir, "%(id)s.%(ext)s")
                 ytdlp_cmd = [
-                    "yt-dlp",
+                    _yt_dlp_cli_path(),
                     "--format", selected_format,
                     "--output", output_template,
                     "--no-playlist",
@@ -762,6 +813,13 @@ def _run_server_download(url, requested_format, selected_type, selected_has_audi
                     "--socket-timeout", "120",
                     "--concurrent-fragments", "4",
                 ]
+                if is_youtube:
+                    ytdlp_cmd.extend([
+                        "--extractor-args", "youtube:player_client=" + ",".join(YOUTUBE_CLIENTS),
+                    ])
+                    node_runtime = _node_runtime_arg()
+                    if node_runtime:
+                        ytdlp_cmd.extend(["--js-runtimes", node_runtime])
                 if is_instagram:
                     ytdlp_cmd.extend([
                         "--referer", "https://www.instagram.com/",
@@ -772,10 +830,16 @@ def _run_server_download(url, requested_format, selected_type, selected_has_audi
                     ])
                 if force_compat:
                     ytdlp_cmd.extend(["--merge-output-format", "mp4"])
-                if cookies_path:
+                if cookies_path and not is_youtube:
                     ytdlp_cmd.extend(["--cookies", cookies_path])
                 ytdlp_cmd.append(url)
-                subprocess.run(ytdlp_cmd, check=True, timeout=7200, capture_output=True, text=True)
+                try:
+                    subprocess.run(ytdlp_cmd, check=True, timeout=7200, capture_output=True, text=True)
+                except subprocess.CalledProcessError:
+                    if not (is_youtube and cookies_path):
+                        raise
+                    retry_cmd = ytdlp_cmd[:-1] + ["--cookies", cookies_path, url]
+                    subprocess.run(retry_cmd, check=True, timeout=7200, capture_output=True, text=True)
                 downloaded = bool(os.listdir(temp_dir))
             except subprocess.CalledProcessError as cmd_exc:
                 cmd_error = (cmd_exc.stderr or cmd_exc.stdout or str(cmd_exc))[-700:]
