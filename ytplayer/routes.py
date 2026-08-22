@@ -22,6 +22,7 @@ LOCAL_COOKIES_FILE = os.path.join(BASE_DIR, "cookies.txt")
 DIRECT_URL_CACHE_TTL = 20 * 60
 DIRECT_URL_CACHE_GRACE = 60
 ADD_PREWARM_WAIT = 20
+STREAM_PREWARM_WAIT = 18
 STARTUP_PREWARM_LIMIT = 1
 STARTUP_PREWARM_DELAY = 4
 DIRECT_URL_CACHE = {}
@@ -658,7 +659,7 @@ def init_routes(app):
             return send_file(file_path, mimetype="video/mp4", conditional=True)
 
         try:
-            media_url = _get_cached_direct_url(id, "video") or _wait_for_cached_direct_url(id, "video") or _resolve_direct_url(id, url, "video")
+            media_url = _get_cached_direct_url(id, "video") or _wait_for_cached_direct_url(id, "video", timeout=STREAM_PREWARM_WAIT) or _resolve_direct_url(id, url, "video")
             return _proxy_direct_url(media_url, "video/mp4")
         except Exception:
             file_path = _download_to_cache(id, url, "video")
@@ -718,7 +719,7 @@ def init_routes(app):
             return send_file(file_path, conditional=True)
 
         try:
-            media_url = _get_cached_direct_url(id, "audio") or _wait_for_cached_direct_url(id, "audio") or _resolve_direct_url(id, url, "audio")
+            media_url = _get_cached_direct_url(id, "audio") or _wait_for_cached_direct_url(id, "audio", timeout=STREAM_PREWARM_WAIT) or _resolve_direct_url(id, url, "audio")
             return _proxy_direct_url(media_url, "audio/mpeg")
         except Exception:
             file_path = _download_to_cache(id, url, "audio")

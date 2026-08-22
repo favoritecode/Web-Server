@@ -10,7 +10,7 @@ const BACKUP = "https://host.favoriteweb.net";
 const RENDER_BACKUP = "https://favoriteweb-backup.onrender.com";
 const TIMEOUT = 3000;
 const HEALTH_TIMEOUT = 2000;
-const YTPLAYER_MEDIA_TIMEOUT = 7000;
+const YTPLAYER_MEDIA_TIMEOUT = 25000;
 const BACKENDS = [PRIMARY, BACKUP, RENDER_BACKUP];
 const STREAM_BACKENDS = [PRIMARY, BACKUP];
 const OCR_BACKENDS = [PRIMARY, BACKUP];
@@ -42,6 +42,7 @@ const LONG_RUNNING_PATHS = [
   "/download/api",
   "/download/proxy",
   "/download/server-download",
+  "/ytplayer/add",
   "/ytplayer/stream/",
   "/ytplayer/play/",
   "/open/",
