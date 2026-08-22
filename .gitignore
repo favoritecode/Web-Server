@@ -59,4 +59,5 @@ users.json
 users.overrides.json
 ytplayer/videos.local.json
 ytplayer/cache/
+ytplayer/direct_url_cache.json
 media-transcribe/jobs/

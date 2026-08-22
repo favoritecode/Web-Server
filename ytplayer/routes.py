@@ -16,14 +16,18 @@ PROJECT_DIR = os.path.dirname(BASE_DIR)
 DATA_FILE = os.path.join(BASE_DIR, "videos.json")
 LOCAL_DATA_FILE = os.path.join(BASE_DIR, "videos.local.json")
 MEDIA_CACHE_DIR = os.path.join(BASE_DIR, "cache")
+DIRECT_URL_CACHE_FILE = os.path.join(BASE_DIR, "direct_url_cache.json")
 COOKIES_FILE = os.path.join(PROJECT_DIR, "cookies.txt")
 LOCAL_COOKIES_FILE = os.path.join(BASE_DIR, "cookies.txt")
 DIRECT_URL_CACHE_TTL = 20 * 60
 DIRECT_URL_CACHE_GRACE = 60
-STARTUP_PREWARM_LIMIT = 0
+ADD_PREWARM_WAIT = 20
+STARTUP_PREWARM_LIMIT = 1
+STARTUP_PREWARM_DELAY = 4
 DIRECT_URL_CACHE = {}
 DIRECT_URL_CACHE_LOCK = threading.Lock()
 DIRECT_URL_PREWARMING = set()
+DIRECT_URL_CACHE_LOADED = False
 STARTUP_PREWARM_STARTED = False
 
 UPSTREAM_HEADERS = {
@@ -101,14 +105,44 @@ def _media_url_expires_at(media_url):
     return int(time.time()) + DIRECT_URL_CACHE_TTL
 
 
+def _save_direct_url_cache_locked():
+    try:
+        now = int(time.time())
+        data = {
+            key: item
+            for key, item in DIRECT_URL_CACHE.items()
+            if isinstance(item, dict) and item.get("url") and item.get("expires_at", 0) > now
+        }
+        atomic_write_json(DIRECT_URL_CACHE_FILE, data)
+    except Exception:
+        pass
+
+
+def _load_direct_url_cache():
+    global DIRECT_URL_CACHE_LOADED
+    with DIRECT_URL_CACHE_LOCK:
+        if DIRECT_URL_CACHE_LOADED:
+            return
+        DIRECT_URL_CACHE_LOADED = True
+        now = int(time.time())
+        data = read_json_file(DIRECT_URL_CACHE_FILE)
+        if isinstance(data, dict):
+            for key, item in data.items():
+                if isinstance(item, dict) and item.get("url") and item.get("expires_at", 0) > now:
+                    DIRECT_URL_CACHE[key] = item
+
+
 def _get_cached_direct_url(video_id, kind):
+    _load_direct_url_cache()
     key = _direct_cache_key(video_id, kind)
     now = int(time.time())
     with DIRECT_URL_CACHE_LOCK:
         item = DIRECT_URL_CACHE.get(key)
         if item and item.get("expires_at", 0) > now:
             return item.get("url")
-        DIRECT_URL_CACHE.pop(key, None)
+        if key in DIRECT_URL_CACHE:
+            DIRECT_URL_CACHE.pop(key, None)
+            _save_direct_url_cache_locked()
     return None
 
 
@@ -121,6 +155,7 @@ def _set_cached_direct_url(video_id, kind, media_url):
             "url": media_url,
             "expires_at": _media_url_expires_at(media_url),
         }
+        _save_direct_url_cache_locked()
     return media_url
 
 
@@ -173,6 +208,7 @@ def _prewarm_existing_videos():
     global STARTUP_PREWARM_STARTED
     if STARTUP_PREWARM_LIMIT <= 0:
         return
+    _load_direct_url_cache()
     with DIRECT_URL_CACHE_LOCK:
         if STARTUP_PREWARM_STARTED:
             return
@@ -186,10 +222,13 @@ def _prewarm_existing_videos():
                 url = record_url(record)
                 if not url or not (("youtube.com/" in url.lower()) or ("youtu.be/" in url.lower())):
                     continue
+                if _get_cached_direct_url(video_id, "video"):
+                    continue
                 try:
                     _resolve_direct_url(video_id, url, "video")
                 except Exception:
-                    continue
+                    pass
+                time.sleep(STARTUP_PREWARM_DELAY)
         except Exception:
             pass
 
@@ -587,7 +626,9 @@ def init_routes(app):
         }
 
         save_videos(videos)
-        _prewarm_direct_urls(video_id, url)
+        _prewarm_direct_urls(video_id, url, ("video",))
+        _wait_for_cached_direct_url(video_id, "video", timeout=ADD_PREWARM_WAIT)
+        _prewarm_direct_urls(video_id, url, ("audio",))
 
         base = public_origin()
 
