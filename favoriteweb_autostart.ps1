@@ -89,6 +89,7 @@ function Update-CodeFromGit {
         "render.yaml",
         "server-worker.js",
         "eee",
+        "Web Analytics Dashbord",
         "ytplayer/routes.py",
         "ytplayer/index.html",
         "download/route.py",
