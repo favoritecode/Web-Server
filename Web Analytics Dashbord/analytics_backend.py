@@ -1,4 +1,4 @@
-﻿import datetime
+import datetime
 import html
 import ipaddress
 import re
@@ -115,43 +115,73 @@ def scan_website(raw_domain, limit):
 
 
 def analyze_article_input(url, keyword, content):
+    if not url and not (content or "").strip():
+        raise ValueError("Please provide an article URL or paste article content to analyze.")
+
     page_url = url or "Direct pasted article"
-    html_text = content
+    html_text = content or ""
     elapsed = 0
     headers = {}
     host = "Direct paste"
+    fetch_error = ""
+    url_fetched = False
 
     if url:
-        normalized = normalize_url(url)
-        host = urlparse(normalized).hostname or ""
-        ensure_public_host(host)
-        fetched = fetch_url_with_fallback(normalized)
-        html_text = fetched["text"] if not content.strip() else content
-        elapsed = fetched["elapsed_ms"]
-        headers = fetched["headers"]
-        page_url = fetched["url"]
+        try:
+            normalized = normalize_url(url)
+            host = urlparse(normalized).hostname or ""
+            ensure_public_host(host)
+            fetched = fetch_url_with_fallback(normalized)
+            if not (content or "").strip():
+                html_text = fetched["text"]
+            elapsed = fetched["elapsed_ms"]
+            headers = fetched["headers"]
+            page_url = fetched["url"]
+            url_fetched = True
+        except Exception as exc:
+            fetch_error = str(exc)
+            if not (content or "").strip():
+                raise ValueError(f"Could not fetch the article URL and no article content was provided. {fetch_error}")
+            page_url = url
 
     page = analyze_page(page_url, html_text, elapsed, keyword=keyword)
+    tech = detect_technology(html_text, headers)
+
+    good = list(page["good"])
+    issues = list(page["issues"])
+    actions = list(page["actions"])
+
+    if url and url_fetched:
+        good.insert(0, "Article URL fetched successfully")
+    elif url and fetch_error:
+        issues.insert(0, f"URL fetch failed: {fetch_error}")
+        good.insert(0, "Article content analyzed from pasted text")
+
     scores = {
         "seo": page["score"],
         "speed": max(35, min(100, 95 - int(elapsed / 90))),
-        "technical": 76 if url else 58,
+        "technical": 76 if url_fetched else 58,
         "content": page["content_score"],
-        "spam": estimate_spam_score([page], html_text, headers, "", "", {"ssl": "Checked" if url else "Not checked"}),
+        "spam": estimate_spam_score([page], html_text, headers, "", "", {"ssl": "Checked" if url_fetched else "Not checked"}),
     }
+
+    ssl_status = "Not checked"
+    if url_fetched and page_url.startswith("https"):
+        ssl_status = "Checked"
+
     return {
         "domain": host,
         "url": page_url,
         "normalized_url": page_url,
         "scanned_at": datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),
-        "hosting": {"server": headers.get("server", "Not checked"), "ip": "Not checked", "ssl": "Checked" if url.startswith("https") else "Not checked"},
-        "technology": {"cms": "Article only", "stack": tech["stack"], "theme": tech["theme"], "items": tech["items"]},
+        "hosting": {"server": headers.get("server", "Not checked"), "ip": "Not checked", "ssl": ssl_status},
+        "technology": {"cms": tech["cms"] if tech["cms"] != "Unknown" else "Article only", "stack": tech["stack"], "theme": tech["theme"], "items": tech["items"]},
         "discovery": {"robots": "Not checked", "sitemap": "Not checked"},
         "availability": {"status": "Not checked", "message": "Article-only mode does not check domain availability.", "dns": "Not checked", "rdap": "Not checked"},
         "scores": scores,
-        "good": page["good"],
-        "issues": page["issues"],
-        "actions": page["actions"],
+        "good": good,
+        "issues": issues,
+        "actions": actions,
         "pages": [page],
     }
 

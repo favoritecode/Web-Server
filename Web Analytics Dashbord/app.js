@@ -1,4 +1,4 @@
-﻿const state = { result: null, pages: [], selected: 0 };
+const state = { result: null, pages: [], selected: 0 };
 const $ = (id) => document.getElementById(id);
 
 function setStatus(text, busy = false) {
@@ -168,15 +168,25 @@ $("siteForm").addEventListener("submit", async (event) => {
 
 $("articleForm").addEventListener("submit", async (event) => {
   event.preventDefault();
+  const articleUrl = $("articleUrl").value.trim();
+  const articleContent = $("articleContent").value;
+  if (!articleUrl && !articleContent.trim()) {
+    setStatus("Please provide an article URL or paste article content.");
+    return;
+  }
   setStatus("Analyzing article...", true);
   $("pdfButton").disabled = true;
   try {
     const data = await postJson("/api/analytics/article", {
-      url: $("articleUrl").value.trim(),
+      url: articleUrl,
       keyword: $("focusKeyword").value.trim(),
-      content: $("articleContent").value,
+      content: articleContent,
     });
     renderResult(data);
+    const hasUrlError = (data.issues || []).some((i) => i.startsWith("URL fetch failed"));
+    if (hasUrlError) {
+      setStatus("Article content analyzed. URL could not be fetched.");
+    }
   } catch (error) {
     setStatus(error.message || "Article analysis failed");
   }
