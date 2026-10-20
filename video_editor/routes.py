@@ -17,8 +17,16 @@ import requests as http_requests
 
 try:
     from yt_dlp import YoutubeDL
+    from yt_dlp.utils import download_range_func
 except ImportError:
     YoutubeDL = None
+    download_range_func = None
+
+from download.route import (
+    _base_ydl_opts,
+    _is_youtube_url,
+    _normalize_media_url,
+)
 
 video_editor_bp = Blueprint("video_editor", __name__)
 
@@ -424,10 +432,11 @@ def _cleanup_old_jobs():
 # Media Extraction & Download Logic
 # =====================================================================
 
-def download_source_video(url, temp_dir, index=0):
+def download_source_video(url, temp_dir, index=0, job_id=None, time_range=None):
     """
     Downloads source video to a file inside temp_dir using yt-dlp metadata inspection
     coupled with strict SSRF inspection and TLS certificate validation.
+    Supports bounded range downloading (time_range) and live progress updates for job_id.
     """
     # Check if URL is a local file in test mode
     if os.environ.get("FAVORITEWEB_TEST_MODE") == "1" and str(url).startswith("file://"):
@@ -439,61 +448,104 @@ def download_source_video(url, temp_dir, index=0):
             shutil.copy2(local_path, dest)
             return dest
 
+    url = _normalize_media_url(url)
+
     safe, err = is_safe_url(url)
     if not safe:
         raise ValueError(f"SSRF validation failed for source URL: {err}")
 
     out_pattern = os.path.join(temp_dir, f"source_{index}_%(id)s.%(ext)s")
+    last_exc = None
 
-    # If yt-dlp is available, inspect metadata first
+    # If yt-dlp is available, inspect metadata and download via robust opts
     if YoutubeDL is not None:
-        opts = {
-            "quiet": True,
-            "no_warnings": True,
-            "nocheckcertificate": False,  # Strict TLS certificate verification
-            "format": "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
+        extra_opts = {
             "outtmpl": out_pattern,
             "merge_output_format": "mp4",
-            "socket_timeout": 30,
-            "retries": 3,
+            "ffmpeg_location": os.path.dirname(get_ffmpeg_bin("ffmpeg")),
             "noplaylist": True,
-            "max_downloads": 1,
+            
         }
-        if os.path.exists(COOKIES_FILE):
-            opts["cookiefile"] = COOKIES_FILE
+
+        is_yt = _is_youtube_url(url)
+        if is_yt:
+            extra_opts["format"] = "18/bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"
+        else:
+            extra_opts["format"] = "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"
+
+        if time_range and download_range_func is not None:
+            start_sec, end_sec = time_range
+            if end_sec > start_sec:
+                extra_opts["download_ranges"] = download_range_func(None, [(start_sec, end_sec)])
+                extra_opts["force_keyframes_at_cuts"] = True
+
+        if job_id:
+            def _progress_hook(d):
+                st = d.get("status")
+                if st == "downloading":
+                    total = d.get("total_bytes") or d.get("total_bytes_estimate") or 0
+                    downloaded = d.get("downloaded_bytes") or 0
+                    speed = d.get("speed")
+                    speed_str = f" ({speed / (1024 * 1024):.1f} MB/s)" if speed else ""
+                    if total and total > 0:
+                        pct_fraction = downloaded / total
+                        overall = int(10 + pct_fraction * 50)
+                        pct_text = f"{int(pct_fraction * 100)}%"
+                        _set_job(job_id, pct=overall, progress=overall,
+                                 phase=f"Downloading source {index + 1}: {pct_text}{speed_str}")
+                    elif downloaded:
+                        mb = downloaded / (1024 * 1024)
+                        _set_job(job_id, pct=30, progress=30,
+                                 phase=f"Downloading source {index + 1}: {mb:.1f} MB{speed_str}")
+                elif st == "finished":
+                    _set_job(job_id, pct=60, progress=60, phase=f"Source {index + 1} downloaded, preparing trims...")
+            extra_opts["progress_hooks"] = [_progress_hook]
 
         try:
+            opts = _base_ydl_opts(extra_opts, url)
             with YoutubeDL(opts) as ydl:
-                info = ydl.extract_info(url, download=False)
-                # Audit any direct media URL discovered by yt-dlp
-                extracted_url = info.get("url")
-                if extracted_url:
-                    stream_safe, stream_err = is_safe_url(extracted_url)
-                    if not stream_safe:
-                        raise ValueError(f"Media stream target blocked by SSRF policy: {stream_err}")
-                    # Download direct stream via our strict, redirect-inspected downloader
-                    direct_dest = os.path.join(temp_dir, f"source_{index}.mp4")
-                    return safe_download_file(extracted_url, direct_dest)
-
-                # For fragmented or multi-stream formats where yt-dlp manages muxing
                 ydl.download([url])
-
+        except Exception as exc:
+            if "SSRF policy" in str(exc):
+                raise
+            # Check if file was actually downloaded despite any non-fatal exception
             matches = [
                 os.path.join(temp_dir, f) for f in os.listdir(temp_dir)
-                if f.startswith(f"source_{index}_") and not f.endswith(".part")
+                if f.startswith(f"source_{index}_") and not f.endswith(".part") and not f.endswith(".ytdl")
             ]
             if matches and os.path.getsize(matches[0]) > 0:
                 return matches[0]
-        except Exception as exc:
-            # Re-raise explicit SSRF violations immediately
-            if "SSRF policy" in str(exc):
-                raise
-            # Otherwise fall back to direct HTTP stream download
-            pass
 
-    # Direct HTTP download with strict redirect inspection and TLS verification
-    direct_dest = os.path.join(temp_dir, f"source_{index}.mp4")
-    return safe_download_file(url, direct_dest)
+            last_exc = exc
+            # If download_ranges failed, retry once without download_ranges
+            if time_range and "download_ranges" in extra_opts:
+                try:
+                    extra_opts.pop("download_ranges", None)
+                    extra_opts.pop("force_keyframes_at_cuts", None)
+                    retry_opts = _base_ydl_opts(extra_opts, url)
+                    with YoutubeDL(retry_opts) as ydl:
+                        ydl.download([url])
+                except Exception as retry_exc:
+                    last_exc = retry_exc
+
+        matches = [
+            os.path.join(temp_dir, f) for f in os.listdir(temp_dir)
+            if f.startswith(f"source_{index}_") and not f.endswith(".part") and not f.endswith(".ytdl")
+        ]
+        if matches and os.path.getsize(matches[0]) > 0:
+            return matches[0]
+
+    # For direct media stream URLs (ends in media extension and not a social site)
+    parsed_host = (urllib.parse.urlparse(url).netloc or "").lower()
+    is_social = any(domain in parsed_host for domain in [
+        "youtube.com", "youtu.be", "instagram.com", "facebook.com", "fb.watch", "tiktok.com", "twitter.com", "x.com", "pinterest.com"
+    ])
+    if not is_social and any(urllib.parse.urlparse(url).path.lower().endswith(ext) for ext in [".mp4", ".mov", ".mkv", ".webm", ".m4v"]):
+        direct_dest = os.path.join(temp_dir, f"source_{index}.mp4")
+        return safe_download_file(url, direct_dest)
+
+    error_msg = str(last_exc) if last_exc else "Unable to download or extract media from URL"
+    raise ValueError(f"Failed to process source video {url}: {error_msg}")
 
 
 # =====================================================================
@@ -521,9 +573,6 @@ def _editor_worker(job_id, sources, mode, export_individual, output_format):
         for i, src_info in enumerate(sources):
             url = src_info["url"]
             _set_job(job_id, phase=f"Downloading source {i+1} of {len(sources)}...", pct=10 + int(i * 20 / len(sources)))
-            file_path = download_source_video(url, temp_dir, index=i)
-            probe = probe_media(file_path)
-            duration = probe.get("duration", 0.0)
 
             # Validate and clamp segments for this source
             raw_segments = src_info.get("segments") or []
@@ -543,39 +592,55 @@ def _editor_worker(job_id, sources, mode, export_individual, output_format):
                     if end - start < 0.2:
                         raise ValueError(f"Segment duration ({end - start:.2f}s) is too short. Minimum duration is 0.2s.")
 
-                    if duration > 0:
-                        if start >= duration:
-                            raise ValueError(f"Segment start ({start}s) is beyond video duration ({duration:.2f}s)")
-                        if end > duration:
-                            end = duration
-                        if end - start < 0.2:
-                            raise ValueError(f"Segment duration after video boundary clamping is too short ({end - start:.2f}s)")
-
                     validated_segments.append({
                         "start": start,
                         "end": end,
                         "label": seg.get("label") or seg.get("name") or f"clip_{len(validated_segments)+1}",
                     })
 
+            # Check if we can do bounded range download
+            time_range = None
+            if validated_segments and mode != "export":
+                min_s = min(s["start"] for s in validated_segments)
+                max_e = max(s["end"] for s in validated_segments)
+                if max_e > min_s:
+                    time_range = (min_s, max_e)
+
+            file_path = download_source_video(url, temp_dir, index=i, job_id=job_id, time_range=time_range)
+            probe = probe_media(file_path)
+            duration = probe.get("duration", 0.0)
+
+            offset = 0.0
+            if time_range:
+                min_s, max_e = time_range
+                expected_dur = max_e - min_s
+                # If downloaded file duration matches the range span (within 6s tolerance or duration is clearly range-bounded)
+                if abs(duration - expected_dur) <= 6.0 or (duration < max_e - 0.5):
+                    offset = min_s
+
             downloaded_sources.append({
                 "file_path": file_path,
                 "duration": duration,
                 "segments": validated_segments,
+                "offset": offset,
             })
 
         # 2. Execute Edit Plan
-        _set_job(job_id, phase="Processing video edits...", pct=40, progress=40)
+        _set_job(job_id, phase="Processing video edits...", pct=70, progress=70)
 
         all_clips = []  # List of (clip_path, label)
         for s_idx, src in enumerate(downloaded_sources):
             fpath = src["file_path"]
             segs = src["segments"]
+            offset = src.get("offset", 0.0)
 
             if segs:
                 # Trimming specific segments
                 for c_idx, seg in enumerate(segs):
                     clip_out = os.path.join(temp_dir, f"segment_{s_idx}_{c_idx}.mp4")
-                    trim_segment(fpath, clip_out, seg["start"], seg["end"])
+                    rel_start = max(0.0, seg["start"] - offset)
+                    rel_end = max(rel_start + 0.2, seg["end"] - offset)
+                    trim_segment(fpath, clip_out, rel_start, rel_end)
                     label = sanitize_filename(seg["label"], f"clip_{s_idx+1}_{c_idx+1}")
                     all_clips.append((clip_out, f"{label}.mp4"))
             else:

@@ -717,6 +717,12 @@ body {
       </div>
     </div>
 
+    <!-- Embed Restriction Notice Banner -->
+    <div id="embedRestrictionNotice" style="display:none; margin: 12px 0; padding: 12px 16px; background: rgba(245,158,11,0.15); border: 1px solid rgba(245,158,11,0.3); border-radius: 8px; color: #fbbf24; font-size: 13px; align-items: center; gap: 10px;">
+      <span style="font-size:18px;">&#9888;</span>
+      <div><strong>Notice:</strong> Embedding is restricted by the video owner on YouTube. Automatically switched to the <strong>Direct Video Stream Player</strong> so you can preview, scrub, and clip seamlessly!</div>
+    </div>
+
     <!-- Playhead Toolbar -->
     <div class="playhead-bar">
       <div class="time-readout">
@@ -726,6 +732,7 @@ body {
       <div class="time-buttons">
         <button type="button" class="time-btn" id="useAsStartBtn">&#9201; Set as Start Time</button>
         <button type="button" class="time-btn" id="useAsEndBtn">&#9201; Set as End Time</button>
+        <button type="button" class="time-btn" id="switchPlayerBtn" style="display:none; background:rgba(99,102,241,0.15); color:#a5b4fc; border:1px solid rgba(99,102,241,0.3);">&#128260; Switch Player</button>
       </div>
     </div>
 
@@ -816,6 +823,7 @@ let loadedVideoInfo = null;
 let ytPlayer = null;
 let ytPlayerReady = false;
 let ytPollingInterval = null;
+let activePlayerMode = "youtube";
 let segments = [];
 let currentJobId = null;
 let jobPollTimer = null;
@@ -869,11 +877,11 @@ function parseTimeInput(str) {
 
 // Get current player time
 function getCurrentPlayerTime() {
-  if (ytPlayer && ytPlayerReady && typeof ytPlayer.getCurrentTime === "function") {
+  if (activePlayerMode === "youtube" && ytPlayer && ytPlayerReady && typeof ytPlayer.getCurrentTime === "function") {
     return ytPlayer.getCurrentTime() || 0;
   }
   const html5 = document.getElementById("html5Player");
-  if (html5 && !html5.paused && html5.currentTime) {
+  if (html5 && html5.currentTime !== undefined && html5.currentTime !== null) {
     return html5.currentTime || 0;
   }
   return 0;
@@ -888,11 +896,97 @@ function startPlayheadTracker() {
   }, 200);
 }
 
+function switchToDirectPlayer(isAuto = false) {
+  const container = document.getElementById("ytPlayerContainer");
+  const html5 = document.getElementById("html5Player");
+  const fallback = document.getElementById("playerFallback");
+  const switchBtn = document.getElementById("switchPlayerBtn");
+  const notice = document.getElementById("embedRestrictionNotice");
+
+  if (!loadedVideoInfo || !loadedVideoInfo.preview_url) {
+    if (isAuto) {
+      showToast("YouTube embed is restricted for this video, and direct preview stream is unavailable.", true);
+    }
+    return;
+  }
+
+  activePlayerMode = "direct";
+  if (ytPlayer && typeof ytPlayer.pauseVideo === "function") {
+    try { ytPlayer.pauseVideo(); } catch (e) {}
+  }
+  container.style.display = "none";
+  fallback.style.display = "none";
+  html5.style.display = "block";
+
+  if (html5.src !== loadedVideoInfo.preview_url) {
+    html5.src = loadedVideoInfo.preview_url;
+  }
+
+  if (switchBtn) {
+    switchBtn.innerHTML = `&#128260; Switch to YouTube Embed`;
+    switchBtn.style.display = "inline-flex";
+  }
+
+  if (isAuto && notice) {
+    notice.style.display = "flex";
+  }
+
+  startPlayheadTracker();
+}
+
+function switchToYouTubePlayer() {
+  const container = document.getElementById("ytPlayerContainer");
+  const html5 = document.getElementById("html5Player");
+  const switchBtn = document.getElementById("switchPlayerBtn");
+  const notice = document.getElementById("embedRestrictionNotice");
+
+  if (!loadedVideoInfo || !loadedVideoInfo.video_id) return;
+
+  activePlayerMode = "youtube";
+  if (html5) {
+    html5.pause();
+    html5.style.display = "none";
+  }
+  container.style.display = "block";
+
+  if (switchBtn) {
+    switchBtn.innerHTML = `&#128260; Switch to Direct Player`;
+    switchBtn.style.display = "inline-flex";
+  }
+
+  if (notice) {
+    notice.style.display = "none";
+  }
+
+  startPlayheadTracker();
+}
+
+document.getElementById("switchPlayerBtn").addEventListener("click", () => {
+  if (activePlayerMode === "youtube") {
+    switchToDirectPlayer(false);
+  } else {
+    switchToYouTubePlayer();
+  }
+});
+
 function setupYouTubePlayer(videoId) {
   const container = document.getElementById("ytPlayerContainer");
   const html5 = document.getElementById("html5Player");
   const fallback = document.getElementById("playerFallback");
-  
+  const switchBtn = document.getElementById("switchPlayerBtn");
+  const notice = document.getElementById("embedRestrictionNotice");
+
+  activePlayerMode = "youtube";
+  if (notice) notice.style.display = "none";
+  if (switchBtn) {
+    if (loadedVideoInfo && loadedVideoInfo.preview_url) {
+      switchBtn.style.display = "inline-flex";
+      switchBtn.innerHTML = `&#128260; Switch to Direct Player`;
+    } else {
+      switchBtn.style.display = "none";
+    }
+  }
+
   html5.style.display = "none";
   fallback.style.display = "none";
   container.style.display = "block";
@@ -913,6 +1007,11 @@ function setupYouTubePlayer(videoId) {
         onReady: () => {
           ytPlayerReady = true;
           startPlayheadTracker();
+        },
+        onError: (event) => {
+          console.warn("YouTube player error event:", event.data);
+          // Error 101/150: Embed restricted by owner; 100: private/not found; 2/5: invalid
+          switchToDirectPlayer(true);
         }
       }
     });
@@ -963,10 +1062,16 @@ document.getElementById("loadVideoBtn").addEventListener("click", async () => {
       isYt = true;
     }
 
-    // Direct preview media URL if non-YouTube
+    // Direct preview media URL (supports string URL from YouTube or array from other extractors)
     let previewStreamUrl = "";
-    if (data.video && Array.isArray(data.video) && data.video.length > 0) {
-      previewStreamUrl = data.video[0].url || "";
+    if (typeof data.video === "string" && data.video) {
+      previewStreamUrl = data.video;
+    } else if (Array.isArray(data.video) && data.video.length > 0) {
+      previewStreamUrl = data.video[0].url || data.video[0] || "";
+    } else if (typeof data.url === "string" && data.url) {
+      previewStreamUrl = data.url;
+    } else if (data.medias && Array.isArray(data.medias) && data.medias.length > 0) {
+      previewStreamUrl = data.medias[0].url || "";
     }
 
     loadedVideoInfo = {
@@ -1238,7 +1343,7 @@ function startJobPolling(jobId) {
       if (job.status === "ready") {
         clearInterval(jobPollTimer);
         finishJob(job);
-      } else if (job.status === "failed") {
+      } else if (job.status === "failed" || job.status === "error") {
         clearInterval(jobPollTimer);
         showToast("Processing failed: " + (job.error || "Unknown error"), true);
         document.getElementById("progressCard").style.display = "none";
