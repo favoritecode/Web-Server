@@ -109,6 +109,7 @@ function Update-CodeFromGit {
         "media-scraper/routes.py",
         "media-scraper/index.html",
         "media-scraper/server.py",
+        "video_editor/__init__.py",
         "video_editor/routes.py",
         "video_editor/index.html"
     )
