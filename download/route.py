@@ -1,5 +1,10 @@
 from flask import Blueprint, send_from_directory, request, jsonify, Response, stream_with_context
 from yt_dlp import YoutubeDL
+from yt_dlp.networking import Request as YdlRequest
+import hashlib
+import hmac
+import socket
+import ipaddress
 import json
 import requests as http_requests
 import os
@@ -1068,6 +1073,396 @@ def download_job_file(job_id):
         return jsonify({"error": "File expired"}), 404
 
     return _stream_ready_file(result)
+
+
+# =====================================================================
+# Bounded Media Partial Stream Relay for Social Video Editor
+# =====================================================================
+
+PARTIAL_STREAM_MAX_CHUNK_BYTES = 524288  # 512 KiB
+PARTIAL_STREAM_TTL_SECONDS = 15 * 60     # 15 minutes
+PARTIAL_STREAM_CACHE_MAX_ENTRIES = 50
+PARTIAL_STREAM_CACHE = {}
+PARTIAL_STREAM_CACHE_LOCK = threading.Lock()
+
+
+def _is_safe_relay_ip(ip_obj):
+    """Strictly block private, loopback, link-local, multicast, reserved, or internal networks."""
+    if isinstance(ip_obj, ipaddress.IPv6Address) and ip_obj.ipv4_mapped:
+        ip_obj = ip_obj.ipv4_mapped
+
+    if (
+        ip_obj.is_private
+        or ip_obj.is_loopback
+        or ip_obj.is_link_local
+        or ip_obj.is_multicast
+        or ip_obj.is_reserved
+        or ip_obj.is_unspecified
+    ):
+        return False
+
+    if isinstance(ip_obj, ipaddress.IPv6Address):
+        if ip_obj in ipaddress.IPv6Network("2002::/16"):
+            return False
+
+    return True
+
+
+def _is_safe_relay_url(url):
+    """Validate URL scheme and resolved destination IPs for SSRF protection."""
+    if os.environ.get("FAVORITEWEB_TEST_MODE") == "1" and str(url).startswith("file://"):
+        return True, None
+
+    try:
+        parsed = urllib.parse.urlparse(url or "")
+        scheme = parsed.scheme.lower()
+        if scheme not in ("http", "https"):
+            return False, f"Unsupported URL scheme '{scheme}'. Only HTTP and HTTPS are permitted."
+
+        if parsed.username or parsed.password:
+            return False, "URLs with embedded credentials are not permitted."
+
+        hostname = parsed.hostname
+        if not hostname:
+            return False, "Missing hostname in URL."
+
+        lower_host = hostname.lower()
+        if (
+            lower_host in ("localhost", "127.0.0.1", "::1", "0.0.0.0")
+            or lower_host.endswith(".local")
+            or lower_host.endswith(".internal")
+            or lower_host.endswith(".localhost")
+        ):
+            return False, f"Access to '{hostname}' is blocked."
+
+        port = parsed.port or (443 if scheme == "https" else 80)
+        addr_info = socket.getaddrinfo(hostname, port, type=socket.SOCK_STREAM)
+        if not addr_info:
+            return False, "Could not resolve hostname."
+
+        for _, _, _, _, sockaddr in addr_info:
+            ip_str = sockaddr[0]
+            ip_obj = ipaddress.ip_address(ip_str)
+            if not _is_safe_relay_ip(ip_obj):
+                return False, f"Access to IP address '{ip_str}' is blocked (private or restricted network)."
+
+        return True, None
+    except Exception as exc:
+        return False, f"URL validation failed: {str(exc)}"
+
+
+def _get_relay_token():
+    token = os.environ.get("FWT_MEDIA_RELAY_TOKEN")
+    if token:
+        return str(token).strip()
+    try:
+        import favoriteweb_local_secrets as ls
+        if hasattr(ls, "FWT_MEDIA_RELAY_TOKEN"):
+            val = getattr(ls, "FWT_MEDIA_RELAY_TOKEN")
+            if val:
+                return str(val).strip()
+    except ImportError:
+        pass
+    return None
+
+
+def _verify_relay_token():
+    auth_header = request.headers.get("Authorization", "")
+    token = None
+    if auth_header.startswith("Bearer "):
+        token = auth_header[7:].strip()
+    if not token:
+        token = request.args.get("relay_token", "").strip()
+
+    server_token = _get_relay_token()
+    if not server_token:
+        return False, "FWT_MEDIA_RELAY_TOKEN is not configured on server"
+
+    if not token or not hmac.compare_digest(token, server_token):
+        return False, "Invalid or missing authorization token"
+
+    return True, None
+
+
+def _parse_partial_range(range_header, total_size=None):
+    if not range_header or not range_header.strip():
+        return None, None, (416, {"error": "RANGE_REQUIRED", "message": "Range header is required"}, {})
+
+    range_str = range_header.strip()
+    if not range_str.startswith("bytes="):
+        return None, None, (416, {"error": "INVALID_RANGE", "message": "Range header must start with 'bytes='"}, {})
+
+    spec = range_str[6:].strip()
+    if "," in spec:
+        return None, None, (416, {"error": "MULTIPLE_RANGES_UNSUPPORTED", "message": "Multiple ranges are not supported"}, {})
+
+    m = re.match(r"^(\d+)-(\d*)$", spec)
+    if not m:
+        return None, None, (416, {"error": "INVALID_RANGE", "message": "Malformed Range header"}, {})
+
+    start = int(m.group(1))
+    if total_size is not None and total_size > 0 and start >= total_size:
+        return None, None, (416, {"error": "RANGE_NOT_SATISFIABLE", "message": "Range start is beyond total size"}, {"Content-Range": f"bytes */{total_size}"})
+
+    end_str = m.group(2)
+    if end_str:
+        end = int(end_str)
+        if end < start:
+            return None, None, (416, {"error": "INVALID_RANGE", "message": "Range end is less than start"}, {})
+    else:
+        if total_size is not None and total_size > 0:
+            end = min(start + PARTIAL_STREAM_MAX_CHUNK_BYTES - 1, total_size - 1)
+        else:
+            end = start + PARTIAL_STREAM_MAX_CHUNK_BYTES - 1
+
+    # Enforce chunk bounding: max 512 KiB (524,288 bytes)
+    if (end - start + 1) > PARTIAL_STREAM_MAX_CHUNK_BYTES:
+        end = start + PARTIAL_STREAM_MAX_CHUNK_BYTES - 1
+
+    if total_size is not None and total_size > 0 and end >= total_size:
+        end = total_size - 1
+
+    return start, end, None
+
+
+def _resolve_partial_source(url, format_id=None):
+    safe, err = _is_safe_relay_url(url)
+    if not safe:
+        return None, (403, {"error": "BLOCKED_HOST", "message": err})
+
+    cache_key = f"{url}::{format_id or ''}"
+    now = time.time()
+
+    with PARTIAL_STREAM_CACHE_LOCK:
+        expired_keys = [k for k, v in PARTIAL_STREAM_CACHE.items() if v["expires_at"] <= now]
+        for k in expired_keys:
+            PARTIAL_STREAM_CACHE.pop(k, None)
+
+        cached = PARTIAL_STREAM_CACHE.get(cache_key)
+        if cached and cached["expires_at"] > now:
+            cached["last_accessed"] = now
+            return cached, None
+
+    opts = _base_ydl_opts({"skip_download": True}, url)
+    try:
+        with YoutubeDL(opts) as ydl:
+            info = ydl.extract_info(url, download=False)
+    except Exception as exc:
+        return None, (502, {"error": "EXTRACTION_FAILED", "details": str(exc)})
+
+    formats = info.get("formats", [])
+    target_format = None
+    if format_id:
+        target_format = next((f for f in formats if str(f.get("format_id")) == str(format_id)), None)
+
+    if not target_format:
+        if _is_youtube_url(url):
+            target_format = next((f for f in formats if str(f.get("format_id")) == "18"), None)
+        if not target_format:
+            target_format = next(
+                (f for f in formats if f.get("vcodec") != "none" and f.get("acodec") != "none" and f.get("ext") == "mp4" and f.get("url")),
+                None
+            )
+        if not target_format:
+            target_format = next(
+                (f for f in formats if f.get("vcodec") != "none" and f.get("acodec") != "none" and f.get("url")),
+                None
+            )
+
+    stream_url = (target_format.get("url") if target_format else None) or info.get("url")
+    if not stream_url:
+        return None, (404, {"error": "FORMAT_NOT_FOUND", "message": "No direct media stream found"})
+
+    safe_stream, stream_err = _is_safe_relay_url(stream_url)
+    if not safe_stream:
+        return None, (403, {"error": "BLOCKED_STREAM_HOST", "message": stream_err})
+
+    total_size = None
+    if target_format:
+        total_size = target_format.get("filesize") or target_format.get("filesize_approx")
+    if not total_size:
+        total_size = info.get("filesize") or info.get("filesize_approx")
+
+    http_headers = (target_format.get("http_headers") if target_format else None) or info.get("http_headers") or {}
+    source_id = hashlib.sha256(stream_url.encode("utf-8")).hexdigest().lower()
+
+    entry = {
+        "stream_url": stream_url,
+        "http_headers": http_headers,
+        "total_size": total_size,
+        "source_id": source_id,
+        "content_type": "video/mp4",
+        "ydl_opts": opts,
+        "expires_at": now + PARTIAL_STREAM_TTL_SECONDS,
+        "last_accessed": now,
+        "cache_key": cache_key,
+    }
+
+    with PARTIAL_STREAM_CACHE_LOCK:
+        if len(PARTIAL_STREAM_CACHE) >= PARTIAL_STREAM_CACHE_MAX_ENTRIES:
+            oldest_key = min(PARTIAL_STREAM_CACHE.keys(), key=lambda k: PARTIAL_STREAM_CACHE[k]["last_accessed"])
+            PARTIAL_STREAM_CACHE.pop(oldest_key, None)
+        PARTIAL_STREAM_CACHE[cache_key] = entry
+
+    return entry, None
+
+
+@download.route("/download/partial-capabilities", methods=["GET", "OPTIONS"])
+def partial_capabilities():
+    if request.method == "OPTIONS":
+        resp = Response("", status=204)
+        resp.headers["Access-Control-Allow-Origin"] = "*"
+        resp.headers["Access-Control-Allow-Methods"] = "GET, OPTIONS"
+        resp.headers["Access-Control-Allow-Headers"] = "Authorization, Content-Type, Range"
+        return resp
+
+    authorized, auth_err = _verify_relay_token()
+    if not authorized:
+        return jsonify({"error": "UNAUTHORIZED", "message": auth_err}), 401
+
+    payload = {
+        "version": 1,
+        "max_chunk_bytes": PARTIAL_STREAM_MAX_CHUNK_BYTES,
+        "single_range": True,
+        "full_download_fallback": False,
+    }
+    resp = jsonify(payload)
+    resp.headers["Cache-Control"] = "private, no-store"
+    resp.headers["Access-Control-Allow-Origin"] = "*"
+    return resp, 200
+
+
+@download.route("/download/partial-stream", methods=["GET", "OPTIONS"])
+def partial_stream():
+    if request.method == "OPTIONS":
+        resp = Response("", status=204)
+        resp.headers["Access-Control-Allow-Origin"] = "*"
+        resp.headers["Access-Control-Allow-Methods"] = "GET, OPTIONS"
+        resp.headers["Access-Control-Allow-Headers"] = "Authorization, Content-Type, Range"
+        resp.headers["Access-Control-Expose-Headers"] = "Content-Range, Content-Length, Accept-Ranges, X-Media-Source-ID"
+        return resp
+
+    authorized, auth_err = _verify_relay_token()
+    if not authorized:
+        return jsonify({"error": "UNAUTHORIZED", "message": auth_err}), 401
+
+    url = (request.args.get("url") or "").strip()
+    if not url:
+        return jsonify({"error": "MISSING_URL", "message": "Query parameter 'url' is required"}), 400
+
+    format_id = (request.args.get("format_id") or "").strip() or None
+    client_source_id = (request.args.get("source_id") or "").strip().lower()
+
+    source_entry, err_tuple = _resolve_partial_source(url, format_id)
+    if err_tuple:
+        status_code, err_body = err_tuple
+        return jsonify(err_body), status_code
+
+    source_id = source_entry["source_id"]
+    if client_source_id and client_source_id != source_id:
+        return jsonify({
+            "error": "SOURCE_CHANGED",
+            "message": "Media stream source identity has changed",
+            "current_source_id": source_id,
+            "provided_source_id": client_source_id
+        }), 409
+
+    range_header = request.headers.get("Range")
+    start, end, range_err = _parse_partial_range(range_header, source_entry["total_size"])
+    if range_err:
+        status_code, err_body, extra_headers = range_err
+        resp = jsonify(err_body)
+        for hk, hv in extra_headers.items():
+            resp.headers[hk] = hv
+        return resp, status_code
+
+    stream_url = source_entry["stream_url"]
+    headers = dict(source_entry.get("http_headers") or {})
+    headers["Range"] = f"bytes={start}-{end}"
+
+    ydl_req = YdlRequest(stream_url, headers=headers)
+    ydl_inst = YoutubeDL(source_entry.get("ydl_opts") or _base_ydl_opts({"skip_download": True}, url))
+
+    try:
+        res = ydl_inst.urlopen(ydl_req)
+    except Exception as exc:
+        try:
+            ydl_inst.close()
+        except Exception:
+            pass
+        return jsonify({"error": "STREAM_FETCH_FAILED", "details": str(exc)}), 502
+
+    status = getattr(res, "status", None) or getattr(res, "code", None)
+    if status == 200:
+        try:
+            res.close()
+        except Exception:
+            pass
+        try:
+            ydl_inst.close()
+        except Exception:
+            pass
+        return jsonify({
+            "error": "RANGE_UNSUPPORTED",
+            "message": "Upstream server returned full content (HTTP 200) instead of partial content (HTTP 206)"
+        }), 422
+
+    if status != 206:
+        try:
+            res.close()
+        except Exception:
+            pass
+        try:
+            ydl_inst.close()
+        except Exception:
+            pass
+        return jsonify({"error": "UPSTREAM_ERROR", "status": status}), 502
+
+    total_size = source_entry["total_size"]
+    upstream_cr = res.headers.get("Content-Range")
+    if upstream_cr:
+        cr_match = re.search(r"/(\d+)$", upstream_cr)
+        if cr_match:
+            detected_total = int(cr_match.group(1))
+            if not total_size or total_size != detected_total:
+                total_size = detected_total
+                source_entry["total_size"] = detected_total
+                with PARTIAL_STREAM_CACHE_LOCK:
+                    ck = source_entry.get("cache_key")
+                    if ck and ck in PARTIAL_STREAM_CACHE:
+                        PARTIAL_STREAM_CACHE[ck]["total_size"] = detected_total
+
+    content_range_hdr = f"bytes {start}-{end}/{total_size or '*'}"
+    content_length_hdr = str(end - start + 1)
+    content_type_hdr = res.headers.get("Content-Type") or source_entry.get("content_type") or "video/mp4"
+
+    def generate():
+        try:
+            while True:
+                chunk = res.read(64 * 1024)
+                if not chunk:
+                    break
+                yield chunk
+        finally:
+            try:
+                res.close()
+            except Exception:
+                pass
+            try:
+                ydl_inst.close()
+            except Exception:
+                pass
+
+    flask_resp = Response(stream_with_context(generate()), status=206)
+    flask_resp.headers["Content-Range"] = content_range_hdr
+    flask_resp.headers["Content-Length"] = content_length_hdr
+    flask_resp.headers["Content-Type"] = content_type_hdr
+    flask_resp.headers["Accept-Ranges"] = "bytes"
+    flask_resp.headers["Cache-Control"] = "private, no-store"
+    flask_resp.headers["X-Media-Source-ID"] = source_id
+    flask_resp.headers["Access-Control-Allow-Origin"] = "*"
+    flask_resp.headers["Access-Control-Expose-Headers"] = "Content-Range, Content-Length, Accept-Ranges, X-Media-Source-ID"
+    return flask_resp
 
 
 # ----------------------------

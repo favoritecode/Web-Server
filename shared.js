@@ -3,6 +3,7 @@
 const NAV_ITEMS = [
   { href: "/", label: "Home" },
   { href: "/download", label: "Download" },
+  { href: "/video-editor", label: "Video Editor" },
   { href: "/drive", label: "Cloud Drive", requiresAuth: true },
   { href: "/analytics", label: "Web Analyzer" },
   { href: "/file-converter", label: "File Converter" },

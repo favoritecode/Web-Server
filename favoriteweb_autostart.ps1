@@ -108,7 +108,9 @@ function Update-CodeFromGit {
         "media-transcribe/index.html",
         "media-scraper/routes.py",
         "media-scraper/index.html",
-        "media-scraper/server.py"
+        "media-scraper/server.py",
+        "video_editor/routes.py",
+        "video_editor/index.html"
     )
 
     try {

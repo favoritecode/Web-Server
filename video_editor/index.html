@@ -1,0 +1,1235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Social Media Video Editor & Downloader - FavoriteWeb</title>
+<link rel="stylesheet" href="/shared.css">
+<style>
+:root {
+  --primary-gradient: linear-gradient(135deg, #8b5cf6, #3b82f6);
+  --accent-purple: #a855f7;
+  --accent-blue: #38bdf8;
+  --accent-green: #22c55e;
+  --bg-dark: #0b0f19;
+  --card-bg: rgba(17, 24, 39, 0.72);
+  --card-border: rgba(148, 163, 184, 0.16);
+  --text-main: #f8fafc;
+  --text-muted: #94a3b8;
+}
+
+body {
+  background: var(--bg-dark);
+  color: var(--text-main);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  margin: 0;
+  padding: 0;
+}
+
+.editor-container {
+  width: min(1180px, calc(100% - 32px));
+  margin: 36px auto 80px;
+}
+
+.hero-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 36px 20px 28px;
+  border: 1px solid var(--card-border);
+  border-radius: 24px;
+  background: linear-gradient(145deg, rgba(30, 41, 59, 0.6), rgba(15, 23, 42, 0.8));
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(20px);
+  margin-bottom: 24px;
+}
+
+.badge-tool {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: rgba(168, 85, 247, 0.14);
+  border: 1px solid rgba(168, 85, 247, 0.3);
+  color: #c084fc;
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 14px;
+}
+
+.hero-panel h1 {
+  font-size: 36px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  margin: 0 0 10px;
+  background: linear-gradient(135deg, #ffffff 30%, #94a3b8);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.hero-panel p {
+  color: var(--text-muted);
+  font-size: 15px;
+  max-width: 720px;
+  line-height: 1.6;
+  margin: 0 0 18px;
+}
+
+.platforms-list {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
+
+.platform-pill {
+  padding: 4px 10px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  font-size: 12px;
+  color: #cbd5e1;
+}
+
+/* Input Card */
+.input-card {
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 20px;
+  padding: 24px;
+  backdrop-filter: blur(16px);
+  margin-bottom: 24px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.2);
+}
+
+.input-row {
+  display: flex;
+  gap: 12px;
+}
+
+.url-input-wrap {
+  flex: 1;
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.url-input-wrap input {
+  width: 100%;
+  height: 52px;
+  padding: 0 90px 0 16px;
+  border-radius: 14px;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  background: rgba(15, 23, 42, 0.85);
+  color: #fff;
+  font-size: 15px;
+  outline: none;
+  transition: all 0.2s;
+  box-sizing: border-box;
+}
+
+.url-input-wrap input:focus {
+  border-color: #a855f7;
+  box-shadow: 0 0 0 3px rgba(168, 85, 247, 0.2);
+}
+
+.paste-btn {
+  position: absolute;
+  right: 10px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #e2e8f0;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.paste-btn:hover {
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.load-btn {
+  height: 52px;
+  padding: 0 28px;
+  border-radius: 14px;
+  border: none;
+  background: var(--primary-gradient);
+  color: #fff;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: all 0.2s;
+  box-shadow: 0 8px 24px rgba(139, 92, 246, 0.35);
+  white-space: nowrap;
+}
+
+.load-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 12px 30px rgba(139, 92, 246, 0.45);
+}
+
+.load-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* Video Stage Area */
+.video-stage {
+  display: none;
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 20px;
+  padding: 24px;
+  backdrop-filter: blur(16px);
+  margin-bottom: 24px;
+  animation: fadeIn 0.3s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.video-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.video-meta h2 {
+  font-size: 20px;
+  font-weight: 700;
+  margin: 0 0 6px;
+  color: #f1f5f9;
+  line-height: 1.4;
+}
+
+.meta-tags {
+  display: flex;
+  gap: 12px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.meta-tags span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* Player Frame */
+.player-wrapper {
+  position: relative;
+  width: 100%;
+  max-width: 820px;
+  margin: 0 auto 20px;
+  border-radius: 16px;
+  overflow: hidden;
+  background: #000;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5);
+  aspect-ratio: 16 / 9;
+}
+
+.player-wrapper iframe,
+.player-wrapper video {
+  width: 100%;
+  height: 100%;
+  border: none;
+  display: block;
+}
+
+.playhead-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 18px;
+  background: rgba(15, 23, 42, 0.9);
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 14px;
+  margin-bottom: 24px;
+}
+
+.time-readout {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  color: #94a3b8;
+}
+
+.time-readout strong {
+  font-family: monospace;
+  font-size: 18px;
+  color: #38bdf8;
+}
+
+.time-buttons {
+  display: flex;
+  gap: 10px;
+}
+
+.time-btn {
+  padding: 8px 14px;
+  border-radius: 10px;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  background: rgba(255, 255, 255, 0.06);
+  color: #f1f5f9;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.time-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: #38bdf8;
+  color: #38bdf8;
+}
+
+/* Segments Editor */
+.section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.section-heading h3 {
+  font-size: 18px;
+  font-weight: 700;
+  margin: 0;
+  color: #f8fafc;
+}
+
+.segments-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.segment-item {
+  display: grid;
+  grid-template-columns: 36px 1fr 140px 140px 100px 42px;
+  gap: 12px;
+  align-items: center;
+  background: rgba(15, 23, 42, 0.7);
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  padding: 12px 16px;
+  border-radius: 14px;
+  transition: border-color 0.2s;
+}
+
+.segment-item:hover {
+  border-color: rgba(168, 85, 247, 0.35);
+}
+
+.seg-num {
+  font-size: 14px;
+  font-weight: 700;
+  color: #a855f7;
+  text-align: center;
+}
+
+.seg-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.seg-field label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #64748b;
+  font-weight: 700;
+}
+
+.seg-field input {
+  height: 38px;
+  border-radius: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  background: rgba(2, 6, 23, 0.7);
+  color: #fff;
+  padding: 0 10px;
+  font-size: 13px;
+  font-family: monospace;
+  outline: none;
+}
+
+.seg-field input:focus {
+  border-color: #a855f7;
+}
+
+.seg-duration {
+  font-size: 12px;
+  color: #38bdf8;
+  font-family: monospace;
+  text-align: center;
+}
+
+.delete-seg-btn {
+  height: 38px;
+  width: 38px;
+  border-radius: 8px;
+  border: 1px solid rgba(239, 68, 68, 0.2);
+  background: rgba(239, 68, 68, 0.08);
+  color: #f87171;
+  font-size: 16px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.delete-seg-btn:hover {
+  background: rgba(239, 68, 68, 0.2);
+  color: #ef4444;
+}
+
+.add-segment-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 18px;
+  border-radius: 12px;
+  border: 1px dashed rgba(168, 85, 247, 0.4);
+  background: rgba(168, 85, 247, 0.06);
+  color: #c084fc;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  margin-bottom: 24px;
+}
+
+.add-segment-btn:hover {
+  background: rgba(168, 85, 247, 0.15);
+  border-color: #a855f7;
+}
+
+/* Mode Selection Cards */
+.modes-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 14px;
+  margin-bottom: 24px;
+}
+
+.mode-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  padding: 18px;
+  border-radius: 16px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  background: rgba(15, 23, 42, 0.6);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.mode-card:hover {
+  border-color: rgba(168, 85, 247, 0.4);
+  transform: translateY(-2px);
+}
+
+.mode-card.active {
+  border-color: #a855f7;
+  background: linear-gradient(145deg, rgba(168, 85, 247, 0.12), rgba(59, 130, 246, 0.08));
+  box-shadow: 0 8px 24px rgba(168, 85, 247, 0.18);
+}
+
+.mode-card input[type="radio"] {
+  position: absolute;
+  top: 18px;
+  right: 18px;
+  accent-color: #a855f7;
+}
+
+.mode-card h4 {
+  font-size: 15px;
+  font-weight: 700;
+  margin: 0 0 6px;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.mode-card p {
+  font-size: 12px;
+  color: #94a3b8;
+  margin: 0;
+  line-height: 1.5;
+}
+
+/* Export CTA */
+.action-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding-top: 12px;
+}
+
+.export-btn {
+  height: 54px;
+  width: 100%;
+  max-width: 440px;
+  border-radius: 16px;
+  border: none;
+  background: var(--primary-gradient);
+  color: #fff;
+  font-size: 16px;
+  font-weight: 800;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  transition: all 0.25s;
+  box-shadow: 0 12px 36px rgba(139, 92, 246, 0.4);
+}
+
+.export-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 16px 44px rgba(139, 92, 246, 0.55);
+}
+
+.export-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+/* Job Progress Box */
+.progress-card {
+  display: none;
+  margin-top: 24px;
+  padding: 24px;
+  border-radius: 18px;
+  background: rgba(15, 23, 42, 0.9);
+  border: 1px solid rgba(168, 85, 247, 0.3);
+  text-align: center;
+  animation: fadeIn 0.3s ease;
+}
+
+.progress-header {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.progress-track {
+  height: 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+  margin-bottom: 12px;
+}
+
+.progress-fill {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, #a855f7, #38bdf8, #22c55e);
+  border-radius: 999px;
+  transition: width 0.3s ease;
+}
+
+.phase-text {
+  font-size: 13px;
+  color: #94a3b8;
+}
+
+/* Download Ready Card */
+.ready-card {
+  display: none;
+  margin-top: 24px;
+  padding: 28px;
+  border-radius: 20px;
+  background: linear-gradient(145deg, rgba(34, 197, 94, 0.12), rgba(15, 23, 42, 0.9));
+  border: 1px solid rgba(34, 197, 94, 0.35);
+  text-align: center;
+  animation: fadeIn 0.3s ease;
+}
+
+.ready-icon {
+  font-size: 42px;
+  color: #22c55e;
+  margin-bottom: 10px;
+}
+
+.ready-card h3 {
+  font-size: 20px;
+  font-weight: 800;
+  color: #f0fdf4;
+  margin: 0 0 6px;
+}
+
+.ready-meta {
+  color: #86efac;
+  font-size: 13px;
+  margin-bottom: 18px;
+}
+
+.download-ready-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  height: 52px;
+  padding: 0 36px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #22c55e, #16a34a);
+  color: #fff;
+  font-size: 16px;
+  font-weight: 800;
+  text-decoration: none;
+  box-shadow: 0 10px 30px rgba(34, 197, 94, 0.4);
+  transition: all 0.2s;
+  cursor: pointer;
+}
+
+.download-ready-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 14px 38px rgba(34, 197, 94, 0.5);
+}
+
+.reset-btn {
+  margin-top: 14px;
+  background: none;
+  border: none;
+  color: #94a3b8;
+  font-size: 13px;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.reset-btn:hover {
+  color: #fff;
+}
+
+/* Toast */
+.toast-notice {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  padding: 12px 20px;
+  border-radius: 12px;
+  background: #1e293b;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #fff;
+  font-size: 14px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.4);
+  z-index: 99999;
+  display: none;
+}
+
+.toast-notice.error {
+  background: #7f1d1d;
+  border-color: #ef4444;
+}
+
+@media (max-width: 768px) {
+  .hero-panel h1 { font-size: 26px; }
+  .input-row { flex-direction: column; }
+  .load-btn { width: 100%; justify-content: center; }
+  .segment-item {
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+  .seg-num { grid-column: 1 / -1; text-align: left; }
+  .delete-seg-btn { grid-column: 1 / -1; width: 100%; }
+}
+</style>
+</head>
+<body>
+
+<div class="main-content">
+<div class="editor-container">
+
+  <!-- Header Section -->
+  <section class="hero-panel">
+    <div class="badge-tool">&#127916; Next-Gen Video Suite</div>
+    <h1>Social Media Video Editor & Downloader</h1>
+    <p>Download full videos or trim unwanted sections with frame-accurate precision. Extract highlights, combine multiple segments, or export individual clips in ZIP from any social platform.</p>
+    <div class="platforms-list">
+      <span class="platform-pill">YouTube & Shorts</span>
+      <span class="platform-pill">Facebook Watch & Reels</span>
+      <span class="platform-pill">Instagram Reels</span>
+      <span class="platform-pill">TikTok</span>
+      <span class="platform-pill">Twitter / X</span>
+      <span class="platform-pill">Direct MP4 Links</span>
+    </div>
+  </section>
+
+  <!-- URL Input Card -->
+  <section class="input-card">
+    <div class="input-row">
+      <div class="url-input-wrap">
+        <input type="text" id="videoUrlInput" placeholder="Paste video link here (e.g. https://www.youtube.com/watch?v=...)" autocomplete="off">
+        <button type="button" class="paste-btn" id="pasteBtn">&#128203; Paste</button>
+      </div>
+      <button type="button" class="load-btn" id="loadVideoBtn">
+        <span id="loadBtnIcon">&#9654;</span>
+        <span id="loadBtnText">Load Video</span>
+      </button>
+    </div>
+  </section>
+
+  <!-- Video Stage & Interactive Editor -->
+  <section class="video-stage" id="videoStage">
+    
+    <div class="video-header">
+      <div class="video-meta">
+        <h2 id="videoTitleDisplay">Video Title</h2>
+        <div class="meta-tags">
+          <span id="videoUploaderDisplay">&#128100; Channel</span>
+          <span id="videoDurationDisplay">&#9201; 00:00</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Preview Player -->
+    <div class="player-wrapper" id="playerWrapper">
+      <div id="ytPlayerContainer" style="display:none; width:100%; height:100%;"></div>
+      <video id="html5Player" controls style="display:none;"></video>
+      <div id="playerFallback" style="display:flex; align-items:center; justify-content:center; height:100%; color:#94a3b8; font-size:14px;">
+        Preview player ready
+      </div>
+    </div>
+
+    <!-- Playhead Toolbar -->
+    <div class="playhead-bar">
+      <div class="time-readout">
+        <span>Current Time:</span>
+        <strong id="currentTimeDisplay">00:00:00.0</strong>
+      </div>
+      <div class="time-buttons">
+        <button type="button" class="time-btn" id="useAsStartBtn">&#9201; Set as Start Time</button>
+        <button type="button" class="time-btn" id="useAsEndBtn">&#9201; Set as End Time</button>
+      </div>
+    </div>
+
+    <!-- Segments Trimmer -->
+    <div class="section-heading">
+      <h3>Selected Video Segments / Clips</h3>
+      <span style="font-size:12px; color:#94a3b8;">Specify which parts of the video to keep</span>
+    </div>
+
+    <div class="segments-list" id="segmentsList">
+      <!-- Injected dynamically -->
+    </div>
+
+    <button type="button" class="add-segment-btn" id="addSegmentBtn">
+      <span>+</span> Add Another Segment
+    </button>
+
+    <!-- Export Mode Selection -->
+    <div class="section-heading">
+      <h3>Export Processing Mode</h3>
+    </div>
+
+    <div class="modes-grid">
+      <label class="mode-card active" id="cardModeMerge">
+        <input type="radio" name="exportMode" value="merge" checked>
+        <h4>&#128257; Merge Segments (Single Video)</h4>
+        <p>Cuts out unwanted parts and merges all selected clips into one continuous high-quality MP4 video.</p>
+      </label>
+
+      <label class="mode-card" id="cardModeSplit">
+        <input type="radio" name="exportMode" value="split">
+        <h4>&#9986; Split Clips (ZIP Archive)</h4>
+        <p>Exports each segment as an individual MP4 file and packages them into a single downloadable ZIP archive.</p>
+      </label>
+
+      <label class="mode-card" id="cardModeExport">
+        <input type="radio" name="exportMode" value="export">
+        <h4>&#11015; Full Video Download</h4>
+        <p>Downloads the complete full-length source video in original quality without trimming.</p>
+      </label>
+    </div>
+
+    <!-- Process CTA -->
+    <div class="action-box">
+      <button type="button" class="export-btn" id="startExportBtn">
+        <span>&#9889;</span> Process & Export Video
+      </button>
+    </div>
+
+    <!-- Progress Card -->
+    <div class="progress-card" id="progressCard">
+      <div class="progress-header">
+        <span id="progressTitle">Processing Video...</span>
+        <span id="progressPctText">0%</span>
+      </div>
+      <div class="progress-track">
+        <div class="progress-fill" id="progressFill"></div>
+      </div>
+      <div class="phase-text" id="phaseText">Initializing job on server...</div>
+    </div>
+
+    <!-- Ready Card -->
+    <div class="ready-card" id="readyCard">
+      <div class="ready-icon">&#10004;</div>
+      <h3 id="readyFilename">Your Video is Ready!</h3>
+      <div class="ready-meta" id="readyMeta">File size: Calculating...</div>
+      <a href="#" class="download-ready-btn" id="downloadReadyBtn" download>
+        <span>&#11015;</span> Download Output File
+      </a>
+      <div>
+        <button type="button" class="reset-btn" id="resetBtn">Edit another video</button>
+      </div>
+    </div>
+
+  </section>
+
+</div>
+</div>
+
+<div class="toast-notice" id="toastNotice"></div>
+
+<!-- YouTube IFrame API -->
+<script src="https://www.youtube.com/iframe_api"></script>
+
+<script>
+// State
+let loadedVideoInfo = null;
+let ytPlayer = null;
+let ytPlayerReady = false;
+let ytPollingInterval = null;
+let segments = [];
+let currentJobId = null;
+let jobPollTimer = null;
+
+function showToast(message, isError = false) {
+  const toast = document.getElementById("toastNotice");
+  toast.innerText = message;
+  toast.className = "toast-notice" + (isError ? " error" : "");
+  toast.style.display = "block";
+  setTimeout(() => {
+    toast.style.display = "none";
+  }, 4000);
+}
+
+// Paste button helper
+document.getElementById("pasteBtn").addEventListener("click", async () => {
+  try {
+    const text = await navigator.clipboard.readText();
+    if (text) document.getElementById("videoUrlInput").value = text.trim();
+  } catch (e) {
+    showToast("Please paste the link manually into the box.", true);
+  }
+});
+
+// Format seconds into HH:MM:SS or MM:SS
+function formatTime(seconds) {
+  const s = Math.max(0, parseFloat(seconds) || 0);
+  const hrs = Math.floor(s / 3600);
+  const mins = Math.floor((s % 3600) / 60);
+  const secs = Math.floor(s % 60);
+  const ms = Math.floor((s % 1) * 10);
+  if (hrs > 0) {
+    return `${String(hrs).padStart(2, '0')}:${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}.${ms}`;
+  }
+  return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}.${ms}`;
+}
+
+// Parse string timestamp into seconds
+function parseTimeInput(str) {
+  if (!str) return null;
+  const clean = str.trim();
+  if (/^\d+(\.\d+)?$/.test(clean)) return parseFloat(clean);
+  const parts = clean.split(":");
+  if (parts.length === 2) {
+    return parseFloat(parts[0]) * 60 + parseFloat(parts[1]);
+  } else if (parts.length === 3) {
+    return parseFloat(parts[0]) * 3600 + parseFloat(parts[1]) * 60 + parseFloat(parts[2]);
+  }
+  return null;
+}
+
+// Get current player time
+function getCurrentPlayerTime() {
+  if (ytPlayer && ytPlayerReady && typeof ytPlayer.getCurrentTime === "function") {
+    return ytPlayer.getCurrentTime() || 0;
+  }
+  const html5 = document.getElementById("html5Player");
+  if (html5 && !html5.paused && html5.currentTime) {
+    return html5.currentTime || 0;
+  }
+  return 0;
+}
+
+// Start player tracking loop
+function startPlayheadTracker() {
+  if (ytPollingInterval) clearInterval(ytPollingInterval);
+  ytPollingInterval = setInterval(() => {
+    const t = getCurrentPlayerTime();
+    document.getElementById("currentTimeDisplay").innerText = formatTime(t);
+  }, 200);
+}
+
+// YouTube API initialization
+window.onYouTubeIframeAPIReady = function() {
+  // ready handler
+};
+
+function setupYouTubePlayer(videoId) {
+  const container = document.getElementById("ytPlayerContainer");
+  const html5 = document.getElementById("html5Player");
+  const fallback = document.getElementById("playerFallback");
+  
+  html5.style.display = "none";
+  fallback.style.display = "none";
+  container.style.display = "block";
+  container.innerHTML = '<div id="ytIframeNode"></div>';
+
+  ytPlayerReady = false;
+  ytPlayer = new YT.Player("ytIframeNode", {
+    videoId: videoId,
+    playerVars: {
+      autoplay: 0,
+      controls: 1,
+      rel: 0,
+      enablejsapi: 1,
+      modestbranding: 1
+    },
+    events: {
+      onReady: () => {
+        ytPlayerReady = true;
+        startPlayheadTracker();
+      }
+    }
+  });
+}
+
+// Load Video Button Handler
+document.getElementById("loadVideoBtn").addEventListener("click", async () => {
+  const url = document.getElementById("videoUrlInput").value.trim();
+  if (!url) {
+    showToast("Please enter a valid video link first.", true);
+    return;
+  }
+
+  const loadBtn = document.getElementById("loadVideoBtn");
+  const loadText = document.getElementById("loadBtnText");
+  loadBtn.disabled = true;
+  loadText.innerText = "Inspecting...";
+
+  try {
+    const res = await fetch("/video-editor/info", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url: url })
+    });
+
+    const data = await res.json();
+    if (!res.ok || data.error) {
+      throw new Error(data.error || "Failed to inspect video");
+    }
+
+    loadedVideoInfo = data;
+    renderVideoStage(data);
+    showToast("Video loaded successfully!");
+  } catch (err) {
+    showToast("Error: " + err.message, true);
+  } finally {
+    loadBtn.disabled = false;
+    loadText.innerText = "Load Video";
+  }
+});
+
+function renderVideoStage(info) {
+  document.getElementById("videoTitleDisplay").innerText = info.title || "Video";
+  document.getElementById("videoUploaderDisplay").innerHTML = "&#128100; " + (info.uploader || "Creator");
+  document.getElementById("videoDurationDisplay").innerHTML = "&#9201; " + (info.duration_formatted || "00:00");
+
+  const stage = document.getElementById("videoStage");
+  stage.style.display = "block";
+  stage.scrollIntoView({ behavior: "smooth", block: "start" });
+
+  // Reset segments
+  const dur = info.duration || 60;
+  segments = [
+    { id: 1, name: "Clip 1", start: "00:00:00", end: info.duration_formatted || "00:01:00" }
+  ];
+  renderSegments();
+
+  // Setup player
+  if (info.is_youtube && info.video_id) {
+    setupYouTubePlayer(info.video_id);
+  } else {
+    const container = document.getElementById("ytPlayerContainer");
+    const html5 = document.getElementById("html5Player");
+    const fallback = document.getElementById("playerFallback");
+    container.style.display = "none";
+    fallback.style.display = "none";
+    html5.style.display = "block";
+    html5.src = info.url;
+    startPlayheadTracker();
+  }
+}
+
+// Render Segments List
+function renderSegments() {
+  const container = document.getElementById("segmentsList");
+  container.innerHTML = "";
+
+  segments.forEach((seg, index) => {
+    const div = document.createElement("div");
+    div.className = "segment-item";
+    div.innerHTML = `
+      <div class="seg-num">#${index + 1}</div>
+      <div class="seg-field">
+        <label>Segment Name</label>
+        <input type="text" value="${seg.name}" oninput="updateSegmentField(${index}, 'name', this.value)">
+      </div>
+      <div class="seg-field">
+        <label>Start (HH:MM:SS)</label>
+        <input type="text" value="${seg.start}" oninput="updateSegmentField(${index}, 'start', this.value)">
+      </div>
+      <div class="seg-field">
+        <label>End (HH:MM:SS)</label>
+        <input type="text" value="${seg.end}" oninput="updateSegmentField(${index}, 'end', this.value)">
+      </div>
+      <div class="seg-duration" id="segDur_${index}">--</div>
+      <button type="button" class="delete-seg-btn" title="Delete Segment" onclick="deleteSegment(${index})">&#128465;</button>
+    `;
+    container.appendChild(div);
+    recalcSegmentDuration(index);
+  });
+}
+
+function updateSegmentField(index, field, value) {
+  if (segments[index]) {
+    segments[index][field] = value;
+    recalcSegmentDuration(index);
+  }
+}
+
+function recalcSegmentDuration(index) {
+  const seg = segments[index];
+  if (!seg) return;
+  const startSec = parseTimeInput(seg.start);
+  const endSec = parseTimeInput(seg.end);
+  const durSpan = document.getElementById("segDur_" + index);
+  if (durSpan) {
+    if (startSec !== null && endSec !== null && endSec > startSec) {
+      durSpan.innerText = formatTime(endSec - startSec);
+      durSpan.style.color = "#38bdf8";
+    } else {
+      durSpan.innerText = "Invalid";
+      durSpan.style.color = "#ef4444";
+    }
+  }
+}
+
+function deleteSegment(index) {
+  if (segments.length <= 1) {
+    showToast("At least one segment is required.", true);
+    return;
+  }
+  segments.splice(index, 1);
+  renderSegments();
+}
+
+document.getElementById("addSegmentBtn").addEventListener("click", () => {
+  const last = segments[segments.length - 1];
+  let newStart = "00:00:00";
+  let newEnd = "00:01:00";
+  if (last) {
+    newStart = last.end;
+    const endSec = (parseTimeInput(last.end) || 0) + 60;
+    newEnd = formatTime(endSec);
+  }
+  segments.push({
+    id: Date.now(),
+    name: `Clip ${segments.length + 1}`,
+    start: newStart,
+    end: newEnd
+  });
+  renderSegments();
+});
+
+// Set as Start / End buttons
+document.getElementById("useAsStartBtn").addEventListener("click", () => {
+  const t = getCurrentPlayerTime();
+  const formatted = formatTime(t);
+  if (segments.length > 0) {
+    segments[segments.length - 1].start = formatted;
+    renderSegments();
+    showToast(`Set Start Time of Clip ${segments.length} to ${formatted}`);
+  }
+});
+
+document.getElementById("useAsEndBtn").addEventListener("click", () => {
+  const t = getCurrentPlayerTime();
+  const formatted = formatTime(t);
+  if (segments.length > 0) {
+    segments[segments.length - 1].end = formatted;
+    renderSegments();
+    showToast(`Set End Time of Clip ${segments.length} to ${formatted}`);
+  }
+});
+
+// Mode Card Selection Toggle
+document.querySelectorAll(".mode-card").forEach(card => {
+  card.addEventListener("click", () => {
+    document.querySelectorAll(".mode-card").forEach(c => c.classList.remove("active"));
+    card.classList.add("active");
+    const radio = card.querySelector('input[type="radio"]');
+    if (radio) radio.checked = true;
+  });
+});
+
+// Start Export Execution
+document.getElementById("startExportBtn").addEventListener("click", async () => {
+  if (!loadedVideoInfo) {
+    showToast("Please load a video first.", true);
+    return;
+  }
+
+  const selectedMode = document.querySelector('input[name="exportMode"]:checked').value;
+  
+  // Validate segments if not full export
+  let validatedSegments = [];
+  if (selectedMode !== "export") {
+    for (let i = 0; i < segments.length; i++) {
+      const seg = segments[i];
+      const startSec = parseTimeInput(seg.start);
+      const endSec = parseTimeInput(seg.end);
+      if (startSec === null || endSec === null) {
+        showToast(`Segment #${i + 1} has an invalid timestamp.`, true);
+        return;
+      }
+      if (endSec <= startSec) {
+        showToast(`Segment #${i + 1}: End time must be greater than start time.`, true);
+        return;
+      }
+      validatedSegments.push({
+        name: seg.name || `clip_${i + 1}`,
+        start: startSec,
+        end: endSec
+      });
+    }
+  }
+
+  // Hide ready card, show progress
+  document.getElementById("readyCard").style.display = "none";
+  const progressCard = document.getElementById("progressCard");
+  progressCard.style.display = "block";
+  progressCard.scrollIntoView({ behavior: "smooth", block: "center" });
+
+  const exportBtn = document.getElementById("startExportBtn");
+  exportBtn.disabled = true;
+
+  const endpoint = selectedMode === "split" 
+    ? "/video-editor/split" 
+    : (selectedMode === "merge" ? "/video-editor/merge" : "/video-editor/export");
+
+  const payload = {
+    url: loadedVideoInfo.url,
+    mode: selectedMode,
+    segments: validatedSegments
+  };
+
+  try {
+    const res = await fetch(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+
+    const data = await res.json();
+    if (!res.ok || data.error) {
+      throw new Error(data.error || "Failed to start export job");
+    }
+
+    currentJobId = data.jobId;
+    startJobPolling(currentJobId);
+  } catch (err) {
+    showToast("Export failed: " + err.message, true);
+    progressCard.style.display = "none";
+    exportBtn.disabled = false;
+  }
+});
+
+// Polling Job Status
+function startJobPolling(jobId) {
+  if (jobPollTimer) clearInterval(jobPollTimer);
+
+  jobPollTimer = setInterval(async () => {
+    try {
+      const res = await fetch(`/video-editor/job-status/${jobId}`);
+      if (!res.ok) throw new Error("Status check failed");
+      const job = await res.json();
+
+      const pct = Math.min(100, Math.max(0, job.pct || job.progress || 0));
+      document.getElementById("progressFill").style.width = pct + "%";
+      document.getElementById("progressPctText").innerText = pct + "%";
+      document.getElementById("phaseText").innerText = job.phase || "Processing video...";
+
+      if (job.status === "ready") {
+        clearInterval(jobPollTimer);
+        finishJob(job);
+      } else if (job.status === "failed") {
+        clearInterval(jobPollTimer);
+        showToast("Processing failed: " + (job.error || "Unknown error"), true);
+        document.getElementById("progressCard").style.display = "none";
+        document.getElementById("startExportBtn").disabled = false;
+      }
+    } catch (e) {
+      // transient network retry
+    }
+  }, 1000);
+}
+
+function finishJob(job) {
+  document.getElementById("progressCard").style.display = "none";
+  document.getElementById("startExportBtn").disabled = false;
+
+  const readyCard = document.getElementById("readyCard");
+  readyCard.style.display = "block";
+  readyCard.scrollIntoView({ behavior: "smooth", block: "center" });
+
+  document.getElementById("readyFilename").innerText = job.filename || "Video Output";
+  const sizeMB = job.size ? (job.size / (1024 * 1024)).toFixed(2) + " MB" : "Ready";
+  document.getElementById("readyMeta").innerText = `Format: MP4/ZIP • File Size: ${sizeMB}`;
+  
+  const dlBtn = document.getElementById("downloadReadyBtn");
+  dlBtn.href = job.downloadUrl || `/video-editor/job-file/${job.jobId}`;
+  dlBtn.setAttribute("download", job.filename || "exported_video.mp4");
+
+  showToast("✓ Video processing complete! Ready to download.");
+}
+
+document.getElementById("resetBtn").addEventListener("click", () => {
+  document.getElementById("readyCard").style.display = "none";
+  document.getElementById("progressCard").style.display = "none";
+  window.scrollTo({ top: 0, behavior: "smooth" });
+});
+</script>
+
+<script src="/shared.js"></script>
+</body>
+</html>
+

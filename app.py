@@ -58,6 +58,9 @@ def redirect_backend_hosts_to_public_domain():
         "/download/server-download",
         "/download/job-file/",
         "/download/job-status/",
+        "/download/partial-stream",
+        "/download/partial-capabilities",
+        "/video-editor",
     )
     if path.startswith(internal_prefixes):
         return None
@@ -1185,7 +1188,7 @@ def drive_public_share(token):
 @app.route("/download/<path:filename>")
 def download_own_file(filename):
     download_reserved = (filename or "").split("/", 1)[0]
-    if download_reserved in {"api", "proxy", "server-download", "job-status", "job-file", "merged-url"}:
+    if download_reserved in {"api", "proxy", "server-download", "job-status", "job-file", "merged-url", "partial-stream", "partial-capabilities"}:
         from download import route as download_routes
         if download_reserved == "proxy":
             return download_routes.proxy_download()
@@ -1197,6 +1200,10 @@ def download_own_file(filename):
             return download_routes.download_job_file(filename.split("/", 1)[1])
         if download_reserved == "api":
             return download_routes.api()
+        if download_reserved == "partial-stream":
+            return download_routes.partial_stream()
+        if download_reserved == "partial-capabilities":
+            return download_routes.partial_capabilities()
 
     download_public_dir = os.path.join(BASE_DIR, "download", "public")
     public_file = os.path.abspath(os.path.join(download_public_dir, filename))
@@ -1575,6 +1582,11 @@ if media_scraper_backend_path.exists():
 
 from download.route import download as download_blueprint
 app.register_blueprint(download_blueprint)
+
+video_editor_path = Path(BASE_DIR) / "video_editor" / "routes.py"
+if video_editor_path.exists():
+    from video_editor.routes import video_editor_bp
+    app.register_blueprint(video_editor_bp)
 
 from ytplayer.routes import init_routes as yt_routes
 yt_routes(app)
