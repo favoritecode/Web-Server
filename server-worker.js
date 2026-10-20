@@ -134,8 +134,12 @@ function isMediaTranscribePath(pathname) {
   return pathname.startsWith("/media-transcribe/api/");
 }
 
+function isVideoEditorPath(pathname) {
+  return pathname === "/video-editor" || pathname.startsWith("/video-editor/") || pathname === "/social-video-editor" || pathname.startsWith("/social-video-editor/");
+}
+
 function isPcToolPath(pathname) {
-  return isOcrPath(pathname) || pathname === "/file-converter/convert" || isRemoveBgPath(pathname) || isArticleGeneratePath(pathname) || isMediaTranscribePath(pathname) || isDriveFilePath(pathname);
+  return isOcrPath(pathname) || pathname === "/file-converter/convert" || isRemoveBgPath(pathname) || isArticleGeneratePath(pathname) || isMediaTranscribePath(pathname) || isVideoEditorPath(pathname) || isDriveFilePath(pathname);
 }
 
 function isAdminUserUpdatePath(pathname) {
