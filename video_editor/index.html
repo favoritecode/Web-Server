@@ -856,7 +856,7 @@ function formatTime(seconds) {
 // Parse string timestamp into seconds
 function parseTimeInput(str) {
   if (!str) return null;
-  const clean = str.trim();
+  const clean = String(str).trim();
   if (/^\d+(\.\d+)?$/.test(clean)) return parseFloat(clean);
   const parts = clean.split(":");
   if (parts.length === 2) {
@@ -888,11 +888,6 @@ function startPlayheadTracker() {
   }, 200);
 }
 
-// YouTube API initialization
-window.onYouTubeIframeAPIReady = function() {
-  // ready handler
-};
-
 function setupYouTubePlayer(videoId) {
   const container = document.getElementById("ytPlayerContainer");
   const html5 = document.getElementById("html5Player");
@@ -904,28 +899,33 @@ function setupYouTubePlayer(videoId) {
   container.innerHTML = '<div id="ytIframeNode"></div>';
 
   ytPlayerReady = false;
-  ytPlayer = new YT.Player("ytIframeNode", {
-    videoId: videoId,
-    playerVars: {
-      autoplay: 0,
-      controls: 1,
-      rel: 0,
-      enablejsapi: 1,
-      modestbranding: 1
-    },
-    events: {
-      onReady: () => {
-        ytPlayerReady = true;
-        startPlayheadTracker();
+  if (window.YT && window.YT.Player) {
+    ytPlayer = new YT.Player("ytIframeNode", {
+      videoId: videoId,
+      playerVars: {
+        autoplay: 0,
+        controls: 1,
+        rel: 0,
+        enablejsapi: 1,
+        modestbranding: 1
+      },
+      events: {
+        onReady: () => {
+          ytPlayerReady = true;
+          startPlayheadTracker();
+        }
       }
-    }
-  });
+    });
+  } else {
+    // Direct embed fallback if API not yet ready
+    container.innerHTML = `<iframe width="100%" height="100%" src="https://www.youtube-nocookie.com/embed/${videoId}?enablejsapi=1" frameborder="0" allowfullscreen></iframe>`;
+  }
 }
 
 // Load Video Button Handler
 document.getElementById("loadVideoBtn").addEventListener("click", async () => {
-  const url = document.getElementById("videoUrlInput").value.trim();
-  if (!url) {
+  const rawUrl = document.getElementById("videoUrlInput").value.trim();
+  if (!rawUrl) {
     showToast("Please enter a valid video link first.", true);
     return;
   }
@@ -936,20 +936,53 @@ document.getElementById("loadVideoBtn").addEventListener("click", async () => {
   loadText.innerText = "Inspecting...";
 
   try {
-    const res = await fetch("/video-editor/info", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ url: url })
-    });
-
-    const data = await res.json();
-    if (!res.ok || data.error) {
-      throw new Error(data.error || "Failed to inspect video");
+    // Call /download/api which is explicitly whitelisted for long-running execution on Cloudflare Worker
+    const res = await fetch(`/download/api?url=${encodeURIComponent(rawUrl)}`);
+    
+    if (!res.ok) {
+      let errMsg = `Server returned status ${res.status}`;
+      try {
+        const errJson = await res.json();
+        errMsg = errJson.error || errJson.message || errMsg;
+      } catch (e) {}
+      throw new Error(errMsg);
     }
 
-    loadedVideoInfo = data;
-    renderVideoStage(data);
-    showToast("Video loaded successfully!");
+    const data = await res.json();
+    if (data.error) {
+      throw new Error(data.error);
+    }
+
+    // Detect YouTube ID
+    let videoId = null;
+    let isYt = false;
+    const targetUrl = data.normalized_url || rawUrl;
+    const ytMatch = targetUrl.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|shorts\/))([A-Za-z0-9_-]{11})/);
+    if (ytMatch) {
+      videoId = ytMatch[1];
+      isYt = true;
+    }
+
+    // Direct preview media URL if non-YouTube
+    let previewStreamUrl = "";
+    if (data.video && Array.isArray(data.video) && data.video.length > 0) {
+      previewStreamUrl = data.video[0].url || "";
+    }
+
+    loadedVideoInfo = {
+      url: targetUrl,
+      title: data.title || "Social Video",
+      duration: data.duration || 0,
+      duration_formatted: data.duration_string || formatTime(data.duration || 0),
+      thumbnail: data.thumbnail || (data.thumbnails && data.thumbnails[0]) || "",
+      uploader: data.uploader || data.channel || (isYt ? "YouTube Channel" : "Social Media"),
+      is_youtube: isYt,
+      video_id: videoId,
+      preview_url: previewStreamUrl
+    };
+
+    renderVideoStage(loadedVideoInfo);
+    showToast("✓ Video loaded successfully!");
   } catch (err) {
     showToast("Error: " + err.message, true);
   } finally {
@@ -968,7 +1001,6 @@ function renderVideoStage(info) {
   stage.scrollIntoView({ behavior: "smooth", block: "start" });
 
   // Reset segments
-  const dur = info.duration || 60;
   segments = [
     { id: 1, name: "Clip 1", start: "00:00:00", end: info.duration_formatted || "00:01:00" }
   ];
@@ -977,15 +1009,23 @@ function renderVideoStage(info) {
   // Setup player
   if (info.is_youtube && info.video_id) {
     setupYouTubePlayer(info.video_id);
-  } else {
+  } else if (info.preview_url) {
     const container = document.getElementById("ytPlayerContainer");
     const html5 = document.getElementById("html5Player");
     const fallback = document.getElementById("playerFallback");
     container.style.display = "none";
     fallback.style.display = "none";
     html5.style.display = "block";
-    html5.src = info.url;
+    html5.src = info.preview_url;
     startPlayheadTracker();
+  } else {
+    const container = document.getElementById("ytPlayerContainer");
+    const html5 = document.getElementById("html5Player");
+    const fallback = document.getElementById("playerFallback");
+    container.style.display = "none";
+    html5.style.display = "none";
+    fallback.style.display = "flex";
+    fallback.innerHTML = info.thumbnail ? `<img src="${info.thumbnail}" style="max-height:100%; border-radius:12px;">` : "Preview ready";
   }
 }
 
@@ -1110,7 +1150,6 @@ document.getElementById("startExportBtn").addEventListener("click", async () => 
 
   const selectedMode = document.querySelector('input[name="exportMode"]:checked').value;
   
-  // Validate segments if not full export
   let validatedSegments = [];
   if (selectedMode !== "export") {
     for (let i = 0; i < segments.length; i++) {
@@ -1133,7 +1172,6 @@ document.getElementById("startExportBtn").addEventListener("click", async () => 
     }
   }
 
-  // Hide ready card, show progress
   document.getElementById("readyCard").style.display = "none";
   const progressCard = document.getElementById("progressCard");
   progressCard.style.display = "block";
@@ -1159,12 +1197,21 @@ document.getElementById("startExportBtn").addEventListener("click", async () => 
       body: JSON.stringify(payload)
     });
 
-    const data = await res.json();
-    if (!res.ok || data.error) {
-      throw new Error(data.error || "Failed to start export job");
+    if (!res.ok) {
+      let errMsg = `Server returned status ${res.status}`;
+      try {
+        const errJson = await res.json();
+        errMsg = errJson.error || errJson.message || errMsg;
+      } catch (e) {}
+      throw new Error(errMsg);
     }
 
-    currentJobId = data.jobId;
+    const data = await res.json();
+    if (data.error) {
+      throw new Error(data.error);
+    }
+
+    currentJobId = data.jobId || data.id;
     startJobPolling(currentJobId);
   } catch (err) {
     showToast("Export failed: " + err.message, true);
@@ -1180,7 +1227,7 @@ function startJobPolling(jobId) {
   jobPollTimer = setInterval(async () => {
     try {
       const res = await fetch(`/video-editor/job-status/${jobId}`);
-      if (!res.ok) throw new Error("Status check failed");
+      if (!res.ok) return;
       const job = await res.json();
 
       const pct = Math.min(100, Math.max(0, job.pct || job.progress || 0));
@@ -1216,7 +1263,7 @@ function finishJob(job) {
   document.getElementById("readyMeta").innerText = `Format: MP4/ZIP • File Size: ${sizeMB}`;
   
   const dlBtn = document.getElementById("downloadReadyBtn");
-  dlBtn.href = job.downloadUrl || `/video-editor/job-file/${job.jobId}`;
+  dlBtn.href = job.downloadUrl || `/video-editor/job-file/${job.jobId || job.id}`;
   dlBtn.setAttribute("download", job.filename || "exported_video.mp4");
 
   showToast("✓ Video processing complete! Ready to download.");
@@ -1232,4 +1279,3 @@ document.getElementById("resetBtn").addEventListener("click", () => {
 <script src="/shared.js"></script>
 </body>
 </html>
-
