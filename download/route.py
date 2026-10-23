@@ -288,6 +288,12 @@ def _social_fallback_result(url, label="Best Video + Audio (Server Download)"):
         "audios": [],
         "_server_download": True,
         "normalized_url": normalized,
+        "editor_capabilities": {
+            "quality_selection": True,
+            "quality_contract_version": 1,
+            "source_height": 1080,
+            "heights": [144, 240, 360, 480, 720, 1080],
+        },
     }
 
 def _sanitize_filename(name):
@@ -547,6 +553,47 @@ def download_page_slash():
 # API
 # ----------------------------
 
+def _build_editor_capabilities(info, videos=None):
+    """
+    Computes verified editor capabilities based on real usable video formats.
+    Supported quality caps are tested output boundaries not exceeding source max height.
+    """
+    SUPPORTED_CAPS = [144, 240, 360, 480, 720, 1080, 1440, 2160]
+    usable_heights = []
+
+    if isinstance(info, dict):
+        for fmt in info.get("formats", []):
+            vcodec = fmt.get("vcodec")
+            if vcodec and vcodec != "none" and fmt.get("height"):
+                h = _as_int(fmt.get("height"))
+                if h > 0:
+                    usable_heights.append(h)
+        if info.get("height"):
+            h = _as_int(info.get("height"))
+            if h > 0:
+                usable_heights.append(h)
+
+    if videos:
+        for v in videos:
+            if isinstance(v, dict) and v.get("quality"):
+                usable_heights.append(_as_int(v.get("quality")))
+
+    source_max_h = max(usable_heights) if usable_heights else 0
+    if source_max_h > 0:
+        available_caps = [c for c in SUPPORTED_CAPS if c <= source_max_h]
+        if not available_caps:
+            available_caps = [SUPPORTED_CAPS[0]]
+    else:
+        source_max_h = 1080
+        available_caps = [144, 240, 360, 480, 720, 1080]
+
+    return {
+        "quality_selection": True,
+        "quality_contract_version": 1,
+        "source_height": source_max_h,
+        "heights": available_caps,
+    }
+
 @download.route("/download/api")
 def api():
 
@@ -580,6 +627,8 @@ def api():
     best_video = next((item for item in videos if item["hasAudio"]), videos[0] if videos else None)
     best_audio = audios[0] if audios else None
 
+    editor_caps = _build_editor_capabilities(info, videos)
+
     return jsonify({
         "title": info.get("title"),
         "thumbnail": info.get("thumbnail"),
@@ -590,6 +639,7 @@ def api():
         "videos": videos,
         "audios": audios,
         "normalized_url": url,
+        "editor_capabilities": editor_caps,
     })
 
 

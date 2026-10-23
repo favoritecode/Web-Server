@@ -775,6 +775,19 @@ body {
       </label>
     </div>
 
+    <!-- Output Quality Selection -->
+    <div class="quality-box" id="qualityBox" style="margin: 20px 0; padding: 16px 20px; background: rgba(30, 41, 59, 0.7); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 12px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;">
+      <div>
+        <h4 style="margin: 0 0 4px 0; font-size: 15px; color: #f8fafc;">&#127916; Output Video Quality</h4>
+        <span style="font-size: 13px; color: #94a3b8;" id="qualityDesc">Select export resolution cap (source limited)</span>
+      </div>
+      <div>
+        <select id="exportQualitySelect" style="padding: 10px 16px; background: #0f172a; color: #f8fafc; border: 1px solid rgba(99, 102, 241, 0.4); border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; outline: none;">
+          <option value="original">Original / Best Quality</option>
+        </select>
+      </div>
+    </div>
+
     <!-- Process CTA -->
     <div class="action-box">
       <button type="button" class="export-btn" id="startExportBtn">
@@ -1083,7 +1096,8 @@ document.getElementById("loadVideoBtn").addEventListener("click", async () => {
       uploader: data.uploader || data.channel || (isYt ? "YouTube Channel" : "Social Media"),
       is_youtube: isYt,
       video_id: videoId,
-      preview_url: previewStreamUrl
+      preview_url: previewStreamUrl,
+      editor_capabilities: data.editor_capabilities || null
     };
 
     renderVideoStage(loadedVideoInfo);
@@ -1100,6 +1114,25 @@ function renderVideoStage(info) {
   document.getElementById("videoTitleDisplay").innerText = info.title || "Video";
   document.getElementById("videoUploaderDisplay").innerHTML = "&#128100; " + (info.uploader || "Creator");
   document.getElementById("videoDurationDisplay").innerHTML = "&#9201; " + (info.duration_formatted || "00:00");
+
+  // Populate quality select from editor_capabilities
+  const qSelect = document.getElementById("exportQualitySelect");
+  if (qSelect) {
+    qSelect.innerHTML = '<option value="original">Original / Best Quality</option>';
+    if (info.editor_capabilities && Array.isArray(info.editor_capabilities.heights)) {
+      const heights = [...info.editor_capabilities.heights].sort((a, b) => b - a);
+      heights.forEach(h => {
+        const opt = document.createElement("option");
+        opt.value = String(h);
+        opt.innerText = `${h}p ${h >= 720 ? '(HD)' : ''}`;
+        qSelect.appendChild(opt);
+      });
+      const qDesc = document.getElementById("qualityDesc");
+      if (qDesc && info.editor_capabilities.source_height) {
+        qDesc.innerText = `Source max: ${info.editor_capabilities.source_height}p • Select target resolution cap`;
+      }
+    }
+  }
 
   const stage = document.getElementById("videoStage");
   stage.style.display = "block";
@@ -1289,11 +1322,22 @@ document.getElementById("startExportBtn").addEventListener("click", async () => 
     ? "/video-editor/split" 
     : (selectedMode === "merge" ? "/video-editor/merge" : "/video-editor/export");
 
+  const qSelect = document.getElementById("exportQualitySelect");
+  const selectedQuality = qSelect ? qSelect.value : "original";
+
   const payload = {
     url: loadedVideoInfo.url,
     mode: selectedMode,
     segments: validatedSegments
   };
+
+  if (selectedQuality && selectedQuality !== "original") {
+    payload.quality = String(selectedQuality);
+    payload.max_height = parseInt(selectedQuality, 10);
+    payload.quality_contract_version = 1;
+  } else {
+    payload.quality = "original";
+  }
 
   try {
     const res = await fetch(endpoint, {
@@ -1365,7 +1409,14 @@ function finishJob(job) {
 
   document.getElementById("readyFilename").innerText = job.filename || "Video Output";
   const sizeMB = job.size ? (job.size / (1024 * 1024)).toFixed(2) + " MB" : "Ready";
-  document.getElementById("readyMeta").innerText = `Format: MP4/ZIP • File Size: ${sizeMB}`;
+  let metaInfo = `Format: MP4/ZIP • File Size: ${sizeMB}`;
+  if (job.quality && job.quality.output_height) {
+    metaInfo += ` • Quality: ${job.quality.output_height}p`;
+    if (job.quality.clamped) {
+      metaInfo += ` (Clamped to source)`;
+    }
+  }
+  document.getElementById("readyMeta").innerText = metaInfo;
   
   const dlBtn = document.getElementById("downloadReadyBtn");
   dlBtn.href = job.downloadUrl || `/video-editor/job-file/${job.jobId || job.id}`;

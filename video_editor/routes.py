@@ -38,6 +38,10 @@ EDITOR_JOBS = {}
 EDITOR_JOBS_LOCK = threading.Lock()
 JOB_TTL_SECONDS = 6 * 3600  # 6 hours
 
+# Quality Contract
+SUPPORTED_QUALITIES = [144, 240, 360, 480, 720, 1080, 1440, 2160]
+SUPPORTED_QUALITY_STRINGS = {str(x) for x in SUPPORTED_QUALITIES}
+
 # Resource Limits
 MAX_SOURCES = 10
 MAX_SEGMENTS_PER_SOURCE = 50
@@ -276,19 +280,24 @@ def probe_media(file_path):
     duration = float(fmt.get("duration") or 0.0)
     size = int(fmt.get("size") or os.path.getsize(file_path))
 
-    has_video = any(s.get("codec_type") == "video" for s in streams)
-    has_audio = any(s.get("codec_type") == "audio" for s in streams)
+    vstream = next((s for s in streams if s.get("codec_type") == "video"), None)
+    astream = next((s for s in streams if s.get("codec_type") == "audio"), None)
+
+    width = int(vstream.get("width") or 0) if vstream else 0
+    height = int(vstream.get("height") or 0) if vstream else 0
 
     return {
         "duration": duration,
         "size": size,
-        "has_video": has_video,
-        "has_audio": has_audio,
+        "width": width,
+        "height": height,
+        "has_video": vstream is not None,
+        "has_audio": astream is not None,
     }
 
 
-def trim_segment(input_path, output_path, start, end):
-    """Trims a segment [start, end] accurately with FFmpeg re-encoding."""
+def trim_segment(input_path, output_path, start, end, target_height=None):
+    """Trims a segment [start, end] accurately with FFmpeg re-encoding and resolution cap."""
     ffmpeg = get_ffmpeg_bin("ffmpeg")
     cmd = [
         ffmpeg, "-y",
@@ -296,21 +305,29 @@ def trim_segment(input_path, output_path, start, end):
         "-to", f"{end:.3f}",
         "-i", input_path,
         "-c:v", "libx264",
+        "-pix_fmt", "yuv420p",
         "-preset", "fast",
         "-crf", "22",
+    ]
+    if target_height:
+        cmd.extend(["-vf", f"scale=-2:'min(ih,{target_height})'"])
+    else:
+        cmd.extend(["-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2"])
+
+    cmd.extend([
         "-c:a", "aac",
         "-b:a", "192k",
         "-avoid_negative_ts", "make_zero",
         "-movflags", "+faststart",
         output_path,
-    ]
+    ])
     proc = subprocess.run(cmd, capture_output=True, text=True, timeout=MAX_FFMPEG_TIMEOUT)
     if proc.returncode != 0 or not os.path.exists(output_path) or os.path.getsize(output_path) == 0:
         raise RuntimeError(f"FFmpeg trim failed: {sanitize_stderr(proc.stderr)}")
     return output_path
 
 
-def concatenate_clips(clip_paths, output_path, temp_dir):
+def concatenate_clips(clip_paths, output_path, temp_dir, target_height=None):
     """Concatenates multiple MP4 clips into a single video."""
     if not clip_paths:
         raise ValueError("No video clips provided for concatenation.")
@@ -331,33 +348,49 @@ def concatenate_clips(clip_paths, output_path, temp_dir):
         "-safe", "0",
         "-i", concat_list_file,
         "-c:v", "libx264",
+        "-pix_fmt", "yuv420p",
         "-preset", "fast",
         "-crf", "22",
+    ]
+    if target_height:
+        cmd.extend(["-vf", f"scale=-2:'min(ih,{target_height})'"])
+    else:
+        cmd.extend(["-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2"])
+
+    cmd.extend([
         "-c:a", "aac",
         "-b:a", "192k",
         "-movflags", "+faststart",
         output_path,
-    ]
+    ])
     proc = subprocess.run(cmd, capture_output=True, text=True, timeout=MAX_FFMPEG_TIMEOUT)
     if proc.returncode != 0 or not os.path.exists(output_path) or os.path.getsize(output_path) == 0:
         raise RuntimeError(f"FFmpeg concat failed: {sanitize_stderr(proc.stderr)}")
     return output_path
 
 
-def transcode_full(input_path, output_path):
-    """Transcodes or remuxes a full input video to web-ready MP4."""
+def transcode_full(input_path, output_path, target_height=None):
+    """Transcodes or remuxes a full input video to web-ready MP4 with resolution cap."""
     ffmpeg = get_ffmpeg_bin("ffmpeg")
     cmd = [
         ffmpeg, "-y",
         "-i", input_path,
         "-c:v", "libx264",
+        "-pix_fmt", "yuv420p",
         "-preset", "fast",
         "-crf", "22",
+    ]
+    if target_height:
+        cmd.extend(["-vf", f"scale=-2:'min(ih,{target_height})'"])
+    else:
+        cmd.extend(["-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2"])
+
+    cmd.extend([
         "-c:a", "aac",
         "-b:a", "192k",
         "-movflags", "+faststart",
         output_path,
-    ]
+    ])
     proc = subprocess.run(cmd, capture_output=True, text=True, timeout=MAX_FFMPEG_TIMEOUT)
     if proc.returncode != 0 or not os.path.exists(output_path) or os.path.getsize(output_path) == 0:
         raise RuntimeError(f"FFmpeg transcode failed: {sanitize_stderr(proc.stderr)}")
@@ -432,7 +465,7 @@ def _cleanup_old_jobs():
 # Media Extraction & Download Logic
 # =====================================================================
 
-def download_source_video(url, temp_dir, index=0, job_id=None, time_range=None):
+def download_source_video(url, temp_dir, index=0, job_id=None, time_range=None, target_height=None):
     """
     Downloads source video to a file inside temp_dir using yt-dlp metadata inspection
     coupled with strict SSRF inspection and TLS certificate validation.
@@ -467,11 +500,16 @@ def download_source_video(url, temp_dir, index=0, job_id=None, time_range=None):
             
         }
 
-        is_yt = _is_youtube_url(url)
-        if is_yt:
-            extra_opts["format"] = "18/bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"
+        if target_height:
+            extra_opts["format"] = (
+                f"bestvideo[height<={target_height}][ext=mp4]+bestaudio[ext=m4a]/"
+                f"bestvideo[height<={target_height}]+bestaudio/"
+                f"best[height<={target_height}][ext=mp4]/"
+                f"best[height<={target_height}]/"
+                f"18/best[ext=mp4]/best"
+            )
         else:
-            extra_opts["format"] = "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"
+            extra_opts["format"] = "bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/18/best[ext=mp4]/best" 
 
         if time_range and download_range_func is not None:
             start_sec, end_sec = time_range
@@ -517,16 +555,22 @@ def download_source_video(url, temp_dir, index=0, job_id=None, time_range=None):
                 return matches[0]
 
             last_exc = exc
-            # If download_ranges failed, retry once without download_ranges
-            if time_range and "download_ranges" in extra_opts:
-                try:
-                    extra_opts.pop("download_ranges", None)
-                    extra_opts.pop("force_keyframes_at_cuts", None)
-                    retry_opts = _base_ydl_opts(extra_opts, url)
-                    with YoutubeDL(retry_opts) as ydl:
-                        ydl.download([url])
-                except Exception as retry_exc:
-                    last_exc = retry_exc
+            # Retry with robust progressive format 18 fallback without download_ranges
+            try:
+                extra_opts.pop("download_ranges", None)
+                extra_opts.pop("force_keyframes_at_cuts", None)
+                extra_opts["format"] = "18/best[ext=mp4]/best"
+                retry_opts = _base_ydl_opts(extra_opts, url)
+                with YoutubeDL(retry_opts) as ydl:
+                    ydl.download([url])
+                matches = [
+                    os.path.join(temp_dir, f) for f in os.listdir(temp_dir)
+                    if f.startswith(f"source_{index}_") and not f.endswith(".part") and not f.endswith(".ytdl")
+                ]
+                if matches and os.path.getsize(matches[0]) > 0:
+                    return matches[0]
+            except Exception as retry_exc:
+                last_exc = retry_exc
 
         matches = [
             os.path.join(temp_dir, f) for f in os.listdir(temp_dir)
@@ -552,7 +596,7 @@ def download_source_video(url, temp_dir, index=0, job_id=None, time_range=None):
 # Background Worker Engine
 # =====================================================================
 
-def _editor_worker(job_id, sources, mode, export_individual, output_format):
+def _editor_worker(job_id, sources, mode, export_individual, output_format, target_height=None, quality_str="original"):
     temp_dir = None
     acquired = CONCURRENT_JOBS_SEMAPHORE.acquire(timeout=600)
     if not acquired:
@@ -606,7 +650,7 @@ def _editor_worker(job_id, sources, mode, export_individual, output_format):
                 if max_e > min_s:
                     time_range = (min_s, max_e)
 
-            file_path = download_source_video(url, temp_dir, index=i, job_id=job_id, time_range=time_range)
+            file_path = download_source_video(url, temp_dir, index=i, job_id=job_id, time_range=time_range, target_height=target_height)
             probe = probe_media(file_path)
             duration = probe.get("duration", 0.0)
 
@@ -640,13 +684,13 @@ def _editor_worker(job_id, sources, mode, export_individual, output_format):
                     clip_out = os.path.join(temp_dir, f"segment_{s_idx}_{c_idx}.mp4")
                     rel_start = max(0.0, seg["start"] - offset)
                     rel_end = max(rel_start + 0.2, seg["end"] - offset)
-                    trim_segment(fpath, clip_out, rel_start, rel_end)
+                    trim_segment(fpath, clip_out, rel_start, rel_end, target_height=target_height)
                     label = sanitize_filename(seg["label"], f"clip_{s_idx+1}_{c_idx+1}")
                     all_clips.append((clip_out, f"{label}.mp4"))
             else:
                 # Full video source without split
                 full_out = os.path.join(temp_dir, f"full_{s_idx}.mp4")
-                transcode_full(fpath, full_out)
+                transcode_full(fpath, full_out, target_height=target_height)
                 all_clips.append((full_out, f"source_{s_idx+1}.mp4"))
 
         if not all_clips:
@@ -663,7 +707,7 @@ def _editor_worker(job_id, sources, mode, export_individual, output_format):
             _set_job(job_id, phase="Combining video clips...", pct=80, progress=80)
             combined_dest = os.path.join(temp_dir, "combined_export.mp4")
             clip_paths_only = [c[0] for c in all_clips]
-            concatenate_clips(clip_paths_only, combined_dest, temp_dir)
+            concatenate_clips(clip_paths_only, combined_dest, temp_dir, target_height=target_height)
             final_file = combined_dest
             final_filename = "combined_export.mp4"
             content_type = "video/mp4"
@@ -683,6 +727,43 @@ def _editor_worker(job_id, sources, mode, export_individual, output_format):
         if not os.path.exists(final_file) or os.path.getsize(final_file) == 0:
             raise RuntimeError("Final output file was not created or is empty.")
 
+        # 4. Verify Quality Cap & Dimensions with FFprobe
+        if is_merge_mode or len(all_clips) == 1:
+            out_probe = probe_media(final_file)
+            verified_h = out_probe.get("height", 0)
+            verified_w = out_probe.get("width", 0)
+            if verified_h == 0:
+                raise RuntimeError("Quality verification failed: output video has zero height or invalid stream.")
+            if target_height and verified_h > target_height:
+                raise RuntimeError(f"Quality cap violation: output height ({verified_h}p) exceeds requested maximum ({target_height}p).")
+        else:
+            clip_heights = []
+            clip_widths = []
+            for cpath, clabel in all_clips:
+                cprobe = probe_media(cpath)
+                ch = cprobe.get("height", 0)
+                cw = cprobe.get("width", 0)
+                if ch == 0:
+                    raise RuntimeError(f"Quality verification failed for clip '{clabel}': no video stream found.")
+                if target_height and ch > target_height:
+                    raise RuntimeError(f"Quality cap violation in clip '{clabel}': height ({ch}p) exceeds requested maximum ({target_height}p).")
+                clip_heights.append(ch)
+                clip_widths.append(cw)
+            verified_h = max(clip_heights)
+            verified_w = max(clip_widths)
+
+        is_clamped = bool(target_height and verified_h < target_height)
+        quality_info = {
+            "quality_contract_version": 1,
+            "requested": quality_str or "original",
+            "output_height": verified_h,
+            "output_width": verified_w,
+            "verified": True,
+        }
+        if is_clamped:
+            quality_info["clamped"] = True
+            quality_info["reason"] = f"Source video height is {verified_h}p, which is lower than requested {target_height}p"
+
         file_size = os.path.getsize(final_file)
         _set_job(
             job_id,
@@ -695,6 +776,7 @@ def _editor_worker(job_id, sources, mode, export_individual, output_format):
             content_type=content_type,
             size=file_size,
             downloadUrl=f"/video-editor/job-file/{job_id}",
+            quality=quality_info,
             error=None,
         )
 
@@ -788,12 +870,6 @@ def _create_editor_job(default_mode="export"):
     if total_segments > MAX_TOTAL_SEGMENTS:
         return jsonify({"error": f"Too many total segments ({total_segments}). Maximum permitted is {MAX_TOTAL_SEGMENTS}."}), 400
 
-    # Validate URLs before queuing
-    for src in normalized_sources:
-        safe, err = is_safe_url(src["url"])
-        if not safe:
-            return jsonify({"error": f"Invalid source URL: {err}"}), 400
-
     # Validate segments upfront
     for src in normalized_sources:
         for seg in (src.get("segments") or []):
@@ -813,6 +889,12 @@ def _create_editor_job(default_mode="export"):
             except ValueError as val_err:
                 return jsonify({"error": str(val_err)}), 400
 
+    # Validate URLs before queuing
+    for src in normalized_sources:
+        safe, err = is_safe_url(src["url"])
+        if not safe:
+            return jsonify({"error": f"Invalid source URL: {err}"}), 400
+
     mode = (data.get("mode") or default_mode).lower()
     raw_export_individual = data.get("exportIndividual")
     if raw_export_individual is None:
@@ -825,8 +907,57 @@ def _create_editor_job(default_mode="export"):
 
     output_format = data.get("format") or "mp4"
 
+    # Validate Quality Contract
+    raw_quality = data.get("quality")
+    raw_max_height = data.get("max_height")
+    raw_contract_ver = data.get("quality_contract_version")
+
+    target_height = None
+    quality_str = "original"
+
+    if raw_quality is not None:
+        q_norm = str(raw_quality).strip().lower()
+        if q_norm.endswith("p"):
+            q_norm = q_norm[:-1]
+        if q_norm in ("original", "best", "auto", ""):
+            target_height = None
+            quality_str = "original"
+        elif q_norm in SUPPORTED_QUALITY_STRINGS:
+            target_height = int(q_norm)
+            quality_str = q_norm
+        else:
+            return jsonify({
+                "error": f"Invalid quality '{raw_quality}'. Supported: {sorted([int(x) for x in SUPPORTED_QUALITY_STRINGS])} or 'original'"
+            }), 400
+
+    if raw_max_height is not None:
+        try:
+            mh = int(raw_max_height)
+            if str(mh) not in SUPPORTED_QUALITY_STRINGS:
+                return jsonify({
+                    "error": f"Invalid max_height '{raw_max_height}'. Supported values are: {sorted([int(x) for x in SUPPORTED_QUALITY_STRINGS])}"
+                }), 400
+        except (ValueError, TypeError):
+            return jsonify({
+                "error": f"Invalid max_height '{raw_max_height}'. Must be an integer."
+            }), 400
+
+        if target_height is not None and mh != target_height:
+            return jsonify({
+                "error": f"Quality mismatch: 'quality' ({quality_str}) and 'max_height' ({raw_max_height}) must match."
+            }), 400
+        target_height = mh
+        quality_str = str(mh)
+
     job_id = uuid.uuid4().hex
     temp_dir = tempfile.mkdtemp(prefix="favoriteweb-editor-")
+
+    initial_quality = {
+        "quality_contract_version": 1,
+        "requested": quality_str or "original",
+        "output_height": None,
+        "verified": False,
+    }
 
     job = {
         "id": job_id,
@@ -842,6 +973,7 @@ def _create_editor_job(default_mode="export"):
         "filename": None,
         "content_type": None,
         "size": 0,
+        "quality": initial_quality,
         "active_downloads": 0,
         "downloaded_at": None,
         "error": None,
@@ -852,7 +984,7 @@ def _create_editor_job(default_mode="export"):
 
     worker_thread = threading.Thread(
         target=_editor_worker,
-        args=(job_id, normalized_sources, mode, export_individual, output_format),
+        args=(job_id, normalized_sources, mode, export_individual, output_format, target_height, quality_str),
         daemon=True,
     )
     worker_thread.start()
@@ -861,6 +993,7 @@ def _create_editor_job(default_mode="export"):
         "id": job_id,
         "jobId": job_id,
         "status": "queued",
+        "quality": initial_quality,
     }), 200
 
 
@@ -919,6 +1052,9 @@ def video_editor_info():
     video_id = info.get("id")
     is_yt = bool(info.get("extractor", "").lower().startswith("youtube"))
 
+    from download.route import _build_editor_capabilities
+    editor_caps = _build_editor_capabilities(info)
+
     return jsonify({
         "url": webpage_url,
         "title": title,
@@ -928,6 +1064,7 @@ def video_editor_info():
         "uploader": uploader,
         "video_id": video_id if is_yt else None,
         "is_youtube": is_yt,
+        "editor_capabilities": editor_caps,
     })
 
 
@@ -966,6 +1103,7 @@ def video_editor_job_status(job_id):
         "filename": job.get("filename"),
         "size": job.get("size", 0),
         "downloadUrl": f"/video-editor/job-file/{job_id}" if job["status"] == "ready" else None,
+        "quality": job.get("quality"),
         "error": job.get("error"),
     })
 
