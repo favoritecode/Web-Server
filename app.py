@@ -54,6 +54,7 @@ def redirect_backend_hosts_to_public_domain():
         "/ytplayer/play/",
         "/drive/media",
         "/drive/save",
+        "/download/api",
         "/download/proxy",
         "/download/server-download",
         "/download/job-file/",
